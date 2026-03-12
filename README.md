@@ -1,3 +1,5 @@
 to run dashboard locally: 
-npm install
+
+npm install;
+
 npm run dev
