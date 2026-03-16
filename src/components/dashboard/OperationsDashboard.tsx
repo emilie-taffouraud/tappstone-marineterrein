@@ -83,8 +83,33 @@ type BusiestHourResponse = {
   total_flow: number | string;
 } | null;
 
+type KnmiWarningFeature = {
+  properties?: {
+    code?: string;
+    headline?: string;
+    description?: string;
+    areaDesc?: string;
+    event?: string;
+    severity?: string;
+    urgency?: string;
+    effective?: string;
+    expires?: string;
+  };
+};
+
+type KnmiWarningsResponse = {
+  source: string;
+  dataset: string;
+  filename: string;
+  created: string;
+  lastModified: string;
+  data?: {
+    features?: KnmiWarningFeature[];
+  };
+};
+
 const SEGMENT_ID = 9000006266;
-const API_BASE_URL = "http://localhost:3000";
+const API_BASE_URL = "";
 
 export function OperationsDashboard() {
   const [zone, setZone] = useState("All zones");
@@ -99,6 +124,9 @@ export function OperationsDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [knmiWarnings, setKnmiWarnings] = useState<KnmiWarningsResponse | null>(null);
+  const [knmiLoading, setKnmiLoading] = useState(false);
+
   useEffect(() => {
     async function loadTelraamData() {
       try {
@@ -106,9 +134,9 @@ export function OperationsDashboard() {
         setError(null);
 
         const [summaryRes, trafficRes, busiestRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/dashboard/summary?segment_id=${SEGMENT_ID}`),
-          fetch(`${API_BASE_URL}/api/traffic/latest?segment_id=${SEGMENT_ID}`),
-          fetch(`${API_BASE_URL}/api/dashboard/busiest-hour?segment_id=${SEGMENT_ID}`),
+          fetch(`/api/dashboard/summary?segment_id=${SEGMENT_ID}`),
+          fetch(`/api/traffic/latest?segment_id=${SEGMENT_ID}`),
+          fetch(`/api/dashboard/busiest-hour?segment_id=${SEGMENT_ID}`),
         ]);
 
         if (!summaryRes.ok || !trafficRes.ok || !busiestRes.ok) {
@@ -133,13 +161,81 @@ export function OperationsDashboard() {
     loadTelraamData();
   }, []);
 
+  useEffect(() => {
+  let intervalId: number | undefined;
+
+  async function loadKnmiWarnings() {
+    try {
+      setKnmiLoading(true);
+
+      const res = await fetch(`${API_BASE_URL}/api/knmi/warnings`);
+
+      if (!res.ok) {
+        throw new Error("Failed to fetch KNMI warnings");
+      }
+
+      const json: KnmiWarningsResponse = await res.json();
+      setKnmiWarnings(json);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setKnmiLoading(false);
+    }
+  }
+
+  loadKnmiWarnings();
+
+  intervalId = window.setInterval(() => {
+    loadKnmiWarnings();
+  }, 5 * 60 * 1000);
+
+  return () => {
+    if (intervalId) window.clearInterval(intervalId);
+  };
+}, []);
+
+  const liveKnmiAlerts = useMemo(() => {
+  const features = knmiWarnings?.data?.features ?? [];
+
+  return features.slice(0, 3).map((feature, index) => {
+    const props = feature.properties ?? {};
+    const rawSeverity = (props.severity || "").toLowerCase();
+
+    let mappedSeverity: "info" | "warning" | "critical" = "info";
+    if (rawSeverity.includes("severe") || rawSeverity.includes("extreme")) {
+      mappedSeverity = "critical";
+    } else if (rawSeverity.includes("moderate")) {
+      mappedSeverity = "warning";
+    }
+
+    return {
+      id: `knmi-${index}`,
+      severity: mappedSeverity,
+      time: props.effective
+        ? new Date(props.effective).toLocaleString()
+        : "KNMI update",
+      title: props.headline || props.event || "KNMI weather warning",
+      detail: props.description || "No extra description available.",
+      zone: props.areaDesc || "Netherlands",
+      source: "KNMI",
+    };
+  });
+}, [knmiWarnings]);
+
   const filteredAlerts = useMemo(() => {
-    return alertsData.filter((item) => {
-      const zoneMatch = zone === "All zones" || item.zone === zone;
-      const severityMatch = severity === "All severities" || item.severity === severity;
-      return zoneMatch && severityMatch;
-    });
-  }, [zone, severity]);
+  const combinedAlerts = [...liveKnmiAlerts, ...alertsData];
+
+  return combinedAlerts.filter((item) => {
+    const zoneMatch =
+      zone === "All zones" ||
+      item.zone === zone ||
+      item.zone === "Netherlands";
+    const severityMatch =
+      severity === "All severities" || item.severity === severity;
+
+    return zoneMatch && severityMatch;
+  });
+  }, [zone, severity, liveKnmiAlerts]);
 
   const filteredSensorHealth = useMemo(() => {
     return sensorHealth.filter((item) => {
