@@ -9,6 +9,12 @@ import {
   Volume2,
   Waves,
 } from "lucide-react";
+import peopleCrowdSizeColor from "../components/dashboard/images/People - CrowdSize - Color.png";
+import alertColor from "../components/dashboard/images/Operation Dashboards - Color@2x.png";
+import soundColor from "../components/dashboard/images/Sound Level - Color.png";
+import dataVisColor from "../components/dashboard/images/Data Vis - Color.png";
+import tempColor from "../components/dashboard/images/Temperature - Color.png";
+
 import type {
   AccessPoint,
   AlertItem,
@@ -169,7 +175,8 @@ export const kpis: Kpi[] = [
     delta: "+8.4%",
     trend: "up",
     helper: "vs previous hour",
-    icon: Users,
+    icon: peopleCrowdSizeColor,
+    iconSize: "h-12 w-12",  
   },
   {
     label: "Active alerts",
@@ -177,7 +184,8 @@ export const kpis: Kpi[] = [
     delta: "+1",
     trend: "up",
     helper: "1 critical, 2 warning",
-    icon: ShieldAlert,
+    icon: alertColor,
+    iconSize: "h-12 w-12",  
   },
   {
     label: "Avg. sound level",
@@ -185,7 +193,8 @@ export const kpis: Kpi[] = [
     delta: "+4 dB",
     trend: "up",
     helper: "site-wide rolling 15 min",
-    icon: Volume2,
+    icon: soundColor,
+    iconSize: "h-12 w-12",  
   },
   {
     label: "Healthy sensors",
@@ -193,7 +202,8 @@ export const kpis: Kpi[] = [
     delta: "-1",
     trend: "down",
     helper: "1 degraded, 1 offline",
-    icon: Activity,
+    icon: dataVisColor,
+    iconSize: "h-12 w-12",  
   },
   {
     label: "Water temperature",
@@ -201,7 +211,8 @@ export const kpis: Kpi[] = [
     delta: "+0.6°C",
     trend: "up",
     helper: "comfortable recreational range",
-    icon: Waves,
+    icon: tempColor,
+    iconSize: "h-12 w-12",  
   },
 ];
 

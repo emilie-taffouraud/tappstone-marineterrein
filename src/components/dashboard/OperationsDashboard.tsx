@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Activity,
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  Camera,
   Clock3,
   Droplets,
   Router,
@@ -45,15 +47,13 @@ import {
 } from "../../data/mockDashboardData";
 import { Card, CardContent, CardHeader, Pill, SectionTitle, SelectLike } from "./ui";
 import WeatherWidget from "./WeatherWidget";
+import { MAIN_COLORS, PAGE_CONTAINER, PAGE_HEADER, FILTER_CONTROLS, VIEW_STATUS } from "./theme";
+import mt_up from "./images/mt_up.jpg";
+import mt_down from "./images/mt_down.jpg";
 
-const badgeStyles: Record<string, string> = {
-  info: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  warning: "bg-amber-100 text-amber-800 border-amber-200",
-  critical: "bg-rose-100 text-rose-700 border-rose-200",
-  healthy: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  degraded: "bg-lime-100 text-lime-800 border-lime-200",
-  offline: "bg-rose-100 text-rose-700 border-rose-200",
-};
+/* ============================================================================
+   TYPE DEFINITIONS
+   ============================================================================ */
 
 type SummaryResponse = {
   rows_loaded: string | number;
@@ -107,11 +107,20 @@ type KnmiWarningsResponse = {
   };
 };
 
+/* ============================================================================
+   CONSTANTS
+   ============================================================================ */
+
 const SEGMENT_ID = 9000006266;
 const API_BASE_URL = "";
 
+/* ============================================================================
+   MAIN COMPONENT
+   ============================================================================ */
+
 export function OperationsDashboard() {
-  const [zone, setZone] = useState("All locations");
+  /* ---------- STATE ---------- */
+  const [zone, setZone] = useState("All zones");
   const [category, setCategory] = useState("All categories");
   const [severity, setSeverity] = useState("All severities");
   const [range, setRange] = useState("Last 2 hrs");
@@ -127,9 +136,11 @@ export function OperationsDashboard() {
   const [knmiLoading, setKnmiLoading] = useState(false);
   const [holidays, setHolidays] = useState<any[]>([]);
   const [holidaysLoading, setHolidaysLoading] = useState(false);
-    
 
-  useEffect(() => {    
+  /* ---------- EFFECTS ---------- */
+
+  // Load Telraam data on mount
+  useEffect(() => {
     async function loadTelraamData() {
       try {
         setLoading(true);
@@ -163,149 +174,178 @@ export function OperationsDashboard() {
     loadTelraamData();
   }, []);
 
-
   useEffect(() => {
-  async function loadHolidays() {
-    try {
-      setHolidaysLoading(true);
+    async function loadHolidays() {
+      try {
+        setHolidaysLoading(true);
 
-      const res = await fetch("/api/holidays");
+        const res = await fetch("/api/holidays");
 
-      if (!res.ok) {
-        throw new Error("Failed to fetch holidays");
+        if (!res.ok) {
+          throw new Error("Failed to fetch holidays");
+        }
+
+        const json = await res.json();
+
+        console.log("HOLIDAYS:", json);
+
+        setHolidays(json.data); // IMPORTANT
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setHolidaysLoading(false);
       }
-
-      const json = await res.json();
-
-      console.log("HOLIDAYS:", json);
-
-      setHolidays(json.data); // IMPORTANT
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setHolidaysLoading(false);
     }
-  }
 
-  loadHolidays();
-}, []);
+    loadHolidays();
+  }, []);
 
-
+  // Load KNMI weather warnings periodically
   useEffect(() => {
-  let intervalId: number | undefined;
+    let intervalId: number | undefined;
 
-  async function loadKnmiWarnings() {
-    try {
-      setKnmiLoading(true);
+    async function loadKnmiWarnings() {
+      try {
+        setKnmiLoading(true);
 
-      const res = await fetch(`${API_BASE_URL}/api/knmi/warnings`);
+        const res = await fetch(`${API_BASE_URL}/api/knmi/warnings`);
 
-      if (!res.ok) {
-        throw new Error("Failed to fetch KNMI warnings");
+        if (!res.ok) {
+          throw new Error("Failed to fetch KNMI warnings");
+        }
+
+        const json: KnmiWarningsResponse = await res.json();
+        setKnmiWarnings(json);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setKnmiLoading(false);
       }
-
-      const json: KnmiWarningsResponse = await res.json();
-      setKnmiWarnings(json);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setKnmiLoading(false);
     }
-  }
 
-  loadKnmiWarnings();
-
-  intervalId = window.setInterval(() => {
     loadKnmiWarnings();
-  }, 5 * 60 * 1000);
 
-  return () => {
-    if (intervalId) window.clearInterval(intervalId);
-  };
-}, []);
+    intervalId = window.setInterval(() => {
+      loadKnmiWarnings();
+    }, 5 * 60 * 1000);
 
-  const liveKnmiAlerts = useMemo(() => {
-  const features = knmiWarnings?.data?.features ?? [];
-
-  return features.slice(0, 3).map((feature, index) => {
-    const props = feature.properties ?? {};
-    const rawSeverity = (props.severity || "").toLowerCase();
-
-    let mappedSeverity: "info" | "warning" | "critical" = "info";
-    if (rawSeverity.includes("severe") || rawSeverity.includes("extreme")) {
-      mappedSeverity = "critical";
-    } else if (rawSeverity.includes("moderate")) {
-      mappedSeverity = "warning";
-    }
-
-    return {
-      id: `knmi-${index}`,
-      severity: mappedSeverity,
-      time: props.effective
-        ? new Date(props.effective).toLocaleString()
-        : "KNMI update",
-      title: props.headline || props.event || "KNMI weather warning",
-      detail: props.description || "No extra description available.",
-      zone: props.areaDesc || "Netherlands",
-      source: "KNMI",
+    return () => {
+      if (intervalId) window.clearInterval(intervalId);
     };
-  });
-}, [knmiWarnings]);
+  }, []);
 
+  /* ---------- MEMOS ---------- */
+
+  // Transform KNMI warnings into alert format
+  const liveKnmiAlerts = useMemo(() => {
+    const features = knmiWarnings?.data?.features ?? [];
+
+    return features.slice(0, 3).map((feature, index) => {
+      const props = feature.properties ?? {};
+      const rawSeverity = (props.severity || "").toLowerCase();
+
+      let mappedSeverity: "info" | "warning" | "critical" = "info";
+      if (rawSeverity.includes("severe") || rawSeverity.includes("extreme")) {
+        mappedSeverity = "critical";
+      } else if (rawSeverity.includes("moderate")) {
+        mappedSeverity = "warning";
+      }
+
+      return {
+        id: `knmi-${index}`,
+        severity: mappedSeverity,
+        time: props.effective
+          ? new Date(props.effective).toLocaleString()
+          : "KNMI update",
+        title: props.headline || props.event || "KNMI weather warning",
+        detail: props.description || "No extra description available.",
+        zone: props.areaDesc || "Netherlands",
+        source: "KNMI",
+      };
+    });
+  }, [knmiWarnings]);
+
+  // Filter alerts by zone and severity
   const filteredAlerts = useMemo(() => {
-  const combinedAlerts = [...liveKnmiAlerts, ...alertsData];
+    const combinedAlerts = [...liveKnmiAlerts, ...alertsData];
 
-  return combinedAlerts.filter((item) => {
-    const zoneMatch =
-      zone === "All locations" ||
-      item.zone === zone ||
-      item.zone === "Netherlands";
-    const severityMatch =
-      severity === "All severities" || item.severity === severity;
+    return combinedAlerts.filter((item) => {
+      const zoneMatch =
+        zone === "All zones" ||
+        item.zone === zone ||
+        item.zone === "Netherlands";
+      const severityMatch =
+        severity === "All severities" || item.severity === severity;
 
-    return zoneMatch && severityMatch;
-  });
+      return zoneMatch && severityMatch;
+    });
   }, [zone, severity, liveKnmiAlerts]);
 
+  // Filter sensor health by zone and category
   const filteredSensorHealth = useMemo(() => {
     return sensorHealth.filter((item) => {
-      const zoneMatch = zone === "All locations" || item.zone === zone;
+      const zoneMatch = zone === "All zones" || item.zone === zone;
       const categoryMatch = category === "All categories" || item.category === category;
       return zoneMatch && categoryMatch;
     });
   }, [zone, category]);
 
+  // Build KPI cards from live data or defaults
   const liveKpis = useMemo(() => {
     if (!summaryData) return kpis;
 
     return [
       {
-        label: "People on foot",
+        label: "Pedestrian total",
         value: Number(summaryData.total_pedestrians || 0).toLocaleString(),
         delta: "",
         trend: "up" as const,
-        helper: "counted in the current view",
+        helper: "from loaded Telraam records",
         icon: Users,
+        iconSize: "h-8 w-8",
       },
       {
-        label: "Cyclists",
+        label: "Bicycle total",
         value: Number(summaryData.total_bicycles || 0).toLocaleString(),
         delta: "",
         trend: "up" as const,
-        helper: "counted in the current view",
+        helper: "from loaded Telraam records",
         icon: Router,
+        iconSize: "h-8 w-8",
       },
       {
-        label: "Vehicles",
+        label: "Vehicle total",
         value: Number(summaryData.total_vehicles || 0).toLocaleString(),
         delta: "",
         trend: "up" as const,
-        helper: "counted in the current view",
+        helper: "from loaded Telraam records",
+        icon: Camera,
+        iconSize: "h-8 w-8",
+      },
+      {
+        label: "Rows loaded",
+        value: Number(summaryData.rows_loaded || 0).toLocaleString(),
+        delta: "",
+        trend: "up" as const,
+        helper: "database rows for selected segment",
+        icon: Activity,
+        iconSize: "h-8 w-8",
+      },
+      {
+        label: "Peak interval flow",
+        value: busiestHour ? String(busiestHour.total_flow) : "—",
+        delta: "",
+        trend: "up" as const,
+        helper: busiestHour?.recorded_at
+          ? new Date(busiestHour.recorded_at).toLocaleString()
+          : "latest peak interval",
         icon: Clock3,
+        iconSize: "h-8 w-8",
       },
     ];
-  }, [summaryData]);
+  }, [summaryData, busiestHour]);
 
+  // Transform traffic data into trend chart format
   const livePedestrianTrend = useMemo(() => {
     if (!trafficSeries.length) return pedestrianTrend;
 
@@ -326,6 +366,7 @@ export function OperationsDashboard() {
     });
   }, [trafficSeries]);
 
+  // Build access activity chart data
   const liveAccessActivity = useMemo(() => {
     if (!trafficSeries.length) {
       return [
@@ -346,6 +387,7 @@ export function OperationsDashboard() {
     }));
   }, [trafficSeries]);
 
+  // Calculate modality split percentages
   const liveModalitySplit = useMemo(() => {
     if (!summaryData) {
       return [
@@ -376,6 +418,7 @@ export function OperationsDashboard() {
     ];
   }, [summaryData]);
 
+  // Get latest scanner stats
   const scannerStats = useMemo(() => {
     if (!trafficSeries.length) {
       return { access: 102, vehicles: 26 };
@@ -388,40 +431,113 @@ export function OperationsDashboard() {
     };
   }, [trafficSeries]);
 
+  /* ---------- RENDER ---------- */
+
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.16),_transparent_30%),linear-gradient(180deg,#f3fbf6_0%,#e4f3e8_52%,#edf6ee_100%)] p-6 text-slate-900 md:p-8">
+    <div
+      className="min-h-screen p-6 text-slate-900 md:p-8"
+      style={PAGE_CONTAINER}
+    >
       <div className="mx-auto max-w-7xl space-y-6">
-        <div className="rounded-[30px] border border-white/80 bg-white/90 px-6 py-7 shadow-sm backdrop-blur md:px-8">
-          <div className="max-w-4xl">
-            <h1 className="text-3xl font-semibold tracking-tight text-slate-950 md:text-[2rem]">
+        {/* ====== HEADER & TITLE ====== */}
+        <div
+          className="rounded-[30px] px-6 py-10 shadow-lg backdrop-blur md:px-10 md:py-12"
+          style={{
+            backgroundColor: PAGE_HEADER.backgroundColor,
+            backgroundImage: `
+              linear-gradient(${MAIN_COLORS.aColor4}, ${MAIN_COLORS.aColor4}),
+              url(${mt_up})
+            `,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            border: PAGE_HEADER.border,
+          }}
+        >
+          <div className="max-w-3xl space-y-3">
+            <h1
+              className="font-semibold tracking-tight"
+              style={{
+                color: PAGE_HEADER.titleColor,
+                fontFamily: '"Vesper Libre", serif',
+                fontSize: PAGE_HEADER.titleFontSize,
+                lineHeight: PAGE_HEADER.titleLineHeight,
+                letterSpacing: PAGE_HEADER.titleLetterSpacing,
+              }}
+            >
               Tapp Marineterrein Urban Operations Intelligence Dashboard
             </h1>
-            <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-600">
-              Unified live view of crowd dynamics, access activity, environmental conditions, and infrastructure
-              health across the public space.
+
+            <div
+              style={{
+                width: "60px",
+                height: "3px",
+                backgroundColor: PAGE_HEADER.titleColor,
+                borderRadius: "2px",
+              }}
+            />
+
+            <p
+              className="leading-relaxed"
+              style={{
+                color: `rgba(255, 255, 255, ${PAGE_HEADER.subtitleOpacity})`,
+                fontSize: PAGE_HEADER.subtitleFontSize,
+                lineHeight: PAGE_HEADER.subtitleLineHeight,
+                letterSpacing: PAGE_HEADER.subtitleLetterSpacing,
+                maxWidth: "500px",
+              }}
+            >
+              Unified live view of crowd dynamics, access activity, environmental conditions, and infrastructure health across the public space.
             </p>
           </div>
         </div>
 
+        {/* ====== WEATHER WIDGET ====== */}
         <WeatherWidget />
 
- 
-
-        <div className="rounded-[30px] border border-emerald-200/90 bg-gradient-to-r from-emerald-50 via-white to-lime-50 px-6 py-6 text-slate-900 shadow-[0_18px_45px_rgba(21,128,61,0.10)] md:px-8">
+        {/* ====== FILTER CONTROLS ====== */}
+        <div
+          className="rounded-[30px] px-6 py-6 text-slate-900 md:px-8"
+          style={{
+            backgroundColor: FILTER_CONTROLS.backgroundColor,
+            backgroundImage: `
+              linear-gradient(${MAIN_COLORS.aColor3}, ${MAIN_COLORS.aColor3}),
+              url(${mt_down})
+            `,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            boxShadow: FILTER_CONTROLS.boxShadow,
+          }}
+        >
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
-              <p className="text-xs font-medium uppercase tracking-[0.22em] text-emerald-700">Operator controls</p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                Look up a specific location, signal, or incident pattern
+              <p
+                className="text-xs font-medium uppercase tracking-[0.22em]"
+                style={{ color: FILTER_CONTROLS.labelColor }}
+              >
+                Operator controls
+              </p>
+
+              <h2
+                className="mt-2 text-xl font-semibold tracking-tight"
+                style={{ color: FILTER_CONTROLS.titleColor }}
+              >
+                Look up a specific area, signal, or incident pattern
               </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Use filters to narrow the dashboard to a specific location, sensor category, alert severity, or time
+
+              <p
+                className="mt-2 text-sm leading-6"
+                style={{ color: FILTER_CONTROLS.descriptionColor }}
+              >
+                Use filters to narrow the dashboard to a specific zone, sensor category, alert severity, or time
                 window before reviewing the live operational picture below.
               </p>
             </div>
 
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm text-slate-700">
-              <span className="font-medium text-emerald-900">Current view:</span> {zone} · {category} · {severity} ·{" "}
+            <div
+              className="rounded-2xl border px-4 py-3 text-sm"
+              style={VIEW_STATUS}
+            >
+              <span style={{ color: VIEW_STATUS.color, fontWeight: 500 }}>Current view:</span> {zone} · {category} · {severity} ·{" "}
               {range}
             </div>
           </div>
@@ -430,10 +546,10 @@ export function OperationsDashboard() {
             <SelectLike dark label="Time range" value={range} onChange={setRange} options={timeRangeOptions} />
             <SelectLike
               dark
-              label="Location"
+              label="Zone"
               value={zone}
               onChange={setZone}
-              options={["All locations", ...zones.map((z) => z.name)]}
+              options={["All zones", ...zones.map((z) => z.name)]}
             />
             <SelectLike dark label="Sensor category" value={category} onChange={setCategory} options={sensorCategories} />
             <SelectLike dark label="Alert severity" value={severity} onChange={setSeverity} options={severityOptions} />
@@ -441,13 +557,15 @@ export function OperationsDashboard() {
           </div>
         </div>
 
+        {/* ====== ERROR STATE ====== */}
         {error ? (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
             {error}
           </div>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {/* ====== KEY PERFORMANCE INDICATORS ====== */}
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           {liveKpis.map((kpi) => {
             const Icon = kpi.icon;
             const TrendIcon = kpi.trend === "up" ? ArrowUpRight : ArrowDownRight;
@@ -459,12 +577,13 @@ export function OperationsDashboard() {
                     <div>
                       <p className="text-sm text-slate-500">{kpi.label}</p>
                       <div className="mt-2 flex items-end gap-2">
-                        <p className="text-2xl font-semibold tracking-tight text-slate-950">{kpi.value}</p>
+                        <p className="text-2xl font-semibold tracking-tight text-slate-950">
+                          {loading ? "…" : kpi.value}
+                        </p>
                         {kpi.delta ? (
                           <span
-                            className={`mb-1 inline-flex items-center gap-1 text-xs font-medium ${
-                              kpi.trend === "up" ? "text-emerald-700" : "text-rose-600"
-                            }`}
+                            className={`mb-1 inline-flex items-center gap-1 text-xs font-medium ${kpi.trend === "up" ? "text-emerald-700" : "text-rose-600"
+                              }`}
                           >
                             <TrendIcon className="h-3.5 w-3.5" />
                             {kpi.delta}
@@ -474,9 +593,15 @@ export function OperationsDashboard() {
                       <p className="mt-1 text-xs text-slate-500">{kpi.helper}</p>
                     </div>
 
-                    <div className="rounded-2xl bg-emerald-50 p-2.5 text-emerald-700">
-                      <Icon className="h-5 w-5" />
-                    </div>
+                    {typeof Icon === "string" ? (
+                      <img
+                        src={Icon}
+                        alt={`${kpi.label} icon`}
+                        className={`${kpi.iconSize ?? "h-8 w-8"} object-contain`}
+                      />
+                    ) : (
+                      <Icon className={kpi.iconSize ?? "h-8 w-8"} />
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -484,12 +609,13 @@ export function OperationsDashboard() {
           })}
         </div>
 
+        {/* ====== ACTIVITY & ALERTS SECTION ====== */}
         <div className="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
           <Card>
             <CardHeader>
               <SectionTitle
                 title="Live activity overview"
-                subtitle="People movement and overall activity in the current view"
+                subtitle="Footfall and combined traffic conditions in the current observation window"
               />
             </CardHeader>
             <CardContent className="space-y-5">
@@ -498,18 +624,18 @@ export function OperationsDashboard() {
                   <AreaChart data={livePedestrianTrend}>
                     <defs>
                       <linearGradient id="flowFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#047857" stopOpacity={0.22} />
-                        <stop offset="95%" stopColor="#047857" stopOpacity={0.03} />
+                        <stop offset="5%" stopColor={MAIN_COLORS.aColor1} stopOpacity={0.22} />
+                        <stop offset="95%" stopColor={MAIN_COLORS.aColor1} stopOpacity={0.03} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#dbe7df" />
-                    <XAxis dataKey="time" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={MAIN_COLORS.aColorBlack} />
+                    <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColor1, fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: MAIN_COLORS.aColor1, fontSize: 12 }} axisLine={false} tickLine={false} />
                     <Tooltip />
                     <Area
                       type="monotone"
                       dataKey="flow"
-                      stroke="#047857"
+                      stroke={MAIN_COLORS.aColor1}
                       fill="url(#flowFill)"
                       strokeWidth={2.2}
                       name="Pedestrian flow"
@@ -517,7 +643,7 @@ export function OperationsDashboard() {
                     <Line
                       type="monotone"
                       dataKey="crowd"
-                      stroke="#65a30d"
+                      stroke={MAIN_COLORS.aColorBlack}
                       strokeWidth={2}
                       dot={false}
                       name="Total flow"
@@ -547,7 +673,7 @@ export function OperationsDashboard() {
                     </div>
 
                     <p className="mt-3 text-2xl font-semibold text-slate-950">{item.visitors}</p>
-                    <p className="text-xs text-slate-500">estimated visitors right now</p>
+                    <p className="text-xs text-slate-500">estimated live visitors</p>
 
                     <div className="mt-3">
                       <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
@@ -556,9 +682,8 @@ export function OperationsDashboard() {
                       </div>
                       <div className="h-2 rounded-full bg-slate-200">
                         <div
-                          className={`h-2 rounded-full ${
-                            item.density >= 80 ? "bg-rose-500" : item.density >= 70 ? "bg-lime-500" : "bg-emerald-500"
-                          }`}
+                          className={`h-2 rounded-full ${item.density >= 80 ? "bg-rose-500" : item.density >= 70 ? "bg-lime-500" : "bg-emerald-500"
+                            }`}
                           style={{ width: `${item.density}%` }}
                         />
                       </div>
@@ -574,13 +699,31 @@ export function OperationsDashboard() {
               <SectionTitle title="Active alerts" subtitle="Prioritized for current shift response" />
             </CardHeader>
             <CardContent className="space-y-3">
+              {knmiLoading ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                  Loading KNMI warnings...
+                </div>
+              ) : null}
               {filteredAlerts.map((alert) => (
                 <div key={alert.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span
-                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${badgeStyles[alert.severity]}`}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            borderRadius: "9999px",
+                            border: `1px solid ${MAIN_COLORS.aColor1}`,
+                            paddingLeft: "0.625rem",
+                            paddingRight: "0.625rem",
+                            paddingTop: "0.25rem",
+                            paddingBottom: "0.25rem",
+                            fontSize: "0.75rem",
+                            fontWeight: 500,
+                            color: MAIN_COLORS.aColor1,
+                            backgroundColor: MAIN_COLORS.aColor3,
+                          }}
                         >
                           {alert.severity}
                         </span>
@@ -591,13 +734,12 @@ export function OperationsDashboard() {
                     </div>
 
                     <AlertTriangle
-                      className={`mt-1 h-4 w-4 ${
-                        alert.severity === "critical"
-                          ? "text-rose-600"
-                          : alert.severity === "warning"
-                            ? "text-amber-600"
-                            : "text-emerald-600"
-                      }`}
+                      className={`mt-1 h-4 w-4 ${alert.severity === "critical"
+                        ? "text-rose-600"
+                        : alert.severity === "warning"
+                          ? "text-amber-600"
+                          : "text-emerald-600"
+                        }`}
                     />
                   </div>
 
@@ -611,41 +753,12 @@ export function OperationsDashboard() {
           </Card>
         </div>
 
-    <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-  <div className="flex flex-col gap-6">
-
-
- {/* HOLIDAYS */}
-    <Card>
-      <CardHeader>
-        <SectionTitle
-          title="Public holidays (NL)"
-          subtitle="Days that may impact crowd levels"
-        />
-      </CardHeader>
-      <CardContent>
-        {holidays.slice(0, 5).map((holiday) => (
-          <div
-            key={holiday.date}
-            className="rounded-xl border border-slate-200 bg-slate-50 p-3 mb-2"
-          >
-            <p className="text-sm font-medium text-slate-800">
-              {holiday.localName}
-            </p>
-            <p className="text-xs text-slate-500">
-              {new Date(holiday.date).toLocaleDateString()}
-            </p>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-
-      
+        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <Card>
             <CardHeader>
               <SectionTitle
                 title="Mobility, access, and modality"
-                subtitle="Arrivals and transport mix for the selected view"
+                subtitle="Entry activity and transport composition for the selected view"
               />
             </CardHeader>
             <CardContent>
@@ -653,12 +766,12 @@ export function OperationsDashboard() {
                 <div className="h-[260px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={liveAccessActivity}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#dbe7df" />
-                      <XAxis dataKey="time" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={MAIN_COLORS.aColorBlack} />
+                      <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColor1, fontSize: 12 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: MAIN_COLORS.aColor1, fontSize: 12 }} axisLine={false} tickLine={false} />
                       <Tooltip />
-                      <Bar dataKey="access" radius={[8, 8, 0, 0]} fill="#047857" name="Pedestrian + bike" />
-                      <Bar dataKey="vehicles" radius={[8, 8, 0, 0]} fill="#84cc16" name="Vehicles" />
+                      <Bar dataKey="access" radius={[8, 8, 0, 0]} fill={MAIN_COLORS.aColor1} name="Pedestrian + bike" />
+                      <Bar dataKey="vehicles" radius={[8, 8, 0, 0]} fill={MAIN_COLORS.aColor2} name="Vehicles" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -668,7 +781,7 @@ export function OperationsDashboard() {
                     <div className="mb-4 flex items-center justify-between">
                       <div>
                         <p className="text-sm font-medium text-slate-800">Modality split</p>
-                        <p className="text-xs text-slate-500">Based on the current counts</p>
+                        <p className="text-xs text-slate-500">Computed from current Telraam totals</p>
                       </div>
                       <Router className="h-4 w-4 text-slate-500" />
                     </div>
@@ -678,7 +791,7 @@ export function OperationsDashboard() {
                         <PieChart>
                           <Pie data={liveModalitySplit} innerRadius={42} outerRadius={70} dataKey="value" paddingAngle={3}>
                             {liveModalitySplit.map((entry, index) => (
-                              <Cell key={entry.name} fill={["#047857", "#10b981", "#84cc16", "#d9f99d"][index % 4]} />
+                              <Cell key={entry.name} fill={[MAIN_COLORS.aColor1, MAIN_COLORS.aColor2, MAIN_COLORS.aColor2, MAIN_COLORS.aColor1][index % 4]} />
                             ))}
                           </Pie>
                           <Tooltip />
@@ -699,22 +812,22 @@ export function OperationsDashboard() {
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <div className="flex items-center gap-2">
                       <ScanLine className="h-4 w-4 text-slate-600" />
-                      <p className="text-sm font-medium text-slate-800">Latest count snapshot</p>
+                      <p className="text-sm font-medium text-slate-800">Scanner activity</p>
                     </div>
 
                     <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                       <div className="rounded-2xl bg-white p-3">
                         <p className="text-slate-500">Pedestrian + bike</p>
-                        <p className="mt-1 text-xl font-semibold text-slate-950">{scannerStats.access}</p>
+                        <p className="mt-1 text-xl font-semibold text-slate-950">{loading ? "…" : scannerStats.access}</p>
                       </div>
                       <div className="rounded-2xl bg-white p-3">
                         <p className="text-slate-500">Vehicles</p>
-                        <p className="mt-1 text-xl font-semibold text-slate-950">{scannerStats.vehicles}</p>
+                        <p className="mt-1 text-xl font-semibold text-slate-950">{loading ? "…" : scannerStats.vehicles}</p>
                       </div>
                     </div>
 
                     <p className="mt-3 text-xs text-slate-500">
-                      Based on the most recent update for the selected count point.
+                      Based on the latest interval recorded for the selected Telraam segment.
                     </p>
                   </div>
                 </div>
@@ -723,6 +836,7 @@ export function OperationsDashboard() {
           </Card>
 
           <div className="grid gap-6">
+            {/* ====== WATER & RECREATION STATUS ====== */}
             <Card>
               <CardHeader>
                 <SectionTitle title="Water & recreation status" subtitle="Swim area conditions and shoreline activity" />
@@ -763,7 +877,7 @@ export function OperationsDashboard() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-slate-800">Picnic activity</p>
-                      <p className="text-xs text-slate-500">Public space activity cue</p>
+                      <p className="text-xs text-slate-500">Harbor Edge occupancy cue</p>
                     </div>
                     <Trees className="h-4 w-4 text-slate-500" />
                   </div>
@@ -773,6 +887,7 @@ export function OperationsDashboard() {
               </CardContent>
             </Card>
 
+            {/* ====== INFRASTRUCTURE STATUS ====== */}
             <Card>
               <CardHeader>
                 <SectionTitle title="Public infrastructure" subtitle="Status of visible operational assets" />
@@ -801,27 +916,27 @@ export function OperationsDashboard() {
             </Card>
           </div>
         </div>
-</div>  
 
+        {/* ====== CORRELATION & HISTORICAL TRENDS ====== */}
         <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
           <Card>
             <CardHeader>
               <SectionTitle
                 title="Environmental + crowd correlation"
-                subtitle="A simple view of how activity and sound levels move together"
+                subtitle="Useful for anticipating comfort and escalation risk"
               />
             </CardHeader>
             <CardContent>
               <div className="h-[270px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={pedestrianTrend}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#dbe7df" />
-                    <XAxis dataKey="time" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="left" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={MAIN_COLORS.aColorBlack} />
+                    <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColor1, fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <YAxis yAxisId="left" tick={{ fill: MAIN_COLORS.aColor1, fontSize: 12 }} axisLine={false} tickLine={false} />
                     <YAxis
                       yAxisId="right"
                       orientation="right"
-                      tick={{ fill: "#64748b", fontSize: 12 }}
+                      tick={{ fill: MAIN_COLORS.aColor1, fontSize: 12 }}
                       axisLine={false}
                       tickLine={false}
                     />
@@ -830,7 +945,7 @@ export function OperationsDashboard() {
                       yAxisId="left"
                       type="monotone"
                       dataKey="crowd"
-                      stroke="#047857"
+                      stroke={MAIN_COLORS.aColor1}
                       strokeWidth={2.2}
                       name="Visitors"
                       dot={false}
@@ -839,7 +954,7 @@ export function OperationsDashboard() {
                       yAxisId="right"
                       type="monotone"
                       dataKey="sound"
-                      stroke="#65a30d"
+                      stroke={MAIN_COLORS.aColorBlack}
                       strokeWidth={2.2}
                       name="Sound dB"
                       dot={false}
@@ -880,11 +995,11 @@ export function OperationsDashboard() {
               <div className="h-[270px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={dailyTrend}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#dbe7df" />
-                    <XAxis dataKey="day" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={MAIN_COLORS.aColorBlack} />
+                    <XAxis dataKey="day" tick={{ fill: MAIN_COLORS.aColor1, fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: MAIN_COLORS.aColor1, fontSize: 12 }} axisLine={false} tickLine={false} />
                     <Tooltip />
-                    <Bar dataKey="visitors" fill="#047857" radius={[10, 10, 0, 0]} />
+                    <Bar dataKey="visitors" fill={MAIN_COLORS.aColor1} radius={[10, 10, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -907,12 +1022,13 @@ export function OperationsDashboard() {
           </Card>
         </div>
 
+        {/* ====== SENSOR HEALTH & OPERATOR NOTES ====== */}
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <Card className="order-2">
+          <Card>
             <CardHeader>
               <SectionTitle
-                title="System check"
-                subtitle="Action framing for the next 30–60 minutes"
+                title="Sensor health and system status"
+                subtitle="Operational readiness across the sensor network"
               />
             </CardHeader>
             <CardContent>
@@ -931,12 +1047,25 @@ export function OperationsDashboard() {
 
                     <div className="flex items-center gap-2 text-slate-500">
                       <Clock3 className="h-4 w-4" />
-                      <span>updated in the last few minutes</span>
+                      <span>heartbeat &lt; 2 min</span>
                     </div>
 
                     <div className="justify-self-end">
                       <span
-                        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${badgeStyles[item.status]}`}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          borderRadius: "9999px",
+                          border: `1px solid ${MAIN_COLORS.aColor1}`,
+                          paddingLeft: "0.625rem",
+                          paddingRight: "0.625rem",
+                          paddingTop: "0.25rem",
+                          paddingBottom: "0.25rem",
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                          color: MAIN_COLORS.aColor1,
+                          backgroundColor: MAIN_COLORS.aColor3,
+                        }}
                       >
                         {item.status === "offline" ? <WifiOff className="mr-1 h-3.5 w-3.5" /> : null}
                         {item.status}
@@ -948,7 +1077,7 @@ export function OperationsDashboard() {
             </CardContent>
           </Card>
 
-          <Card className="order-1">
+          <Card>
             <CardHeader>
               <SectionTitle title="Operator notes" subtitle="Action framing for the next 30–60 minutes" />
             </CardHeader>
@@ -956,9 +1085,9 @@ export function OperationsDashboard() {
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-sm font-medium text-slate-800">Recommended attention areas</p>
                 <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
-                  <li>CODAM (039): check whether the higher sound level is linked to an event or a temporary crowd build-up.</li>
-                  <li>TAPP (027 E): keep an eye on lunch-time activity if visitor numbers continue to rise.</li>
-                  <li>AHK MakerSpace (027 N): restore the camera feed so the team has full visual coverage again.</li>
+                  <li>Central Plaza: verify whether sound spike is event-related or emerging congestion.</li>
+                  <li>Swim Dock: prep soft crowd management if occupancy passes 80.</li>
+                  <li>Makers Court: restore CCTV shutter feed to recover full monitoring coverage.</li>
                 </ul>
               </div>
             </CardContent>

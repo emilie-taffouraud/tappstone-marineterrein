@@ -1,4 +1,5 @@
 import React from "react";
+import { MAIN_COLORS, CARD_STYLES, PILL_STYLES, SECTION_TITLE_STYLES, INPUT_STYLES } from "./theme";
 
 export function Card({
   className = "",
@@ -9,7 +10,8 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-3xl border border-emerald-100/80 bg-white/90 shadow-[0_12px_35px_rgba(21,128,61,0.08)] backdrop-blur ${className}`}
+        className={`rounded-3xl backdrop-blur ${className}`}
+    style={CARD_STYLES}
     >
       {children}
     </div>
@@ -50,6 +52,7 @@ export function CardContent({
   return <div className={`px-5 pb-5 ${className}`}>{children}</div>;
 }
 
+
 export function Pill({
   children,
   tone = "slate",
@@ -57,17 +60,20 @@ export function Pill({
   children: React.ReactNode;
   tone?: "slate" | "sky" | "emerald" | "amber" | "rose";
 }) {
-  const tones: Record<string, string> = {
-    slate: "border-stone-200 bg-stone-50 text-stone-700",
-    sky: "border-teal-200 bg-teal-50 text-teal-700",
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    amber: "border-amber-200 bg-amber-50 text-amber-700",
-    rose: "border-rose-200 bg-rose-50 text-rose-700",
-  };
+  const current = PILL_STYLES[tone];
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${tones[tone]}`}
+      style={{
+        border: `1px solid ${current.border}`,
+        backgroundColor: current.backgroundColor,
+        color: current.color,
+        padding: "0.25rem 0.75rem",
+        borderRadius: "9999px",
+        fontSize: "0.75rem",
+        fontWeight: 500,
+        display: "inline-block",
+      }}
     >
       {children}
     </span>
@@ -84,8 +90,8 @@ export function SectionTitle({
   return (
     <div className="mb-4 flex items-end justify-between gap-3">
       <div>
-        <h2 className="text-base font-semibold text-slate-900">{title}</h2>
-        {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
+        <h2 style={{ color: SECTION_TITLE_STYLES.title }} className="text-base font-semibold">{title}</h2>
+        {subtitle ? <p style={{ color: SECTION_TITLE_STYLES.subtitle }} className="mt-1 text-sm">{subtitle}</p> : null}
       </div>
     </div>
   );
@@ -105,29 +111,34 @@ export function SelectLike({
   dark?: boolean;
 }) {
   return (
-    <label className="flex min-w-[150px] flex-col gap-1.5">
-      <span
-        className={`text-xs font-medium uppercase tracking-[0.14em] ${
-          dark ? "text-emerald-800" : "text-slate-500"
-        }`}
-      >
-        {label}
-      </span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={`rounded-2xl px-3 py-2.5 text-sm outline-none ring-0 transition ${
-          dark
-            ? "border border-emerald-200 bg-white text-emerald-950 focus:border-emerald-500"
-            : "border border-slate-200 bg-white text-slate-800 focus:border-emerald-500"
-        }`}
-      >
-        {options.map((opt) => (
-          <option key={opt} className="text-slate-900">
-            {opt}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+  <label className="flex min-w-[150px] flex-col gap-1.5">
+    <span
+      className="text-xs font-medium uppercase tracking-[0.14em]"
+      style={{
+        color: dark ? MAIN_COLORS.aColor2 : MAIN_COLORS.aColorGray,
+      }}
+    >
+      {label}
+    </span>
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded-2xl px-3 py-2.5 text-sm outline-none ring-0 transition"
+      style={{
+        border: INPUT_STYLES.border,
+        backgroundColor: INPUT_STYLES.backgroundColor,
+        color: dark ? MAIN_COLORS.aColor4 : INPUT_STYLES.color,
+      }}
+      onFocus={(e) => {
+        e.currentTarget.style.borderColor = INPUT_STYLES.focusBorder;
+      }}
+    >
+      {options.map((opt) => (
+        <option key={opt} style={{ color: MAIN_COLORS.aColorBlack }}>
+          {opt}
+        </option>
+      ))}
+    </select>
+  </label>
+);
 }
