@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import footColor from "./images/People - Crossing - Color@2x.png";
+import bikeColor from "./images/People - Bike - Color.png";
+import carColor from "./images/Car - Clolor@2x.png";
+
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -286,7 +290,8 @@ export function OperationsDashboard() {
         delta: "",
         trend: "up" as const,
         helper: "counted in the current view",
-        icon: Users,
+        icon: footColor,
+        iconSize: "h-12 w-12", 
       },
       {
         label: "Cyclists",
@@ -294,7 +299,8 @@ export function OperationsDashboard() {
         delta: "",
         trend: "up" as const,
         helper: "counted in the current view",
-        icon: Router,
+        icon: bikeColor,
+        iconSize: "h-12 w-12",
       },
       {
         label: "Vehicles",
@@ -302,7 +308,8 @@ export function OperationsDashboard() {
         delta: "",
         trend: "up" as const,
         helper: "counted in the current view",
-        icon: Clock3,
+        icon: carColor,
+        iconSize: "h-12 w-12",
       },
     ];
   }, [summaryData]);
@@ -450,7 +457,9 @@ export function OperationsDashboard() {
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {liveKpis.map((kpi) => {
-            const Icon = kpi.icon;
+            const imageIcon = typeof kpi.icon === "string" ? kpi.icon : null;
+            const LucideIcon = typeof kpi.icon === "string" ? null : kpi.icon;
+            const iconClassName = kpi.iconSize ?? "h-5 w-5";
             const TrendIcon = kpi.trend === "up" ? ArrowUpRight : ArrowDownRight;
 
             return (
@@ -475,9 +484,11 @@ export function OperationsDashboard() {
                       <p className="mt-1 text-xs text-slate-500">{kpi.helper}</p>
                     </div>
 
-                    <div className="rounded-2xl bg-emerald-50 p-2.5 text-emerald-700">
-                      <Icon className="h-5 w-5" />
-                    </div>
+                    {imageIcon ? (
+                      <img src={imageIcon} alt={`${kpi.label} icon`} className={`${iconClassName} object-contain`} />
+                    ) : LucideIcon ? (
+                      <LucideIcon className={`${iconClassName} text-emerald-700`} />
+                    ) : null}
                   </div>
                 </CardContent>
               </Card>
