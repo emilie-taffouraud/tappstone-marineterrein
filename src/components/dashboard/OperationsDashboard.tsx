@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import footColor from "./images/People - Crossing - Color@2x.png";
 import bikeColor from "./images/People - Bike - Color.png";
 import carColor from "./images/Car - Clolor@2x.png";
+import mt_up from "./images/mt_up.jpg";
+import mt_down from "./images/mt_down.jpg";
 
 import {
   AlertTriangle,
@@ -49,15 +51,7 @@ import {
 } from "../../data/mockDashboardData";
 import { Card, CardContent, CardHeader, Pill, SectionTitle, SelectLike } from "./ui";
 import WeatherWidget from "./WeatherWidget";
-
-const badgeStyles: Record<string, string> = {
-  info: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  warning: "bg-amber-100 text-amber-800 border-amber-200",
-  critical: "bg-rose-100 text-rose-700 border-rose-200",
-  healthy: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  degraded: "bg-lime-100 text-lime-800 border-lime-200",
-  offline: "bg-rose-100 text-rose-700 border-rose-200",
-};
+import { MAIN_COLORS, getBadgeStyle } from "./theme";
 
 type SummaryResponse = {
   rows_loaded: string | number;
@@ -113,6 +107,12 @@ type KnmiWarningsResponse = {
 
 const SEGMENT_ID = 9000006266;
 const API_BASE_URL = "";
+
+const alertIconColor = (severity: "info" | "warning" | "critical") => {
+  if (severity === "critical") return MAIN_COLORS.aColorBlack;
+  if (severity === "warning") return MAIN_COLORS.aColor1;
+  return MAIN_COLORS.aColor2;
+};
 
 export function OperationsDashboard() {
   const [zone, setZone] = useState("All locations");
@@ -397,14 +397,31 @@ export function OperationsDashboard() {
   }, [trafficSeries]);
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.16),_transparent_30%),linear-gradient(180deg,#f3fbf6_0%,#e4f3e8_52%,#edf6ee_100%)] p-6 text-slate-900 md:p-8">
+    <div
+      className="min-h-screen p-6 md:p-8"
+      style={{
+        color: MAIN_COLORS.aColorBlack,
+        backgroundImage: `radial-gradient(circle at top, ${MAIN_COLORS.aColor1}22, transparent 30%), linear-gradient(180deg, ${MAIN_COLORS.aColorWhite} 0%, ${MAIN_COLORS.aColor3} 52%, ${MAIN_COLORS.aColorWhite} 100%)`,
+      }}
+    >
       <div className="mx-auto max-w-7xl space-y-6">
-        <div className="rounded-[30px] border border-white/80 bg-white/90 px-6 py-7 shadow-sm backdrop-blur md:px-8">
+        <div
+          className="rounded-[30px] px-6 py-7 backdrop-blur md:px-8"
+          style={{
+            border: `1px solid ${MAIN_COLORS.aColorWhite}cc`,
+            backgroundColor: MAIN_COLORS.aColorBlack,
+            backgroundImage: `
+              linear-gradient(${MAIN_COLORS.aColor4}, ${MAIN_COLORS.aColor4}),
+              url(${mt_up})
+            `,
+            boxShadow: `0 12px 35px ${MAIN_COLORS.aColorBlack}22`,
+          }}
+        >
           <div className="max-w-4xl">
-            <h1 className="text-3xl font-semibold tracking-tight text-slate-950 md:text-[2rem]">
+            <h1 className="text-3xl font-semibold tracking-tight md:text-[2rem]" style={{ color: MAIN_COLORS.aColor2 }}>
               Tapp Marineterrein Urban Operations Intelligence Dashboard
             </h1>
-            <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-600">
+            <p className="mt-3 max-w-4xl text-sm leading-6" style={{ color: MAIN_COLORS.aColorWhite }}>
               Unified live view of crowd dynamics, access activity, environmental conditions, and infrastructure
               health across the public space.
             </p>
@@ -413,23 +430,44 @@ export function OperationsDashboard() {
 
         <WeatherWidget />
 
- 
-
-        <div className="rounded-[30px] border border-emerald-200/90 bg-gradient-to-r from-emerald-50 via-white to-lime-50 px-6 py-6 text-slate-900 shadow-[0_18px_45px_rgba(21,128,61,0.10)] md:px-8">
+        <div
+          className="rounded-[30px] px-6 py-6 md:px-8"
+          style={{
+            border: `1px solid ${MAIN_COLORS.aColor1}66`,
+            backgroundImage: `
+              linear-gradient(${MAIN_COLORS.aColor3}, ${MAIN_COLORS.aColor3}),
+              url(${mt_down})
+            `,
+            color: MAIN_COLORS.aColorBlack,
+            boxShadow: `0 18px 45px ${MAIN_COLORS.aColorBlack}1a`,
+          }}
+        >
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
-              <p className="text-xs font-medium uppercase tracking-[0.22em] text-emerald-700">Operator controls</p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
+              <p className="text-xs font-medium uppercase tracking-[0.22em]" style={{ color: MAIN_COLORS.aColor1 }}>
+                Operator controls
+              </p>
+              <h2 className="mt-2 text-xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
                 Look up a specific location, signal, or incident pattern
               </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
+              <p className="mt-2 text-sm leading-6" style={{ color: MAIN_COLORS.aColorGray }}>
                 Use filters to narrow the dashboard to a specific location, sensor category, alert severity, or time
                 window before reviewing the live operational picture below.
               </p>
             </div>
 
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm text-slate-700">
-              <span className="font-medium text-emerald-900">Current view:</span> {zone} · {category} · {severity} ·{" "}
+            <div
+              className="rounded-2xl px-4 py-3 text-sm"
+              style={{
+                border: `1px solid ${MAIN_COLORS.aColor1}66`,
+                backgroundColor: `${MAIN_COLORS.aColor3}`,
+                color: MAIN_COLORS.aColorBlack,
+              }}
+            >
+              <span className="font-medium" style={{ color: MAIN_COLORS.aColor1 }}>
+                Current view:
+              </span>{" "}
+              {zone} · {category} · {severity} ·{" "}
               {range}
             </div>
           </div>
@@ -450,7 +488,14 @@ export function OperationsDashboard() {
         </div>
 
         {error ? (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+          <div
+            className="rounded-2xl px-5 py-4 text-sm"
+            style={{
+              border: `1px solid ${MAIN_COLORS.aColorBlack}44`,
+              backgroundColor: `${MAIN_COLORS.aColor3}`,
+              color: MAIN_COLORS.aColorBlack,
+            }}
+          >
             {error}
           </div>
         ) : null}
@@ -467,27 +512,32 @@ export function OperationsDashboard() {
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm text-slate-500">{kpi.label}</p>
+                      <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
+                        {kpi.label}
+                      </p>
                       <div className="mt-2 flex items-end gap-2">
-                        <p className="text-2xl font-semibold tracking-tight text-slate-950">{kpi.value}</p>
+                        <p className="text-2xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
+                          {kpi.value}
+                        </p>
                         {kpi.delta ? (
                           <span
-                            className={`mb-1 inline-flex items-center gap-1 text-xs font-medium ${
-                              kpi.trend === "up" ? "text-emerald-700" : "text-rose-600"
-                            }`}
+                            className="mb-1 inline-flex items-center gap-1 text-xs font-medium"
+                            style={{ color: kpi.trend === "up" ? MAIN_COLORS.aColor1 : MAIN_COLORS.aColorBlack }}
                           >
                             <TrendIcon className="h-3.5 w-3.5" />
                             {kpi.delta}
                           </span>
                         ) : null}
                       </div>
-                      <p className="mt-1 text-xs text-slate-500">{kpi.helper}</p>
+                      <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                        {kpi.helper}
+                      </p>
                     </div>
 
                     {imageIcon ? (
                       <img src={imageIcon} alt={`${kpi.label} icon`} className={`${iconClassName} object-contain`} />
                     ) : LucideIcon ? (
-                      <LucideIcon className={`${iconClassName} text-emerald-700`} />
+                      <LucideIcon className={iconClassName} style={{ color: MAIN_COLORS.aColor1 }} />
                     ) : null}
                   </div>
                 </CardContent>
@@ -510,18 +560,23 @@ export function OperationsDashboard() {
                   <AreaChart data={livePedestrianTrend}>
                     <defs>
                       <linearGradient id="flowFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#047857" stopOpacity={0.22} />
-                        <stop offset="95%" stopColor="#047857" stopOpacity={0.03} />
+                        <stop offset="5%" stopColor={MAIN_COLORS.aColor1} stopOpacity={0.22} />
+                        <stop offset="95%" stopColor={MAIN_COLORS.aColor1} stopOpacity={0.03} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#dbe7df" />
-                    <XAxis dataKey="time" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}55`} />
+                    <XAxis
+                      dataKey="time"
+                      tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
                     <Tooltip />
                     <Area
                       type="monotone"
                       dataKey="flow"
-                      stroke="#047857"
+                      stroke={MAIN_COLORS.aColor1}
                       fill="url(#flowFill)"
                       strokeWidth={2.2}
                       name="Pedestrian flow"
@@ -529,7 +584,7 @@ export function OperationsDashboard() {
                     <Line
                       type="monotone"
                       dataKey="crowd"
-                      stroke="#65a30d"
+                      stroke={MAIN_COLORS.aColor2}
                       strokeWidth={2}
                       dot={false}
                       name="Total flow"
@@ -540,9 +595,15 @@ export function OperationsDashboard() {
 
               <div className="grid gap-3 md:grid-cols-4">
                 {crowdByZone.map((item) => (
-                  <div key={item.zone} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div
+                    key={item.zone}
+                    className="rounded-2xl p-4"
+                    style={{ border: `1px solid ${MAIN_COLORS.aColorGray}44`, backgroundColor: `${MAIN_COLORS.aColor3}` }}
+                  >
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-slate-800">{item.zone}</p>
+                      <p className="text-sm font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
+                        {item.zone}
+                      </p>
                       <Pill
                         tone={
                           item.status === "busy"
@@ -558,15 +619,19 @@ export function OperationsDashboard() {
                       </Pill>
                     </div>
 
-                    <p className="mt-3 text-2xl font-semibold text-slate-950">{item.visitors}</p>
-                    <p className="text-xs text-slate-500">estimated visitors right now</p>
+                    <p className="mt-3 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                      {item.visitors}
+                    </p>
+                    <p className="text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                      estimated visitors right now
+                    </p>
 
                     <div className="mt-3">
-                      <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+                      <div className="mb-1 flex items-center justify-between text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
                         <span>Density index</span>
                         <span>{item.density}%</span>
                       </div>
-                      <div className="h-2 rounded-full bg-slate-200">
+                      <div className="h-2 rounded-full" style={{ backgroundColor: `${MAIN_COLORS.aColorGray}33` }}>
                         <div
                           className={`h-2 rounded-full ${
                             item.density >= 80 ? "bg-rose-500" : item.density >= 70 ? "bg-lime-500" : "bg-emerald-500"
@@ -587,30 +652,33 @@ export function OperationsDashboard() {
             </CardHeader>
             <CardContent className="space-y-3">
               {filteredAlerts.map((alert) => (
-                <div key={alert.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div
+                  key={alert.id}
+                  className="rounded-2xl p-4"
+                  style={{ border: `1px solid ${MAIN_COLORS.aColorGray}44`, backgroundColor: `${MAIN_COLORS.aColor3}` }}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span
-                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${badgeStyles[alert.severity]}`}
+                          className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium"
+                          style={getBadgeStyle(alert.severity)}
                         >
                           {alert.severity}
                         </span>
-                        <span className="text-xs text-slate-500">{alert.time}</span>
+                        <span className="text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                          {alert.time}
+                        </span>
                       </div>
-                      <h4 className="text-sm font-semibold text-slate-900">{alert.title}</h4>
-                      <p className="text-sm text-slate-600">{alert.detail}</p>
+                      <h4 className="text-sm font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                        {alert.title}
+                      </h4>
+                      <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
+                        {alert.detail}
+                      </p>
                     </div>
 
-                    <AlertTriangle
-                      className={`mt-1 h-4 w-4 ${
-                        alert.severity === "critical"
-                          ? "text-rose-600"
-                          : alert.severity === "warning"
-                            ? "text-amber-600"
-                            : "text-emerald-600"
-                      }`}
-                    />
+                    <AlertTriangle className="mt-1 h-4 w-4" style={{ color: alertIconColor(alert.severity) }} />
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -665,12 +733,17 @@ export function OperationsDashboard() {
                 <div className="h-[260px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={liveAccessActivity}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#dbe7df" />
-                      <XAxis dataKey="time" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}55`} />
+                      <XAxis
+                        dataKey="time"
+                        tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
                       <Tooltip />
-                      <Bar dataKey="access" radius={[8, 8, 0, 0]} fill="#047857" name="Pedestrian + bike" />
-                      <Bar dataKey="vehicles" radius={[8, 8, 0, 0]} fill="#84cc16" name="Vehicles" />
+                      <Bar dataKey="access" radius={[8, 8, 0, 0]} fill={MAIN_COLORS.aColor1} name="Pedestrian + bike" />
+                      <Bar dataKey="vehicles" radius={[8, 8, 0, 0]} fill={MAIN_COLORS.aColor2} name="Vehicles" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -690,7 +763,10 @@ export function OperationsDashboard() {
                         <PieChart>
                           <Pie data={liveModalitySplit} innerRadius={42} outerRadius={70} dataKey="value" paddingAngle={3}>
                             {liveModalitySplit.map((entry, index) => (
-                              <Cell key={entry.name} fill={["#047857", "#10b981", "#84cc16", "#d9f99d"][index % 4]} />
+                              <Cell
+                                key={entry.name}
+                                fill={[MAIN_COLORS.aColor1, MAIN_COLORS.aColor2, `${MAIN_COLORS.aColor1}99`, `${MAIN_COLORS.aColor2}66`][index % 4]}
+                              />
                             ))}
                           </Pie>
                           <Tooltip />
@@ -827,13 +903,23 @@ export function OperationsDashboard() {
               <div className="h-[270px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={pedestrianTrend}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#dbe7df" />
-                    <XAxis dataKey="time" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="left" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}55`} />
+                    <XAxis
+                      dataKey="time"
+                      tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      yAxisId="left"
+                      tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
                     <YAxis
                       yAxisId="right"
                       orientation="right"
-                      tick={{ fill: "#64748b", fontSize: 12 }}
+                      tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
                       axisLine={false}
                       tickLine={false}
                     />
@@ -842,7 +928,7 @@ export function OperationsDashboard() {
                       yAxisId="left"
                       type="monotone"
                       dataKey="crowd"
-                      stroke="#047857"
+                      stroke={MAIN_COLORS.aColor1}
                       strokeWidth={2.2}
                       name="Visitors"
                       dot={false}
@@ -851,7 +937,7 @@ export function OperationsDashboard() {
                       yAxisId="right"
                       type="monotone"
                       dataKey="sound"
-                      stroke="#65a30d"
+                      stroke={MAIN_COLORS.aColor2}
                       strokeWidth={2.2}
                       name="Sound dB"
                       dot={false}
@@ -892,11 +978,11 @@ export function OperationsDashboard() {
               <div className="h-[270px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={dailyTrend}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#dbe7df" />
-                    <XAxis dataKey="day" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}55`} />
+                    <XAxis dataKey="day" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
                     <Tooltip />
-                    <Bar dataKey="visitors" fill="#047857" radius={[10, 10, 0, 0]} />
+                    <Bar dataKey="visitors" fill={MAIN_COLORS.aColor1} radius={[10, 10, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -948,7 +1034,8 @@ export function OperationsDashboard() {
 
                     <div className="justify-self-end">
                       <span
-                        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${badgeStyles[item.status]}`}
+                        className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium"
+                        style={getBadgeStyle(item.status)}
                       >
                         {item.status === "offline" ? <WifiOff className="mr-1 h-3.5 w-3.5" /> : null}
                         {item.status}

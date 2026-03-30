@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { MAIN_COLORS } from './theme';
 
 const WeatherWidget = () => {
   const [weather, setWeather] = useState<any>(null);
@@ -46,19 +47,33 @@ const WeatherWidget = () => {
   };
 
   return (
-    <div className="bg-white rounded-[2rem] p-6 w-full flex flex-col md:flex-row items-center justify-between mb-6">
+    <div
+      className="mb-6 flex w-full flex-col items-center justify-between rounded-[2rem] p-6 md:flex-row"
+      style={{
+        backgroundColor: MAIN_COLORS.aColor3,
+        border: `1px solid ${MAIN_COLORS.aColorWhite}cc`,
+        boxShadow: `0 12px 35px ${MAIN_COLORS.aColorBlack}14`,
+      }}
+    >
       
       {/* left side: current weather */}
-      <div className="flex items-center space-x-6 md:pr-10 md:border-r md:border-gray-100 mb-6 md:mb-0 shrink-0">
+      <div
+        className="mb-6 flex shrink-0 items-center space-x-6 md:mb-0 md:pr-10"
+        style={{ borderRight: `1px solid ${MAIN_COLORS.aColorGray}33` }}
+      >
         <img 
           src={weather.current.condition.icon} 
           alt="Weather Icon" 
           className="w-20 h-20 drop-shadow-sm"
         />
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">{weather.location.name}</h2>
-          <p className="text-sm text-gray-500 capitalize">{weather.current.condition.text}</p>
-          <div className="text-4xl font-black text-gray-900 mt-1">
+          <h2 className="text-2xl font-bold" style={{ color: MAIN_COLORS.aColorBlack }}>
+            {weather.location.name}
+          </h2>
+          <p className="text-sm capitalize" style={{ color: MAIN_COLORS.aColorGray }}>
+            {weather.current.condition.text}
+          </p>
+          <div className="mt-1 text-4xl font-black" style={{ color: MAIN_COLORS.aColorBlack }}>
             {Math.round(weather.current.temp_c)}°
           </div>
         </div>
@@ -70,7 +85,7 @@ const WeatherWidget = () => {
         {nextHours.map((hour: any) => (
           <div key={hour.time_epoch} className="flex flex-col items-center min-w-[45px]">
             {/* time (e.g., 14:00) */}
-            <p className="text-[11px] font-bold text-emerald-700 tracking-wider mb-2">
+            <p className="mb-2 text-[11px] font-bold tracking-wider" style={{ color: MAIN_COLORS.aColor1 }}>
               {formatTime(hour.time)}
             </p>
             {/* weather icon */}
@@ -80,12 +95,12 @@ const WeatherWidget = () => {
               className="w-10 h-10 mb-2 drop-shadow-sm"
             />
             {/* temperature */}
-            <span className="font-bold text-gray-900 text-sm">
+            <span className="text-sm font-bold" style={{ color: MAIN_COLORS.aColorBlack }}>
               {Math.round(hour.temp_c)}°
             </span>
             {/* chance of rain: only show if greater than 0, which is important for operational decisions */}
             {hour.chance_of_rain > 0 ? (
-              <span className="text-[10px] text-blue-500 font-semibold mt-1">
+              <span className="mt-1 text-[10px] font-semibold" style={{ color: MAIN_COLORS.aColor2 }}>
                 {hour.chance_of_rain}% 💧
               </span>
             ) : (
