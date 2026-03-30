@@ -1,4 +1,5 @@
 import React from "react";
+import { MAIN_COLORS } from "./theme";
 
 export function Card({
   className = "",
@@ -9,7 +10,12 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-3xl border border-emerald-100/80 bg-white/90 shadow-[0_12px_35px_rgba(21,128,61,0.08)] backdrop-blur ${className}`}
+      className={`rounded-3xl backdrop-blur ${className}`}
+      style={{
+        border: `1px solid ${MAIN_COLORS.aColorWhite}cc`,
+        backgroundColor: `${MAIN_COLORS.aColor3}`,
+        boxShadow: `0 12px 35px ${MAIN_COLORS.aColorBlack}14`,
+      }}
     >
       {children}
     </div>
@@ -34,7 +40,7 @@ export function CardTitle({
   children: React.ReactNode;
 }) {
   return (
-    <h3 className={`text-sm font-semibold tracking-tight text-slate-900 ${className}`}>
+    <h3 className={`text-sm font-semibold tracking-tight ${className}`} style={{ color: MAIN_COLORS.aColorBlack }}>
       {children}
     </h3>
   );
@@ -57,17 +63,38 @@ export function Pill({
   children: React.ReactNode;
   tone?: "slate" | "sky" | "emerald" | "amber" | "rose";
 }) {
-  const tones: Record<string, string> = {
-    slate: "border-stone-200 bg-stone-50 text-stone-700",
-    sky: "border-teal-200 bg-teal-50 text-teal-700",
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    amber: "border-amber-200 bg-amber-50 text-amber-700",
-    rose: "border-rose-200 bg-rose-50 text-rose-700",
+  const tones: Record<string, React.CSSProperties> = {
+    slate: {
+      borderColor: `${MAIN_COLORS.aColorGray}4d`,
+      backgroundColor: `${MAIN_COLORS.aColorGray}14`,
+      color: MAIN_COLORS.aColorGray,
+    },
+    sky: {
+      borderColor: `${MAIN_COLORS.aColor2}66`,
+      backgroundColor: `${MAIN_COLORS.aColor2}1a`,
+      color: MAIN_COLORS.aColor2,
+    },
+    emerald: {
+      borderColor: `${MAIN_COLORS.aColor1}66`,
+      backgroundColor: `${MAIN_COLORS.aColor1}1a`,
+      color: MAIN_COLORS.aColor1,
+    },
+    amber: {
+      borderColor: `${MAIN_COLORS.aColor1}99`,
+      backgroundColor: `${MAIN_COLORS.aColor1}26`,
+      color: MAIN_COLORS.aColor1,
+    },
+    rose: {
+      borderColor: `${MAIN_COLORS.aColorBlack}66`,
+      backgroundColor: `${MAIN_COLORS.aColorBlack}12`,
+      color: MAIN_COLORS.aColorBlack,
+    },
   };
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${tones[tone]}`}
+      className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium"
+      style={tones[tone]}
     >
       {children}
     </span>
@@ -84,8 +111,14 @@ export function SectionTitle({
   return (
     <div className="mb-4 flex items-end justify-between gap-3">
       <div>
-        <h2 className="text-base font-semibold text-slate-900">{title}</h2>
-        {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
+        <h2 className="text-base font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+          {title}
+        </h2>
+        {subtitle ? (
+          <p className="mt-1 text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
+            {subtitle}
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -107,23 +140,23 @@ export function SelectLike({
   return (
     <label className="flex min-w-[150px] flex-col gap-1.5">
       <span
-        className={`text-xs font-medium uppercase tracking-[0.14em] ${
-          dark ? "text-emerald-800" : "text-slate-500"
-        }`}
+        className="text-xs font-medium uppercase tracking-[0.14em]"
+        style={{ color: dark ? MAIN_COLORS.aColor1 : MAIN_COLORS.aColorGray }}
       >
         {label}
       </span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`rounded-2xl px-3 py-2.5 text-sm outline-none ring-0 transition ${
-          dark
-            ? "border border-emerald-200 bg-white text-emerald-950 focus:border-emerald-500"
-            : "border border-slate-200 bg-white text-slate-800 focus:border-emerald-500"
-        }`}
+        className="rounded-2xl border px-3 py-2.5 text-sm outline-none ring-0 transition"
+        style={{
+          borderColor: dark ? `${MAIN_COLORS.aColor1}66` : `${MAIN_COLORS.aColorGray}4d`,
+          backgroundColor: MAIN_COLORS.aColorWhite,
+          color: MAIN_COLORS.aColorBlack,
+        }}
       >
         {options.map((opt) => (
-          <option key={opt} className="text-slate-900">
+          <option key={opt} style={{ color: MAIN_COLORS.aColorBlack }}>
             {opt}
           </option>
         ))}

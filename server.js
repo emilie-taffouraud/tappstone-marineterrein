@@ -247,9 +247,44 @@ app.get("/api/weather", async (req, res) => {
   }
 });
 
+
+// ---------- Holidays API routes ----------
+app.get("/api/holidays", async (req, res) => {
+  try {
+    const year = req.query.year || new Date().getFullYear();
+
+    console.log("Fetching holidays for year:", year);
+
+    const response = await fetch(
+      `https://date.nager.at/api/v3/PublicHolidays/${year}/NL`
+    );
+
+    if (!response.ok) {
+      throw new Error(`Holiday API failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    res.json({
+      status: "ok",
+      source: "Nager.Date",
+      year,
+      count: data.length,
+      data,
+    });
+  } catch (err) {
+    console.error("Holiday API error:", err);
+    res.status(500).json({
+      status: "error",
+      source: "Nager.Date",
+      message: err.message,
+    });
+  }
+});
+
+
 // fallback route
 app.get("/", (req, res) => {
-  res.send("Telraam + KNMI API running");
+  res.send("Telraam + KNMI + Calendar API running");
 });
 
 const PORT = process.env.PORT || 3000;
