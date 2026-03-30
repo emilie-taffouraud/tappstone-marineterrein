@@ -9,7 +9,8 @@ export type Kpi = {
   delta: string;
   trend: "up" | "down";
   helper: string;
-  icon: LucideIcon;
+  icon: string | LucideIcon;
+  iconSize?: string;
 };
 
 export type AlertItem = {
