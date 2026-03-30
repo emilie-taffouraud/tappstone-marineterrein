@@ -13,7 +13,7 @@ export const MAIN_COLORS = {
   aColorGray: "#6c6c6c",
   aColor1: "#016991",      // Primary accent (teal)
   aColor2: "#00ADEF",      // Secondary accent (blue)
-  aColor3: "#f2f2f2ec",    // Light background
+  aColor3: "#fcfcfcec",    // Light background
   aColor4: "#0e1124ec",    // Dark blue overlay
 } as const;
 

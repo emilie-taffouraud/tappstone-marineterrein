@@ -57,6 +57,7 @@ import {
 import { Card, CardContent, CardHeader, Pill, SectionTitle, SelectLike } from "./ui";
 import WeatherWidget from "./WeatherWidget";
 import { MAIN_COLORS, getBadgeStyle } from "./theme";
+import { MapView } from "./MapView";
 
 // Backend response shapes
 type SummaryResponse = {
@@ -436,6 +437,7 @@ export function OperationsDashboard() {
               linear-gradient(${MAIN_COLORS.aColor4}, ${MAIN_COLORS.aColor4}),
               url(${mt_up})
             `,
+            backgroundPosition: "0 0, center bottom",
             boxShadow: `0 12px 35px ${MAIN_COLORS.aColorBlack}22`,
           }}
         >
@@ -508,6 +510,29 @@ export function OperationsDashboard() {
             <SelectLike dark label="View mode" value={mode} onChange={setMode} options={modeOptions} />
           </div>
         </div>
+
+        {/* Interactive map */}
+        <Card>
+          <CardHeader>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.22em]" style={{ color: MAIN_COLORS.aColor1 }}>Live map</p>
+              <p className="mt-1 text-sm" style={{ color: MAIN_COLORS.aColorGray }}>Sensor and count locations for the selected view</p>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <MapView
+              center={[52.3771, 4.9168]}   
+              zoom={15}
+              height="420px"   
+              markers={[
+                { id: "main-entrance", lat: 52.37256228505068, lng: 4.917815245538353, label: "Main entrance", description: "Primary pedestrian access point" },
+                { id: "codam", lat: 52.374469, lng: 4.915641, label: "CODAM (039)", description: "Sound level elevated" },
+                { id: "tapp-e", lat: 52.37247851399919, lng: 4.917577304563304 , label: "TAPP 027 E", description: "Watch: rising visitor count" },
+                { id: "ahk", lat: 52.373927, lng: 4.915432, label: "AHK MakerSpace (027 N)", description: "Camera feed offline" },
+              ]}
+            />
+          </CardContent>
+        </Card>
 
         {error ? (
           <div
@@ -724,8 +749,22 @@ export function OperationsDashboard() {
               />
             </CardHeader>
             <CardContent>
-              <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-                <div className="h-[260px]">
+              <div className="grid gap-6 lg:grid-cols-[1.4fr_0.85fr]">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-800">Access trend by time</p>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-slate-600">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: MAIN_COLORS.aColor1 }} />
+                        Pedestrian + bike
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-slate-600">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: MAIN_COLORS.aColor2 }} />
+                        Vehicles
+                      </span>
+                    </div>
+                  </div>
+                  <div className="h-[320px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={liveAccessActivity}>
                       <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}55`} />
@@ -735,15 +774,16 @@ export function OperationsDashboard() {
                         axisLine={false}
                         tickLine={false}
                       />
-                      <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} width={34} />
                       <Tooltip />
-                      <Bar dataKey="access" radius={[8, 8, 0, 0]} fill={MAIN_COLORS.aColor1} name="Pedestrian + bike" />
-                      <Bar dataKey="vehicles" radius={[8, 8, 0, 0]} fill={MAIN_COLORS.aColor2} name="Vehicles" />
+                      <Bar dataKey="access" radius={[8, 8, 0, 0]} fill={MAIN_COLORS.aColor1} name="Pedestrian + bike" barSize={24} />
+                      <Bar dataKey="vehicles" radius={[8, 8, 0, 0]} fill={MAIN_COLORS.aColor2} name="Vehicles" barSize={24} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+                </div>
 
-                <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-1">
+                <div className="grid gap-5 md:grid-cols-1">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-4 flex items-center justify-between">
                       <div>
@@ -782,17 +822,20 @@ export function OperationsDashboard() {
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <div className="flex items-center gap-2">
                       <ScanLine className="h-4 w-4 text-slate-600" />
-                      <p className="text-sm font-medium text-slate-800">Latest count snapshot</p>
+                      <p className="text-sm font-semibold text-slate-800">Latest count snapshot</p>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                      <div className="rounded-2xl bg-white p-3">
-                        <p className="text-slate-500">Pedestrian + bike</p>
-                        <p className="mt-1 text-xl font-semibold text-slate-950">{scannerStats.access}</p>
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                        <p className="text-[11px] font-medium leading-tight text-slate-500">
+                          <span className="block">Pedestrian</span>
+                          <span className="block">+ bike</span>
+                        </p>
+                        <p className="mt-1 text-2xl font-semibold leading-none text-slate-950">{scannerStats.access}</p>
                       </div>
-                      <div className="rounded-2xl bg-white p-3">
-                        <p className="text-slate-500">Vehicles</p>
-                        <p className="mt-1 text-xl font-semibold text-slate-950">{scannerStats.vehicles}</p>
+                      <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                        <p className="text-[11px] font-medium leading-tight text-slate-500">Vehicles</p>
+                        <p className="mt-1 text-2xl font-semibold leading-none text-slate-950">{scannerStats.vehicles}</p>
                       </div>
                     </div>
 
