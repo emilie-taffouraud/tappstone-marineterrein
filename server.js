@@ -256,6 +256,7 @@ app.get("/api/weather", async (req, res) => {
   }
 });
 
+
 // ---------- Holidays API routes ----------
 app.get("/api/holidays", async (req, res) => {
   try {
@@ -288,6 +289,7 @@ app.get("/api/holidays", async (req, res) => {
     });
   }
 });
+
 
 // fallback route
 app.get("/", (req, res) => {
