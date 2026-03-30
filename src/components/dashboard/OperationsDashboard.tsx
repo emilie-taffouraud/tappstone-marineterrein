@@ -29,21 +29,28 @@ import {
   YAxis,
 } from "recharts";
 import {
-  alertsData,
-  anomalyPanel,
-  crowdByZone,
-  dailyTrend,
-  infrastructureStatus,
-  kpis,
+  anomalyPanel as demoAnomalyPanel,
+  crowdByZone as demoCrowdByZone,
+  dailyTrend as demoDailyTrend,
+  infrastructureStatus as demoInfrastructureStatus,
   modeOptions,
-  pedestrianTrend,
-  sensorCategories,
-  sensorHealth,
+  pedestrianTrend as demoPedestrianTrend,
+  sensorCategories as dashboardSensorCategories,
   severityOptions,
   timeRangeOptions,
   zones,
 } from "../../data/mockDashboardData";
+import { useOpsLiveData } from "../../hooks/useOpsLiveData";
 import { Card, CardContent, CardHeader, Pill, SectionTitle, SelectLike } from "./ui";
+import { LiveOperationsMapSection } from "./live-map/LiveOperationsMapSection";
+import {
+  deriveLiveAlerts,
+  deriveLiveKpis,
+  deriveLiveMetaSummary,
+  deriveMobilitySnapshot,
+  deriveSourceHealthItems,
+  deriveWeatherWidgetModel,
+} from "./opsLiveViewModel";
 import WeatherWidget from "./WeatherWidget";
 
 const badgeStyles: Record<string, string> = {
@@ -55,248 +62,36 @@ const badgeStyles: Record<string, string> = {
   offline: "bg-rose-100 text-rose-700 border-rose-200",
 };
 
-type SummaryResponse = {
-  rows_loaded: string | number;
-  total_pedestrians: string | number;
-  total_bicycles: string | number;
-  total_vehicles: string | number;
-  last_update: string;
-};
-
-type TrafficRow = {
-  segment_id: number;
-  recorded_at: string;
-  pedestrian_count: number | string;
-  bicycle_count: number | string;
-  vehicle_count: number | string;
-  uptime: number | string;
-  source_name: string;
-};
-
-type BusiestHourResponse = {
-  segment_id: number;
-  recorded_at: string;
-  pedestrian_count: number | string;
-  bicycle_count: number | string;
-  vehicle_count: number | string;
-  total_flow: number | string;
-} | null;
-
-type KnmiWarningFeature = {
-  properties?: {
-    code?: string;
-    headline?: string;
-    description?: string;
-    areaDesc?: string;
-    event?: string;
-    severity?: string;
-    urgency?: string;
-    effective?: string;
-    expires?: string;
-  };
-};
-
-type KnmiWarningsResponse = {
-  source: string;
-  dataset: string;
-  filename: string;
-  created: string;
-  lastModified: string;
-  data?: {
-    features?: KnmiWarningFeature[];
-  };
-};
-
-const SEGMENT_ID = 9000006266;
-const API_BASE_URL = "";
-
 export function OperationsDashboard() {
   const [zone, setZone] = useState("All locations");
   const [category, setCategory] = useState("All categories");
   const [severity, setSeverity] = useState("All severities");
   const [range, setRange] = useState("Last 2 hrs");
   const [mode, setMode] = useState("Live");
-
-  const [summaryData, setSummaryData] = useState<SummaryResponse | null>(null);
-  const [trafficSeries, setTrafficSeries] = useState<TrafficRow[]>([]);
-  const [busiestHour, setBusiestHour] = useState<BusiestHourResponse>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const [knmiWarnings, setKnmiWarnings] = useState<KnmiWarningsResponse | null>(null);
-  const [knmiLoading, setKnmiLoading] = useState(false);
-
-  useEffect(() => {
-    async function loadTelraamData() {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const [summaryRes, trafficRes, busiestRes] = await Promise.all([
-          fetch(`/api/dashboard/summary?segment_id=${SEGMENT_ID}`),
-          fetch(`/api/traffic/latest?segment_id=${SEGMENT_ID}`),
-          fetch(`/api/dashboard/busiest-hour?segment_id=${SEGMENT_ID}`),
-        ]);
-
-        if (!summaryRes.ok || !trafficRes.ok || !busiestRes.ok) {
-          throw new Error("Failed to fetch Telraam dashboard data");
-        }
-
-        const summaryJson: SummaryResponse = await summaryRes.json();
-        const trafficJson: TrafficRow[] = await trafficRes.json();
-        const busiestJson: BusiestHourResponse = await busiestRes.json();
-
-        setSummaryData(summaryJson);
-        setTrafficSeries(trafficJson);
-        setBusiestHour(busiestJson);
-      } catch (err) {
-        console.error(err);
-        setError("Unable to load Telraam data from the local backend.");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadTelraamData();
-  }, []);
-
-  useEffect(() => {
-  let intervalId: number | undefined;
-
-  async function loadKnmiWarnings() {
-    try {
-      setKnmiLoading(true);
-
-      const res = await fetch(`${API_BASE_URL}/api/knmi/warnings`);
-
-      if (!res.ok) {
-        throw new Error("Failed to fetch KNMI warnings");
-      }
-
-      const json: KnmiWarningsResponse = await res.json();
-      setKnmiWarnings(json);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setKnmiLoading(false);
-    }
-  }
-
-  loadKnmiWarnings();
-
-  intervalId = window.setInterval(() => {
-    loadKnmiWarnings();
-  }, 5 * 60 * 1000);
-
-  return () => {
-    if (intervalId) window.clearInterval(intervalId);
-  };
-}, []);
-
-  const liveKnmiAlerts = useMemo(() => {
-  const features = knmiWarnings?.data?.features ?? [];
-
-  return features.slice(0, 3).map((feature, index) => {
-    const props = feature.properties ?? {};
-    const rawSeverity = (props.severity || "").toLowerCase();
-
-    let mappedSeverity: "info" | "warning" | "critical" = "info";
-    if (rawSeverity.includes("severe") || rawSeverity.includes("extreme")) {
-      mappedSeverity = "critical";
-    } else if (rawSeverity.includes("moderate")) {
-      mappedSeverity = "warning";
-    }
-
-    return {
-      id: `knmi-${index}`,
-      severity: mappedSeverity,
-      time: props.effective
-        ? new Date(props.effective).toLocaleString()
-        : "KNMI update",
-      title: props.headline || props.event || "KNMI weather warning",
-      detail: props.description || "No extra description available.",
-      zone: props.areaDesc || "Netherlands",
-      source: "KNMI",
-    };
-  });
-}, [knmiWarnings]);
+  const { overview, health, loading: opsLoading, error: opsError } = useOpsLiveData();
 
   const filteredAlerts = useMemo(() => {
-  const combinedAlerts = [...liveKnmiAlerts, ...alertsData];
-
-  return combinedAlerts.filter((item) => {
-    const zoneMatch =
-      zone === "All locations" ||
-      item.zone === zone ||
-      item.zone === "Netherlands";
-    const severityMatch =
-      severity === "All severities" || item.severity === severity;
-
-    return zoneMatch && severityMatch;
-  });
-  }, [zone, severity, liveKnmiAlerts]);
+    return deriveLiveAlerts(overview, zone, severity);
+  }, [overview, zone, severity]);
 
   const filteredSensorHealth = useMemo(() => {
-    return sensorHealth.filter((item) => {
-      const zoneMatch = zone === "All locations" || item.zone === zone;
-      const categoryMatch = category === "All categories" || item.category === category;
-      return zoneMatch && categoryMatch;
-    });
-  }, [zone, category]);
+    return deriveSourceHealthItems(health, category);
+  }, [health, category]);
 
   const liveKpis = useMemo(() => {
-    if (!summaryData) return kpis;
+    return deriveLiveKpis(overview, health, opsLoading);
+  }, [overview, health, opsLoading]);
 
-    return [
-      {
-        label: "People on foot",
-        value: Number(summaryData.total_pedestrians || 0).toLocaleString(),
-        delta: "",
-        trend: "up" as const,
-        helper: "counted in the current view",
-        icon: Users,
-      },
-      {
-        label: "Cyclists",
-        value: Number(summaryData.total_bicycles || 0).toLocaleString(),
-        delta: "",
-        trend: "up" as const,
-        helper: "counted in the current view",
-        icon: Router,
-      },
-      {
-        label: "Vehicles",
-        value: Number(summaryData.total_vehicles || 0).toLocaleString(),
-        delta: "",
-        trend: "up" as const,
-        helper: "counted in the current view",
-        icon: Clock3,
-      },
-    ];
-  }, [summaryData]);
+  const liveWeatherWidget = useMemo(() => deriveWeatherWidgetModel(overview, health), [overview, health]);
+  const liveMetaSummary = useMemo(() => deriveLiveMetaSummary(overview, health), [overview, health]);
+  const mobilitySnapshot = useMemo(() => deriveMobilitySnapshot(overview), [overview]);
 
   const livePedestrianTrend = useMemo(() => {
-    if (!trafficSeries.length) return pedestrianTrend;
-
-    return [...trafficSeries].reverse().map((item) => {
-      const pedestrians = Number(item.pedestrian_count || 0);
-      const bicycles = Number(item.bicycle_count || 0);
-      const vehicles = Number(item.vehicle_count || 0);
-
-      return {
-        time: new Date(item.recorded_at).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        flow: pedestrians,
-        crowd: pedestrians + bicycles + vehicles,
-        sound: Number(item.uptime || 0),
-      };
-    });
-  }, [trafficSeries]);
+    return demoPedestrianTrend;
+  }, []);
 
   const liveAccessActivity = useMemo(() => {
-    if (!trafficSeries.length) {
+    if (!mobilitySnapshot.total) {
       return [
         { time: "09:20", access: 18, vehicles: 4 },
         { time: "09:40", access: 22, vehicles: 7 },
@@ -305,18 +100,13 @@ export function OperationsDashboard() {
       ];
     }
 
-    return [...trafficSeries].reverse().map((item) => ({
-      time: new Date(item.recorded_at).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      access: Number(item.pedestrian_count || 0) + Number(item.bicycle_count || 0),
-      vehicles: Number(item.vehicle_count || 0),
-    }));
-  }, [trafficSeries]);
+    return [
+      { time: "Current", access: mobilitySnapshot.pedestrians + mobilitySnapshot.bicycles, vehicles: mobilitySnapshot.vehicles },
+    ];
+  }, [mobilitySnapshot]);
 
   const liveModalitySplit = useMemo(() => {
-    if (!summaryData) {
+    if (!mobilitySnapshot.total) {
       return [
         { name: "Pedestrian", value: 61 },
         { name: "Bike", value: 23 },
@@ -325,9 +115,9 @@ export function OperationsDashboard() {
       ];
     }
 
-    const pedestrians = Number(summaryData.total_pedestrians || 0);
-    const bicycles = Number(summaryData.total_bicycles || 0);
-    const vehicles = Number(summaryData.total_vehicles || 0);
+    const pedestrians = mobilitySnapshot.pedestrians;
+    const bicycles = mobilitySnapshot.bicycles;
+    const vehicles = mobilitySnapshot.vehicles;
     const total = pedestrians + bicycles + vehicles;
 
     if (total === 0) {
@@ -343,36 +133,47 @@ export function OperationsDashboard() {
       { name: "Bike", value: Math.round((bicycles / total) * 100) },
       { name: "Vehicle", value: Math.round((vehicles / total) * 100) },
     ];
-  }, [summaryData]);
+  }, [mobilitySnapshot]);
 
   const scannerStats = useMemo(() => {
-    if (!trafficSeries.length) {
+    if (!mobilitySnapshot.total) {
       return { access: 102, vehicles: 26 };
     }
 
-    const latest = trafficSeries[0];
     return {
-      access: Number(latest?.pedestrian_count || 0) + Number(latest?.bicycle_count || 0),
-      vehicles: Number(latest?.vehicle_count || 0),
+      access: mobilitySnapshot.pedestrians + mobilitySnapshot.bicycles,
+      vehicles: mobilitySnapshot.vehicles,
     };
-  }, [trafficSeries]);
+  }, [mobilitySnapshot]);
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.16),_transparent_30%),linear-gradient(180deg,#f3fbf6_0%,#e4f3e8_52%,#edf6ee_100%)] p-6 text-slate-900 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="rounded-[30px] border border-white/80 bg-white/90 px-6 py-7 shadow-sm backdrop-blur md:px-8">
-          <div className="max-w-4xl">
-            <h1 className="text-3xl font-semibold tracking-tight text-slate-950 md:text-[2rem]">
-              Tapp Marineterrein Urban Operations Intelligence Dashboard
-            </h1>
-            <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-600">
-              Unified live view of crowd dynamics, access activity, environmental conditions, and infrastructure
-              health across the public space.
-            </p>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-4xl">
+              <h1 className="text-3xl font-semibold tracking-tight text-slate-950 md:text-[2rem]">
+                Tapp Marineterrein Urban Operations Intelligence Dashboard
+              </h1>
+              <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-600">
+                Unified live view of crowd dynamics, access activity, environmental conditions, and infrastructure
+                health across the public space.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm text-slate-700">
+              <div className="flex items-center gap-2">
+                <Pill tone={liveMetaSummary.statusTone}>{health?.status || "unknown"}</Pill>
+                <span>{liveMetaSummary.totalRecords} live records</span>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Last ops refresh {liveMetaSummary.generatedAt} • degraded sources {liveMetaSummary.degradedCount}
+              </p>
+            </div>
           </div>
         </div>
 
-        <WeatherWidget />
+        <WeatherWidget model={liveWeatherWidget} />
 
         <div className="rounded-[30px] border border-emerald-200/90 bg-gradient-to-r from-emerald-50 via-white to-lime-50 px-6 py-6 text-slate-900 shadow-[0_18px_45px_rgba(21,128,61,0.10)] md:px-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -402,17 +203,25 @@ export function OperationsDashboard() {
               onChange={setZone}
               options={["All locations", ...zones.map((z) => z.name)]}
             />
-            <SelectLike dark label="Sensor category" value={category} onChange={setCategory} options={sensorCategories} />
+            <SelectLike
+              dark
+              label="Sensor category"
+              value={category}
+              onChange={setCategory}
+              options={dashboardSensorCategories}
+            />
             <SelectLike dark label="Alert severity" value={severity} onChange={setSeverity} options={severityOptions} />
             <SelectLike dark label="View mode" value={mode} onChange={setMode} options={modeOptions} />
           </div>
         </div>
 
-        {error ? (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
-            {error}
+        {opsError ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
+            {opsError}
           </div>
         ) : null}
+
+        <LiveOperationsMapSection />
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {liveKpis.map((kpi) => {
@@ -494,7 +303,7 @@ export function OperationsDashboard() {
               </div>
 
               <div className="grid gap-3 md:grid-cols-4">
-                {crowdByZone.map((item) => (
+                {demoCrowdByZone.map((item) => (
                   <div key={item.zone} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-medium text-slate-800">{item.zone}</p>
@@ -541,39 +350,46 @@ export function OperationsDashboard() {
               <SectionTitle title="Active alerts" subtitle="Prioritized for current shift response" />
             </CardHeader>
             <CardContent className="space-y-3">
-              {filteredAlerts.map((alert) => (
-                <div key={alert.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${badgeStyles[alert.severity]}`}
-                        >
-                          {alert.severity}
-                        </span>
-                        <span className="text-xs text-slate-500">{alert.time}</span>
+              {filteredAlerts.length ? (
+                filteredAlerts.map((alert) => (
+                  <div key={alert.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${badgeStyles[alert.severity]}`}
+                          >
+                            {alert.severity}
+                          </span>
+                          <span className="text-xs text-slate-500">{alert.time}</span>
+                        </div>
+                        <h4 className="text-sm font-semibold text-slate-900">{alert.title}</h4>
+                        <p className="text-sm text-slate-600">{alert.detail}</p>
                       </div>
-                      <h4 className="text-sm font-semibold text-slate-900">{alert.title}</h4>
-                      <p className="text-sm text-slate-600">{alert.detail}</p>
+
+                      <AlertTriangle
+                        className={`mt-1 h-4 w-4 ${
+                          alert.severity === "critical"
+                            ? "text-rose-600"
+                            : alert.severity === "warning"
+                              ? "text-amber-600"
+                              : "text-emerald-600"
+                        }`}
+                      />
                     </div>
 
-                    <AlertTriangle
-                      className={`mt-1 h-4 w-4 ${
-                        alert.severity === "critical"
-                          ? "text-rose-600"
-                          : alert.severity === "warning"
-                            ? "text-amber-600"
-                            : "text-emerald-600"
-                      }`}
-                    />
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Pill>{alert.zone}</Pill>
+                      <Pill>{alert.source}</Pill>
+                    </div>
                   </div>
-
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Pill>{alert.zone}</Pill>
-                    <Pill>{alert.source}</Pill>
-                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                  No live warnings match the current filters. This card now uses the unified ops warning feed rather
+                  than demo alert content.
                 </div>
-              ))}
+              )}
             </CardContent>
           </Card>
         </div>
@@ -678,10 +494,11 @@ export function OperationsDashboard() {
                     <p className="text-2xl font-semibold text-slate-950">Open</p>
                     <Pill tone="amber">near threshold</Pill>
                   </div>
-                  <p className="mt-2 text-sm text-slate-600">
-                    74 swimmers active, soft capacity 80, hard capacity 95.
-                  </p>
-                </div>
+                    <p className="mt-2 text-sm text-slate-600">
+                      74 swimmers active, soft capacity 80, hard capacity 95.
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500">Demo placeholder until swim-area sensors are connected to the live ops layer.</p>
+                  </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex items-center justify-between">
@@ -692,10 +509,11 @@ export function OperationsDashboard() {
                     <Waves className="h-4 w-4 text-slate-500" />
                   </div>
                   <p className="mt-3 text-2xl font-semibold text-slate-950">19.1°C</p>
-                  <p className="mt-2 text-sm text-slate-600">
-                    Within expected recreational band. Rising slowly through the morning.
-                  </p>
-                </div>
+                    <p className="mt-2 text-sm text-slate-600">
+                      Within expected recreational band. Rising slowly through the morning.
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500">Demo placeholder. The current live feed exposes air weather, not water temperature.</p>
+                  </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex items-center justify-between">
@@ -705,9 +523,10 @@ export function OperationsDashboard() {
                     </div>
                     <Trees className="h-4 w-4 text-slate-500" />
                   </div>
-                  <p className="mt-3 text-2xl font-semibold text-slate-950">31 setups</p>
-                  <p className="mt-2 text-sm text-slate-600">Moderate shore-side dwell time; no intervention needed.</p>
-                </div>
+                    <p className="mt-3 text-2xl font-semibold text-slate-950">31 setups</p>
+                    <p className="mt-2 text-sm text-slate-600">Moderate shore-side dwell time; no intervention needed.</p>
+                    <p className="mt-2 text-xs text-slate-500">Demo placeholder until recreation sensing is added to the backend.</p>
+                  </div>
               </CardContent>
             </Card>
 
@@ -716,7 +535,7 @@ export function OperationsDashboard() {
                 <SectionTitle title="Public infrastructure" subtitle="Status of visible operational assets" />
               </CardHeader>
               <CardContent className="space-y-3">
-                {infrastructureStatus.map((item) => {
+                {demoInfrastructureStatus.map((item) => {
                   const Icon = item.icon;
                   return (
                     <div key={item.label} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -751,7 +570,7 @@ export function OperationsDashboard() {
             <CardContent>
               <div className="h-[270px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={pedestrianTrend}>
+                    <LineChart data={demoPedestrianTrend}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#dbe7df" />
                     <XAxis dataKey="time" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
                     <YAxis yAxisId="left" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
@@ -786,7 +605,7 @@ export function OperationsDashboard() {
               </div>
 
               <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {anomalyPanel.map((item) => (
+                {demoAnomalyPanel.map((item) => (
                   <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <p className="text-sm font-medium text-slate-800">{item.title}</p>
@@ -816,7 +635,7 @@ export function OperationsDashboard() {
             <CardContent>
               <div className="h-[270px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={dailyTrend}>
+                  <BarChart data={demoDailyTrend}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#dbe7df" />
                     <XAxis dataKey="day" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
@@ -866,10 +685,10 @@ export function OperationsDashboard() {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2 text-slate-500">
-                      <Clock3 className="h-4 w-4" />
-                      <span>updated in the last few minutes</span>
-                    </div>
+                      <div className="flex items-center gap-2 text-slate-500">
+                        <Clock3 className="h-4 w-4" />
+                        <span>{health ? `last ops refresh ${liveMetaSummary.generatedAt}` : "live refresh unavailable"}</span>
+                      </div>
 
                     <div className="justify-self-end">
                       <span
@@ -881,6 +700,11 @@ export function OperationsDashboard() {
                     </div>
                   </div>
                 ))}
+                {!filteredSensorHealth.length ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                    No live source-health items match the current category filter.
+                  </div>
+                ) : null}
               </div>
             </CardContent>
           </Card>

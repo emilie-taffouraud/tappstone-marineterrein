@@ -4,10 +4,12 @@ import path from "path";
 import { Pool } from "pg";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
+import { getUnifiedLiveData, getOpsHealth } from "./server/ops/services/liveDataService.js";
+import { getKnmiLiveData } from "./server/ops/adapters/knmiAdapter.js";
+import { getWeatherLiveData } from "./server/ops/adapters/weatherAdapter.js";
+import { getOpsEnv } from "./server/ops/config/env.js";
 
 dotenv.config();
-
-console.log("USING THE NEW KNMI SERVER FILE");
 
 const app = express();
 app.use(cors());
@@ -35,56 +37,6 @@ const pool = process.env.DATABASE_URL
 app.use(express.static(path.join(__dirname, "public")));
 
 const KNMI_OPEN_DATA_API_KEY = process.env.KNMI_OPEN_DATA_API_KEY;
-const KNMI_OPEN_DATA_BASE = "https://api.dataplatform.knmi.nl/open-data/v1";
-
-// ---------- helpers ----------
-async function fetchJson(url, options = {}) {
-  const response = await fetch(url, options);
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`KNMI request failed (${response.status}): ${text}`);
-  }
-
-  return response.json();
-}
-
-async function getLatestKnmiFile(datasetName, version = "1.0") {
-  if (!KNMI_OPEN_DATA_API_KEY) {
-    throw new Error("Missing KNMI_OPEN_DATA_API_KEY in .env");
-  }
-
-  const listUrl =
-    `${KNMI_OPEN_DATA_BASE}/datasets/${datasetName}/versions/${version}/files` +
-    `?maxKeys=1&orderBy=created&sorting=desc`;
-
-  const listJson = await fetchJson(listUrl, {
-    headers: {
-      Authorization: KNMI_OPEN_DATA_API_KEY,
-    },
-  });
-
-  const latestFile = listJson?.files?.[0];
-
-  if (!latestFile?.filename) {
-    throw new Error(`No files returned for KNMI dataset: ${datasetName}`);
-  }
-
-  const fileUrl = `${KNMI_OPEN_DATA_BASE}/datasets/${datasetName}/versions/${version}/files/${latestFile.filename}/url`;
-
-  const urlJson = await fetchJson(fileUrl, {
-    headers: {
-      Authorization: KNMI_OPEN_DATA_API_KEY,
-    },
-  });
-
-  return {
-    filename: latestFile.filename,
-    created: latestFile.created,
-    lastModified: latestFile.lastModified,
-    temporaryDownloadUrl: urlJson.temporaryDownloadUrl,
-  };
-}
 
 // ---------- health ----------
 app.get("/api/health", async (req, res) => {
@@ -94,6 +46,36 @@ app.get("/api/health", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+app.get("/api/ops/health", async (req, res) => {
+  try {
+    const health = await getOpsHealth();
+    res.json(health);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+app.get("/api/ops/live/overview", async (req, res) => {
+  try {
+    const liveData = await getUnifiedLiveData({ includeRaw: false });
+    res.json(liveData);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/ops/live/raw", async (req, res) => {
+  try {
+    const liveData = await getUnifiedLiveData({ includeRaw: true });
+    res.json(liveData);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -175,16 +157,32 @@ app.get("/api/dashboard/busiest-hour", async (req, res) => {
 // ---------- KNMI routes ----------
 app.get("/api/knmi/warnings", async (req, res) => {
   try {
-    const latest = await getLatestKnmiFile("waarschuwingen_nederland_48h", "1.0");
-    const warningJson = await fetchJson(latest.temporaryDownloadUrl);
+    const knmi = await getKnmiLiveData(getOpsEnv());
+    const warnings = knmi.raw?.warnings || [];
+    const file = knmi.raw?.file || null;
 
     res.json({
       source: "KNMI",
-      dataset: "waarschuwingen_nederland_48h",
-      filename: latest.filename,
-      created: latest.created,
-      lastModified: latest.lastModified,
-      data: warningJson,
+      dataset: getOpsEnv().knmiDataset,
+      filename: file?.filename || null,
+      created: file?.created || null,
+      lastModified: file?.lastModified || null,
+      sourceStatus: knmi.status,
+      data: {
+        features: warnings.map((warning) => ({
+          properties: {
+            code: warning.id,
+            headline: warning.headline,
+            description: warning.description,
+            areaDesc: warning.areaDesc,
+            event: warning.event,
+            severity: warning.severity,
+            urgency: warning.urgency,
+            effective: warning.effective,
+            expires: warning.expires,
+          },
+        })),
+      },
     });
   } catch (err) {
     console.error(err);
@@ -214,13 +212,15 @@ app.get("/api/knmi/radar/wms-url", async (req, res) => {
 
 app.get("/api/knmi/status", async (req, res) => {
   try {
-    const latest = await getLatestKnmiFile("waarschuwingen_nederland_48h", "1.0");
+    const knmi = await getKnmiLiveData(getOpsEnv());
 
     res.json({
-      status: "ok",
+      status: knmi.status,
       hasKey: Boolean(KNMI_OPEN_DATA_API_KEY),
-      latestFile: latest.filename,
-      created: latest.created,
+      latestFile: knmi.raw?.file?.filename || null,
+      created: knmi.raw?.file?.created || null,
+      lastSuccessAt: knmi.lastSuccessAt,
+      error: knmi.error,
     });
   } catch (err) {
     console.error(err);
@@ -235,21 +235,12 @@ app.get("/api/knmi/status", async (req, res) => {
 // ---------- Weather API routes ----------
 app.get("/api/weather", async (req, res) => {
   try {
-    const apiKey = process.env.WEATHER_API_KEY;
-    const city = "Amsterdam";
-    const days = 3;
-
-    const apiUrl = `http://api.weatherapi.com/v1/forecast.json?key=${apiKey}&q=${city}&days=${days}&aqi=no&alerts=no`;
-
-    console.log("Fetching weather data from API:", apiUrl);
-
-    const response = await fetch(apiUrl);
-    if (!response.ok) {
-      throw new Error(`Weather API request failed: ${response.status}`);
+    const weather = await getWeatherLiveData(getOpsEnv());
+    if (!weather.raw) {
+      return res.status(503).json({ error: weather.error || "Failed to fetch weather data" });
     }
 
-    const data = await response.json();
-    res.json(data);
+    res.json(weather.raw);
   } catch (error) {
     console.error("Weather API server error:", error);
     res.status(500).json({ error: "Failed to fetch weather data" });

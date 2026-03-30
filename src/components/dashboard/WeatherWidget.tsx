@@ -1,100 +1,60 @@
-import { useState, useEffect } from 'react';
+import { CloudRain, Wind } from "lucide-react";
+import { Pill } from "./ui";
 
-const WeatherWidget = () => {
-  const [weather, setWeather] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
+type WeatherWidgetModel = {
+  statusTone: "slate" | "emerald" | "amber" | "rose";
+  headline: string;
+  temperature: string;
+  location: string;
+  condition: string;
+  metrics: { label: string; value: string }[];
+  helper: string;
+};
 
-  useEffect(() => {
-    const fetchWeather = async () => {
-      try {
-        const response = await fetch('http://localhost:3000/api/weather');
-        if (!response.ok) throw new Error('Network response error');
-        const data = await response.json();
-        setWeather(data);
-      } catch (err: any) {
-        setError(err.message);
-      }
-    };
+const iconTone: Record<WeatherWidgetModel["statusTone"], string> = {
+  slate: "bg-slate-100 text-slate-600",
+  emerald: "bg-emerald-100 text-emerald-700",
+  amber: "bg-amber-100 text-amber-700",
+  rose: "bg-rose-100 text-rose-700",
+};
 
-    fetchWeather();
-    const intervalId = setInterval(fetchWeather, 15 * 60 * 1000); // refresh every 15 minutes
-    return () => clearInterval(intervalId); // cleanup on unmount
-  }, []);
-
-  if (error) return null;
-  if (!weather) return null;
-
-  // fetch weather in 12 hours ---
-  
-  // 1. get current time in epoch seconds
-  const currentEpoch = weather.current.last_updated_epoch;
-
-  //2. combine today's and tomorrow's hourly data into one array (some APIs split them by day, we want a continuous timeline) ---
-  const allHours = [
-    ...weather.forecast.forecastday[0].hour,
-    ...(weather.forecast.forecastday[1] ? weather.forecast.forecastday[1].hour : [])
-  ];
-
-  // 3. filter out hours that are in the past and take the next 12 hours for display. This ensures our timeline is always relevant to the current time, even if the API returns a full 24-hour forecast starting from midnight.
-  const nextHours = allHours
-    .filter((hourData: any) => hourData.time_epoch >= currentEpoch)
-    .slice(0, 12); 
-
-  // format time from "2024-06-01 14:00" to "14:00" for display on the timeline. This keeps the UI clean and focused on the hour, which is most relevant for quick glances at the forecast.
-  const formatTime = (timeStr: string) => {
-    return timeStr.split(' ')[1];
-  };
-
+function WeatherGlyph({ tone }: { tone: WeatherWidgetModel["statusTone"] }) {
   return (
-    <div className="bg-white rounded-[2rem] p-6 w-full flex flex-col md:flex-row items-center justify-between mb-6">
-      
-      {/* left side: current weather */}
-      <div className="flex items-center space-x-6 md:pr-10 md:border-r md:border-gray-100 mb-6 md:mb-0 shrink-0">
-        <img 
-          src={weather.current.condition.icon} 
-          alt="Weather Icon" 
-          className="w-20 h-20 drop-shadow-sm"
-        />
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">{weather.location.name}</h2>
-          <p className="text-sm text-gray-500 capitalize">{weather.current.condition.text}</p>
-          <div className="text-4xl font-black text-gray-900 mt-1">
-            {Math.round(weather.current.temp_c)}°
+    <div className={`flex h-20 w-20 items-center justify-center rounded-[1.5rem] ${iconTone[tone]}`}>
+      <CloudRain className="h-10 w-10" />
+    </div>
+  );
+}
+
+const WeatherWidget = ({ model }: { model: WeatherWidgetModel }) => {
+  return (
+    <div className="rounded-[2rem] bg-white p-6">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-5 md:pr-10 md:border-r md:border-gray-100">
+          <WeatherGlyph tone={model.statusTone} />
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-bold text-gray-900">{model.location}</h2>
+              <Pill tone={model.statusTone}>{model.headline}</Pill>
+            </div>
+            <p className="mt-1 text-sm capitalize text-gray-500">{model.condition}</p>
+            <div className="mt-2 text-4xl font-black text-gray-900">{model.temperature}</div>
+            <p className="mt-2 max-w-xl text-sm text-slate-500">{model.helper}</p>
           </div>
         </div>
-      </div>
 
-      {/* right side: future 12-hour forecast (horizontal scrollable timeline) */}
-      {/* [&::-webkit-scrollbar]:hidden 用于隐藏自带的丑陋滚动条，保持界面干净 */}
-      <div className="flex flex-1 gap-6 w-full pl-0 md:pl-8 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none' }}>
-        {nextHours.map((hour: any) => (
-          <div key={hour.time_epoch} className="flex flex-col items-center min-w-[45px]">
-            {/* time (e.g., 14:00) */}
-            <p className="text-[11px] font-bold text-emerald-700 tracking-wider mb-2">
-              {formatTime(hour.time)}
-            </p>
-            {/* weather icon */}
-            <img 
-              src={hour.condition.icon} 
-              alt="Hourly Forecast" 
-              className="w-10 h-10 mb-2 drop-shadow-sm"
-            />
-            {/* temperature */}
-            <span className="font-bold text-gray-900 text-sm">
-              {Math.round(hour.temp_c)}°
-            </span>
-            {/* chance of rain: only show if greater than 0, which is important for operational decisions */}
-            {hour.chance_of_rain > 0 ? (
-              <span className="text-[10px] text-blue-500 font-semibold mt-1">
-                {hour.chance_of_rain}% 💧
-              </span>
-            ) : (
-              <span className="text-[10px] text-transparent mt-1">0%</span> /* placeholder, maintains layout alignment */
-            )}
-          </div>
-        ))}
+        <div className="grid flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {model.metrics.map((metric) => (
+            <div key={metric.label} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">{metric.label}</p>
+                <Wind className="h-4 w-4 text-slate-400" />
+              </div>
+              <p className="mt-3 text-lg font-semibold text-slate-950">{metric.value}</p>
+            </div>
+          ))}
+        </div>
       </div>
-
     </div>
   );
 };
