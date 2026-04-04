@@ -52,13 +52,22 @@ import {
   deriveZoneSnapshotCards,
 } from "./opsLiveViewModel";
 import WeatherWidget from "./WeatherWidget";
+import TelraamDetailsCard from "./TelraamDetailsCard";
+import PublicHolidaysCard from "./PublicHolidaysCard";
 import { MAIN_COLORS, getBadgeStyle } from "../../styles/theme";
-import mt_down from "./images/mt_down.jpg";
-import mt_up from "./images/mt_up.jpg";
+import mt_down from "../../assets/mt_down.jpg";
+import mt_up from "../../assets/mt_up.jpg";
 
 type HolidayItem = {
   date: string;
   localName: string;
+  name?: string;
+  countryCode?: string;
+  fixed?: boolean;
+  global?: boolean;
+  counties?: string[] | null;
+  launchYear?: number | null;
+  types?: string[];
 };
 
 const alertIconColor = (severity: "info" | "warning" | "critical") => {
@@ -340,6 +349,8 @@ export function OperationsDashboard() {
             );
           })}
         </div>
+
+        <TelraamDetailsCard overview={overview} />
 
         <div className="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
           <Card>
@@ -662,25 +673,7 @@ export function OperationsDashboard() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <SectionTitle title="Public holidays (NL)" subtitle="Days that may impact crowd levels" />
-              </CardHeader>
-              <CardContent>
-                {holidaysLoading ? (
-                  <p className="text-sm text-slate-500">Loading holidays...</p>
-                ) : holidays.length ? (
-                  holidays.slice(0, 6).map((holiday) => (
-                    <div key={holiday.date} className="mb-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-sm font-medium text-slate-800">{holiday.localName}</p>
-                      <p className="text-xs text-slate-500">{new Date(holiday.date).toLocaleDateString()}</p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-500">No holiday data available.</p>
-                )}
-              </CardContent>
-            </Card>
+            <PublicHolidaysCard holidaysLoading={holidaysLoading} holidays={holidays} />
           </div>
         </div>
 

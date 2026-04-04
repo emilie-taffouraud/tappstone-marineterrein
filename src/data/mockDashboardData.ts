@@ -10,11 +10,11 @@ import {
   Waves,
 } from "lucide-react";
 
-import peopleCrowdSizeColor from "../components/dashboard/images/People - CrowdSize - Color.png";
-import alertColor from "../components/dashboard/images/Operation Dashboards - Color@2x.png";
-import soundColor from "../components/dashboard/images/Sound Level - Color.png";
-import dataVisColor from "../components/dashboard/images/Data Vis - Color.png";
-import tempColor from "../components/dashboard/images/Temperature - Color.png";
+import peopleCrowdSizeColor from "../assets/People - CrowdSize - Color.png";
+import alertColor from "../assets/Operation Dashboards - Color@2x.png";
+import soundColor from "../assets/Sound Level - Color.png";
+import dataVisColor from "../assets/Data Vis - Color.png";
+import tempColor from "../assets/Temperature - Color.png";
 
 import type {
   AccessPoint,

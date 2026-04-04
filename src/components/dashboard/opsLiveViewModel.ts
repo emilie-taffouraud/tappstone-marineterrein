@@ -2,6 +2,12 @@ import { Activity, AlertTriangle, CloudSun, RefreshCw, ShieldCheck } from "lucid
 import type { AlertItem, Kpi, SensorHealthItem } from "./types";
 import type { OpsHealthResponse, OpsLiveOverviewResponse, UnifiedLiveRecord } from "../../lib/opsLiveClient";
 
+import peopleCrowdSizeColor from "../components/dashboard/images/People - CrowdSize - Color.png";
+import alertColor from "../components/dashboard/images/Operation Dashboards - Color@2x.png";
+import soundColor from "../components/dashboard/images/Sound Level - Color.png";
+import dataVisColor from "../components/dashboard/images/Data Vis - Color.png";
+import tempColor from "../components/dashboard/images/Temperature - Color.png";
+
 type WeatherWidgetModel = {
   statusTone: "slate" | "emerald" | "amber" | "rose";
   headline: string;
