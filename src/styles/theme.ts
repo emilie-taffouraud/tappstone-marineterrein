@@ -38,14 +38,14 @@ const BADGE_STYLES = {
     color: MAIN_COLORS.aColor2,
   },
   warning: {
-    border: `1px solid ${MAIN_COLORS.aColor1}66`,
-    backgroundColor: MAIN_COLORS.aColor3,
-    color: MAIN_COLORS.aColor1,
+    border: "1px solid rgba(245, 158, 11, 0.45)",
+    backgroundColor: "rgba(245, 158, 11, 0.12)",
+    color: "#b45309",
   },
   critical: {
-    border: `1px solid ${MAIN_COLORS.aColorBlack}4d`,
-    backgroundColor: MAIN_COLORS.aColor3,
-    color: MAIN_COLORS.aColorBlack,
+    border: "1px solid rgba(220, 38, 38, 0.4)",
+    backgroundColor: "rgba(220, 38, 38, 0.12)",
+    color: "#b91c1c",
   },
   healthy: {
     border: `1px solid ${MAIN_COLORS.aColor2}66`,
@@ -81,7 +81,7 @@ export const LIVE_MAP_LEGEND_THEME = {
     zones: {
       accent: "#16a34a",
     },
-    mobility: {
+    sensors: {
       accent: "#3a1575",
     },
     weather: {

@@ -1,7 +1,7 @@
 export type UnifiedLiveRecord = {
   id: string;
-  source: "telraam" | "knmi" | "weather";
-  category: "mobility" | "weather" | "warning";
+  source: "telraam" | "knmi" | "weather" | "husense" | "water";
+  category: "mobility" | "weather" | "warning" | "sound" | "recreation";
   metric: string;
   label: string;
   value: number | string | boolean | null;
@@ -48,6 +48,14 @@ export type OpsHealthResponse = {
   summary: OpsLiveOverviewResponse["summary"];
 };
 
+export type TelraamTrafficPoint = {
+  segment_id: string | number;
+  recorded_at: string;
+  pedestrian_count: number;
+  bicycle_count: number;
+  vehicle_count: number;
+};
+
 export async function fetchOpsOverview() {
   const response = await fetch("/api/ops/live/overview");
   if (!response.ok) {
@@ -65,4 +73,13 @@ export async function fetchOpsHealth() {
     ok: response.ok,
     data: json,
   };
+}
+
+export async function fetchTelraamTrafficLatest() {
+  const response = await fetch("/api/traffic/latest");
+  if (!response.ok) {
+    throw new Error("Failed to fetch /api/traffic/latest");
+  }
+
+  return response.json() as Promise<TelraamTrafficPoint[]>;
 }

@@ -33,14 +33,14 @@ function WeatherGlyph({ tone }: { tone: WeatherWidgetModel["statusTone"] }) {
 const WeatherWidget = ({ model }: { model: WeatherWidgetModel }) => {
   return (
     <div
-      className="rounded-[2rem] p-6 backdrop-blur"
+      className="rounded-[2rem] p-5 backdrop-blur md:p-6"
       style={{
         border: `1px solid ${MAIN_COLORS.aColorWhite}b3`,
-        background: `linear-gradient(135deg, ${MAIN_COLORS.aColor3}, ${MAIN_COLORS.aColor3}cc)`,
-        boxShadow: `0 12px 35px ${MAIN_COLORS.aColorBlack}12`,
+        background: `linear-gradient(135deg, #edf5fa, ${MAIN_COLORS.aColor3}cc)`,
+        boxShadow: `0 12px 30px ${MAIN_COLORS.aColorBlack}10`,
       }}
     >
-      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
         <div
           className="flex items-center gap-5 md:pr-10"
           style={{ borderRight: `1px solid ${MAIN_COLORS.aColorWhite}80` }}
@@ -48,11 +48,11 @@ const WeatherWidget = ({ model }: { model: WeatherWidgetModel }) => {
           <WeatherGlyph tone={model.statusTone} />
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-2xl font-bold" style={{ color: MAIN_COLORS.aColorBlack }}>{model.location}</h2>
+              <h2 className="text-2xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>{model.location}</h2>
               <Pill tone={model.statusTone}>{model.headline}</Pill>
             </div>
             <p className="mt-1 text-sm capitalize" style={{ color: MAIN_COLORS.aColorGray }}>{model.condition}</p>
-            <div className="mt-2 text-4xl font-black" style={{ color: MAIN_COLORS.aColorBlack }}>{model.temperature}</div>
+            <div className="mt-2 text-[2.6rem] font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>{model.temperature}</div>
             <p className="mt-2 max-w-xl text-sm" style={{ color: MAIN_COLORS.aColorGray }}>{model.helper}</p>
           </div>
         </div>
@@ -64,7 +64,7 @@ const WeatherWidget = ({ model }: { model: WeatherWidgetModel }) => {
               className="rounded-2xl p-4"
               style={{
                 border: `1px solid ${MAIN_COLORS.aColor1}33`,
-                backgroundColor: `${MAIN_COLORS.aColorWhite}85`,
+                backgroundColor: `${MAIN_COLORS.aColorWhite}ad`,
               }}
             >
               <div className="flex items-center justify-between gap-2">

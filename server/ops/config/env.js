@@ -12,6 +12,11 @@ export function getOpsEnv() {
     telraamBaseUrl: process.env.TELRAAM_API_BASE_URL || "https://telraam-api.net",
     telraamSegmentId: process.env.TELRAAM_SEGMENT_ID || "9000006266",
     telraamLookbackHours: toNumber(process.env.TELRAAM_LOOKBACK_HOURS, 12),
+    husenseApiUrl: process.env.HUSENSE_API_URL || "",
+    husenseApiToken: process.env.HUSENSE_API_TOKEN || "",
+    waterTemperatureUrl:
+      process.env.WATER_TEMPERATURE_URL || "https://marineterrein.nl/wp-json/mtnc/v1/sensors",
+    waterTemperatureValue: process.env.WATER_TEMPERATURE_VALUE || "",
     opsCacheTtlMs: toNumber(process.env.OPS_CACHE_TTL_MS, 300000),
     opsHttpTimeoutMs: toNumber(process.env.OPS_HTTP_TIMEOUT_MS, 8000),
     knmiDataset: process.env.KNMI_WARNING_DATASET || "waarschuwingen_nederland_48h",

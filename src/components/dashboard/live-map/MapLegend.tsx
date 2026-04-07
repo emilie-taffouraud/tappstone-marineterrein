@@ -1,4 +1,4 @@
-import { CloudRain, MapPinned, TriangleAlert, Waypoints } from "lucide-react";
+import { CloudRain, MapPinned, Radar, TriangleAlert } from "lucide-react";
 import { LIVE_MAP_LEGEND_THEME } from "../../../styles/theme";
 
 const legendItems = [
@@ -9,10 +9,10 @@ const legendItems = [
     icon: MapPinned,
   },
   {
-    key: "mobility",
-    label: "Mobility",
-    detail: "Telraam movement intensity by mapped area",
-    icon: Waypoints,
+    key: "sensors",
+    label: "Sensors",
+    detail: "Installed and planned sensor locations with current availability state",
+    icon: Radar,
   },
   {
     key: "weather",

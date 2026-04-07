@@ -1,6 +1,7 @@
 import { zoneConfigs } from "./mapConfig";
+import { getSensorPoints, summarizeSensorPoints } from "./sensorCatalog";
 import type {
-  MobilityPoint,
+  OpsHealthResponse,
   OpsLiveOverviewResponse,
   SpatialSummary,
   UnifiedLiveRecord,
@@ -53,6 +54,7 @@ export function buildZoneFeatures(records: UnifiedLiveRecord[]): ZoneFeature[] {
 
     const weatherRecord = zoneRecords.find((record) => record.category === "weather" && record.metric === "condition_text");
     const totalFlowRecord = zoneRecords.find((record) => record.metric === "total_flow");
+    const soundClassRecord = zoneRecords.find((record) => record.metric === "sound_classification");
     const warnings = zoneRecords.filter((record) => record.category === "warning");
 
     return {
@@ -63,44 +65,13 @@ export function buildZoneFeatures(records: UnifiedLiveRecord[]): ZoneFeature[] {
       recordCount: zoneRecords.length,
       activeWarnings: warnings.length,
       mobilityScore: totalFlowRecord ? toNumber(totalFlowRecord.value) : 0,
-      weatherSummary: typeof weatherRecord?.value === "string" ? weatherRecord.value : null,
+      weatherSummary:
+        typeof soundClassRecord?.value === "string"
+          ? `Sound: ${soundClassRecord.value}`
+          : typeof weatherRecord?.value === "string"
+            ? weatherRecord.value
+            : null,
       status: maxStatus(zoneRecords.map((record) => record.status)),
-    };
-  });
-}
-
-export function buildMobilityPoints(records: UnifiedLiveRecord[]): MobilityPoint[] {
-  const mobilityRecords = records.filter((record) => record.source === "telraam" && record.category === "mobility");
-  const grouped = new Map<string, UnifiedLiveRecord[]>();
-
-  for (const record of mobilityRecords) {
-    const zone = findZoneConfig(record.zone);
-    const key = zone.id;
-    grouped.set(key, [...(grouped.get(key) || []), record]);
-  }
-
-  return [...grouped.entries()].map(([zoneId, zoneRecords]) => {
-    const zone = zoneConfigs.find((item) => item.id === zoneId) ?? zoneConfigs[0];
-    const totalFlow = zoneRecords.find((record) => record.metric === "total_flow");
-    const pedestrians = zoneRecords.find((record) => record.metric === "pedestrian_count");
-    const bicycles = zoneRecords.find((record) => record.metric === "bicycle_count");
-    const vehicles = zoneRecords.find((record) => record.metric === "vehicle_count");
-
-    return {
-      id: `mobility-${zone.id}`,
-      zone: zone.label,
-      center: zone.center,
-      totalFlow: totalFlow
-        ? toNumber(totalFlow.value)
-        : toNumber(pedestrians?.value ?? null) +
-          toNumber(bicycles?.value ?? null) +
-          toNumber(vehicles?.value ?? null),
-      pedestrians: toNumber(pedestrians?.value ?? null),
-      bicycles: toNumber(bicycles?.value ?? null),
-      vehicles: toNumber(vehicles?.value ?? null),
-      status: maxStatus(zoneRecords.map((record) => record.status)),
-      confidence: zoneRecords[0]?.confidence || "medium",
-      observedAt: totalFlow?.observedAt || zoneRecords[0]?.observedAt || "",
     };
   });
 }
@@ -148,17 +119,23 @@ export function buildWarningPoints(records: UnifiedLiveRecord[]): WarningPoint[]
     });
 }
 
-export function buildSpatialSummary(overview: OpsLiveOverviewResponse): SpatialSummary {
-  const mobilityPoints = buildMobilityPoints(overview.records);
+export function buildSpatialSummary(overview: OpsLiveOverviewResponse, health: OpsHealthResponse | null): SpatialSummary {
+  const sensorSummary = summarizeSensorPoints(getSensorPoints(health));
   const weatherCondition = overview.records.find(
     (record) => record.category === "weather" && record.metric === "condition_text",
   );
-  const busiest = mobilityPoints.sort((a, b) => b.totalFlow - a.totalFlow)[0];
+  const telraamFlow = overview.records.find(
+    (record) => record.source === "telraam" && record.metric === "total_flow",
+  );
   const warningCount = overview.records.filter((record) => record.category === "warning").length;
 
   return {
-    busiestArea: busiest?.zone || "No mapped mobility area yet",
-    busiestFlow: busiest?.totalFlow ?? null,
+    gateFlowLabel: telraamFlow?.zone || "Kattenburgerstraat 7",
+    gateFlow: telraamFlow ? toNumber(telraamFlow.value) : null,
+    sensorCoverage: `${sensorSummary.installed} installed sensor locations`,
+    installedSensors: sensorSummary.installed,
+    liveSensors: sensorSummary.live,
+    pendingSensors: sensorSummary.pending,
     currentWeather: weatherCondition
       ? `${weatherCondition.value ?? "Unknown"}`
       : "Weather source unavailable",

@@ -12,9 +12,9 @@ export function Card({
     <div
       className={`rounded-3xl backdrop-blur ${className}`}
       style={{
-        border: `1px solid ${MAIN_COLORS.aColorWhite}cc`,
-        backgroundColor: `${MAIN_COLORS.aColor3}`,
-        boxShadow: `0 12px 35px ${MAIN_COLORS.aColorBlack}14`,
+        border: `1px solid ${MAIN_COLORS.aColorWhite}b8`,
+        backgroundColor: `rgba(252, 252, 252, 0.82)`,
+        boxShadow: `0 10px 26px ${MAIN_COLORS.aColorBlack}10`,
       }}
     >
       {children}
@@ -29,7 +29,7 @@ export function CardHeader({
   className?: string;
   children: React.ReactNode;
 }) {
-  return <div className={`p-5 pb-3 ${className}`}>{children}</div>;
+  return <div className={`p-5 pb-2 ${className}`}>{children}</div>;
 }
 
 export function CardTitle({
@@ -111,7 +111,7 @@ export function SectionTitle({
   return (
     <div className="mb-4 flex items-end justify-between gap-3">
       <div>
-        <h2 className="text-base font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+        <h2 className="text-lg font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
           {title}
         </h2>
         {subtitle ? (
@@ -151,7 +151,7 @@ export function SelectLike({
         className="rounded-2xl border px-3 py-2.5 text-sm outline-none ring-0 transition"
         style={{
           borderColor: dark ? `${MAIN_COLORS.aColor1}66` : `${MAIN_COLORS.aColorGray}4d`,
-          backgroundColor: MAIN_COLORS.aColorWhite,
+          backgroundColor: `${MAIN_COLORS.aColorWhite}d6`,
           color: MAIN_COLORS.aColorBlack,
         }}
       >

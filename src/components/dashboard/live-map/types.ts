@@ -1,7 +1,7 @@
 export type UnifiedLiveRecord = {
   id: string;
-  source: "telraam" | "knmi" | "weather";
-  category: "mobility" | "weather" | "warning";
+  source: "telraam" | "knmi" | "weather" | "husense" | "water";
+  category: "mobility" | "weather" | "warning" | "sound" | "recreation";
   metric: string;
   label: string;
   value: number | string | boolean | null;
@@ -49,7 +49,7 @@ export type OpsHealthResponse = {
 };
 
 export type LayerVisibility = {
-  mobility: boolean;
+  sensors: boolean;
   zones: boolean;
   weather: boolean;
   warnings: boolean;
@@ -66,19 +66,6 @@ export type ZoneFeature = {
   mobilityScore: number;
   weatherSummary: string | null;
   status: UnifiedLiveRecord["status"];
-};
-
-export type MobilityPoint = {
-  id: string;
-  zone: string;
-  center: [number, number];
-  totalFlow: number;
-  pedestrians: number;
-  bicycles: number;
-  vehicles: number;
-  status: UnifiedLiveRecord["status"];
-  confidence: UnifiedLiveRecord["confidence"];
-  observedAt: string;
 };
 
 export type WeatherPoint = {
@@ -102,8 +89,12 @@ export type WarningPoint = {
 };
 
 export type SpatialSummary = {
-  busiestArea: string;
-  busiestFlow: number | null;
+  gateFlowLabel: string;
+  gateFlow: number | null;
+  sensorCoverage: string;
+  installedSensors: number;
+  liveSensors: number;
+  pendingSensors: number;
   currentWeather: string;
   warningCount: number;
   lastRefreshLabel: string;

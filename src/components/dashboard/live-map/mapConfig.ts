@@ -61,7 +61,7 @@ export const zoneConfigs: ZoneConfig[] = [
   },
   {
     id: "general",
-    label: "General Marineterrein / unknown",
+    label: "General Marineterrein",
     center: [52.3728, 4.9154],
     polygon: rectangleAround([52.3728, 4.9154], 0.00075, 0.00105),
     description: "Fallback site-wide zone when source data is not mapped more precisely.",

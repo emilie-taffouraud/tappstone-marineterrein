@@ -1,9 +1,9 @@
-import { Layers3, MapPinned, TriangleAlert, Umbrella, Waypoints } from "lucide-react";
+import { Layers3, MapPinned, Radar, TriangleAlert, Umbrella } from "lucide-react";
 import { LAYER_TOGGLE_THEME } from "../../../styles/theme";
 import type { LayerVisibility } from "./types";
 
 const toggleMeta = [
-  { key: "mobility", label: "Mobility", icon: Waypoints },
+  { key: "sensors", label: "Sensors", icon: Radar },
   { key: "zones", label: "Zones", icon: MapPinned },
   { key: "weather", label: "Weather", icon: Umbrella },
   { key: "warnings", label: "Warnings", icon: TriangleAlert },

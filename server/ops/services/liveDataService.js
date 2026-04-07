@@ -1,5 +1,7 @@
 import { getKnmiLiveData } from "../adapters/knmiAdapter.js";
+import { getHusenseLiveData } from "../adapters/husenseAdapter.js";
 import { getTelraamLiveData } from "../adapters/telraamAdapter.js";
+import { getWaterTemperatureLiveData } from "../adapters/waterTemperatureAdapter.js";
 import { getWeatherLiveData } from "../adapters/weatherAdapter.js";
 import { getOpsEnv } from "../config/env.js";
 import { summarizeRecords } from "../lib/normalize.js";
@@ -9,8 +11,10 @@ export async function getUnifiedLiveData({ includeRaw = false } = {}) {
 
   const sources = await Promise.all([
     getTelraamLiveData(env),
-    //getKnmiLiveData(env),
+    getHusenseLiveData(env),
     getWeatherLiveData(env),
+    getWaterTemperatureLiveData(env),
+    //getKnmiLiveData(env),
   ]);
 
   const records = sources.flatMap((source) => source.records);

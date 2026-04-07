@@ -36,7 +36,7 @@ export const marineterreinZones = [
   },
   {
     id: "general",
-    label: "General Marineterrein / unknown",
+    label: "General Marineterrein",
     lat: 52.3728,
     lon: 4.9154,
     aliases: ["marineterrein", "amsterdam", "general", "unknown"],

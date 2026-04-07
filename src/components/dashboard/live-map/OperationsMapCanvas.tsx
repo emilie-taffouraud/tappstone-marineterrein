@@ -1,11 +1,12 @@
 import { CircleMarker, MapContainer, Polygon, Popup, TileLayer, Tooltip } from "react-leaflet";
 import { MAP_CENTER, MAP_ZOOM } from "./mapConfig";
-import type { LayerVisibility, MobilityPoint, WarningPoint, WeatherPoint, ZoneFeature } from "./types";
+import type { LayerVisibility, WarningPoint, WeatherPoint, ZoneFeature } from "./types";
+import type { SensorPoint } from "./sensorCatalog";
 
-function mobilityColor(totalFlow: number) {
-  if (totalFlow >= 300) return "#dc2626";
-  if (totalFlow >= 180) return "#d97706";
-  if (totalFlow > 0) return "#059669";
+function sensorColor(state: SensorPoint["state"]) {
+  if (state === "live") return "#059669";
+  if (state === "awaiting-data") return "#d97706";
+  if (state === "installed") return "#2563eb";
   return "#94a3b8";
 }
 
@@ -19,13 +20,13 @@ function zoneColor(status: ZoneFeature["status"]) {
 export function OperationsMapCanvas({
   visibility,
   zones,
-  mobilityPoints,
+  sensorPoints,
   weatherPoints,
   warningPoints,
 }: {
   visibility: LayerVisibility;
   zones: ZoneFeature[];
-  mobilityPoints: MobilityPoint[];
+  sensorPoints: SensorPoint[];
   weatherPoints: WeatherPoint[];
   warningPoints: WarningPoint[];
 }) {
@@ -66,45 +67,38 @@ export function OperationsMapCanvas({
                 <div className="space-y-2">
                   <p className="text-sm font-semibold text-slate-900">{zone.label}</p>
                   <p className="text-xs text-slate-600">
-                    {zone.recordCount} live records • {zone.activeWarnings} warnings • mobility score {zone.mobilityScore || 0}
+                    {zone.recordCount} live records, {zone.activeWarnings} warnings, gate flow score {zone.mobilityScore || 0}
                   </p>
-                  <p className="text-xs text-slate-600">
-                    Weather: {zone.weatherSummary || "No mapped weather record yet"}
-                  </p>
+                  <p className="text-xs text-slate-600">Context: {zone.weatherSummary || "No mapped weather note yet"}</p>
                 </div>
               </Popup>
             </Polygon>
           ))}
 
-        {visibility.mobility &&
-          mobilityPoints.map((point) => (
+        {visibility.sensors &&
+          sensorPoints.map((point) => (
             <CircleMarker
               key={point.id}
               center={point.center}
-              radius={Math.max(8, Math.min(20, 8 + point.totalFlow / 20))}
+              radius={point.installState === "planned" ? 6 : 8}
               pathOptions={{
-                color: mobilityColor(point.totalFlow),
-                fillColor: mobilityColor(point.totalFlow),
-                fillOpacity: 0.75,
+                color: sensorColor(point.state),
+                fillColor: sensorColor(point.state),
+                fillOpacity: 0.8,
                 weight: 2,
               }}
             >
               {visibility.labels ? (
                 <Tooltip direction="top" offset={[0, -6]}>
-                  {point.zone}
+                  {point.name}
                 </Tooltip>
               ) : null}
               <Popup>
                 <div className="space-y-2">
-                  <p className="text-sm font-semibold text-slate-900">{point.zone}</p>
-                  <p className="text-xs text-slate-600">Source: Telraam mobility layer</p>
-                  <p className="text-xs text-slate-600">Total flow: {point.totalFlow}</p>
-                  <p className="text-xs text-slate-600">
-                    Pedestrians {point.pedestrians} • Bicycles {point.bicycles} • Vehicles {point.vehicles}
-                  </p>
-                  <p className="text-xs text-slate-600">
-                    Status {point.status} • confidence {point.confidence} • observed {new Date(point.observedAt).toLocaleString()}
-                  </p>
+                  <p className="text-sm font-semibold text-slate-900">{point.name}</p>
+                  <p className="text-xs text-slate-600">{point.category}</p>
+                  <p className="text-xs text-slate-600">State: {point.stateLabel}</p>
+                  <p className="text-xs text-slate-600">{point.availabilityLabel}</p>
                 </div>
               </Popup>
             </CircleMarker>
@@ -153,7 +147,7 @@ export function OperationsMapCanvas({
                   <p className="text-xs text-slate-600">{point.zone}</p>
                   <p className="text-xs text-slate-600">{point.detail}</p>
                   <p className="text-xs text-slate-600">
-                    Source: KNMI • status {point.status} • observed {new Date(point.observedAt).toLocaleString()}
+                    Source: KNMI, status {point.status}, observed {new Date(point.observedAt).toLocaleString()}
                   </p>
                 </div>
               </Popup>
