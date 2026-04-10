@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { CircleMarker, MapContainer, Polygon, Popup, TileLayer, Tooltip } from "react-leaflet";
 import { MAP_CENTER, MAP_ZOOM } from "./mapConfig";
 import type { LayerVisibility, WarningPoint, WeatherPoint, ZoneFeature } from "./types";
@@ -47,32 +48,69 @@ export function OperationsMapCanvas({
 
         {visibility.zones &&
           zones.map((zone) => (
-            <Polygon
-              key={zone.id}
-              positions={zone.polygon}
-              pathOptions={{
-                color: zoneColor(zone.status),
-                weight: zone.id === "general" ? 1.5 : 2,
-                fillColor: zoneColor(zone.status),
-                fillOpacity: zone.id === "general" ? 0.06 : 0.12,
-                dashArray: zone.id === "general" ? "6 6" : undefined,
-              }}
-            >
+            <Fragment key={zone.id}>
+              {zone.geometry.type === "polygon" ? (
+                <Polygon
+                  key={`${zone.id}-shape`}
+                  positions={zone.geometry.coordinates as [number, number][]}
+                  pathOptions={{
+                    color: zoneColor(zone.status),
+                    weight: zone.id === "general" ? 1.5 : 2,
+                    fillColor: zoneColor(zone.status),
+                    fillOpacity: zone.id === "general" ? 0.14 : 0.22,
+                  }}
+                >
+                  <Popup>
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-slate-900">{zone.displayName}</p>
+                      <p className="text-xs text-slate-600">
+                        {zone.recordCount} live records, {zone.activeWarnings} warnings, gate flow score {zone.mobilityScore || 0}
+                      </p>
+                      <p className="text-xs text-slate-600">Context: {zone.weatherSummary || "No mapped weather note yet"}</p>
+                    </div>
+                  </Popup>
+                </Polygon>
+              ) : (
+                <CircleMarker
+                  key={`${zone.id}-shape`}
+                  center={zone.center}
+                  radius={zone.id === "general" ? 9 : 11}
+                  pathOptions={{
+                    color: zoneColor(zone.status),
+                    weight: zone.id === "general" ? 1.5 : 2,
+                    fillColor: zoneColor(zone.status),
+                    fillOpacity: zone.id === "general" ? 0.14 : 0.22,
+                  }}
+                >
+                  <Popup>
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-slate-900">{zone.displayName}</p>
+                      <p className="text-xs text-slate-600">
+                        {zone.recordCount} live records, {zone.activeWarnings} warnings, gate flow score {zone.mobilityScore || 0}
+                      </p>
+                      <p className="text-xs text-slate-600">Context: {zone.weatherSummary || "No mapped weather note yet"}</p>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              )}
+
               {visibility.labels ? (
-                <Tooltip permanent direction="center" className="zone-label-tooltip">
-                  {zone.label}
-                </Tooltip>
+                <CircleMarker
+                  key={`${zone.id}-label`}
+                  center={zone.labelPosition}
+                  radius={1}
+                  pathOptions={{
+                    opacity: 0,
+                    fillOpacity: 0,
+                    stroke: false,
+                  }}
+                >
+                  <Tooltip permanent direction="top" offset={[0, -12]} className="zone-label-tooltip">
+                    {zone.displayName}
+                  </Tooltip>
+                </CircleMarker>
               ) : null}
-              <Popup>
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-slate-900">{zone.label}</p>
-                  <p className="text-xs text-slate-600">
-                    {zone.recordCount} live records, {zone.activeWarnings} warnings, gate flow score {zone.mobilityScore || 0}
-                  </p>
-                  <p className="text-xs text-slate-600">Context: {zone.weatherSummary || "No mapped weather note yet"}</p>
-                </div>
-              </Popup>
-            </Polygon>
+            </Fragment>
           ))}
 
         {visibility.sensors &&

@@ -1,4 +1,4 @@
-import { inferZoneFromText } from "../config/zones.js";
+import { getZoneByDisplayName, getZoneByLookupKey } from "../config/zones.js";
 
 export function isoOrNow(value) {
   const date = value ? new Date(value) : new Date();
@@ -27,6 +27,7 @@ export function createUnifiedRecord({
   fetchedAt,
   lat = null,
   lon = null,
+  zoneId = null,
   zone = null,
   raw,
 }) {
@@ -44,14 +45,16 @@ export function createUnifiedRecord({
     fetchedAt: isoOrNow(fetchedAt),
     lat,
     lon,
+    zoneId,
     zone,
     raw,
   };
 }
 
 export function zoneFieldsFromText(text) {
-  const zone = inferZoneFromText(text);
+  const zone = getZoneByLookupKey(text) ?? getZoneByDisplayName(text);
   return {
+    zoneId: zone.id,
     zone: zone.label,
     lat: zone.lat,
     lon: zone.lon,

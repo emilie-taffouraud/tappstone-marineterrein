@@ -1,4 +1,4 @@
-import { getZoneById, inferZoneFromText } from "../config/zones.js";
+import { getZoneById, getZoneByLookupKey } from "../config/zones.js";
 import { getOrSetCache } from "../lib/cache.js";
 import { fetchJson } from "../lib/http.js";
 import { createUnifiedRecord } from "../lib/normalize.js";
@@ -27,12 +27,10 @@ function textValue(entry, keys) {
   return null;
 }
 
-function inferSensorZone(entry, index) {
+function resolveSensorZone(entry) {
   const explicitZone = textValue(entry, ["zone", "location", "zone_name", "area"]);
-  if (explicitZone) return inferZoneFromText(explicitZone);
-
-  const fallbackZones = ["codam", "tapp", "ahk-makerspace"];
-  return getZoneById(fallbackZones[index] || "general");
+  if (explicitZone) return getZoneByLookupKey(explicitZone);
+  return getZoneById("general");
 }
 
 function soundStatus(level) {
@@ -65,7 +63,7 @@ export async function getHusenseLiveData(env) {
 
       const entries = normalizeEntries(rawJson);
       const records = entries.flatMap((entry, index) => {
-        const zone = inferSensorZone(entry, index);
+        const zone = resolveSensorZone(entry);
         const sensorId = textValue(entry, ["id", "sensor_id", "uuid", "name"]) || `sensor-${index + 1}`;
         const observedAt = textValue(entry, ["observed_at", "timestamp", "measured_at", "time"]) || fetchedAt;
         const soundLevel = numericValue(entry, ["sound_level_db", "db", "dba", "level"]);
@@ -87,6 +85,7 @@ export async function getHusenseLiveData(env) {
             fetchedAt,
             lat: zone.lat,
             lon: zone.lon,
+            zoneId: zone.id,
             zone: zone.label,
             raw: entry,
           }),
@@ -104,6 +103,7 @@ export async function getHusenseLiveData(env) {
             fetchedAt,
             lat: zone.lat,
             lon: zone.lon,
+            zoneId: zone.id,
             zone: zone.label,
             raw: entry,
           }),

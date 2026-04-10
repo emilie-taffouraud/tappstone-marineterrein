@@ -35,6 +35,31 @@ export function LiveOperationsMapSection() {
   const warningPoints = useMemo(() => buildWarningPoints(overview.records), [overview.records]);
   const spatialSummary = useMemo(() => buildSpatialSummary(overview, health), [overview, health]);
 
+  if (typeof window !== "undefined") {
+    const debugPayload = {
+      mapComponent: "LiveOperationsMapSection",
+      zoneLabels: zones.map((zone) => ({
+        labelText: zone.displayName,
+        sourceId: zone.id,
+        sourceType: "canonical-site-place",
+        sourceFile: "src/config/sitePlaces.js",
+        renderedMarkerCoordinates: zone.center,
+        renderedLabelCoordinates: zone.labelPosition,
+        geometryType: zone.geometry.type,
+      })),
+      sensorLabels: sensorPoints.map((point) => ({
+        labelText: point.name,
+        sourceId: point.id,
+        sourceType: "sensor-seed",
+        sourceFile: "src/components/dashboard/live-map/sensorCatalog.ts",
+        renderedMarkerCoordinates: point.center,
+        renderedLabelCoordinates: point.center,
+      })),
+    };
+
+    console.log("[ops-map-debug]", debugPayload);
+  }
+
   function toggleLayer(key: keyof LayerVisibility) {
     setVisibility((current) => ({
       ...current,

@@ -12,6 +12,7 @@ export type UnifiedLiveRecord = {
   fetchedAt: string;
   lat: number | null;
   lon: number | null;
+  zoneId: string | null;
   zone: string | null;
   raw?: unknown;
 };

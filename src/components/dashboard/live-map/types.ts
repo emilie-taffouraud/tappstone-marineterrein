@@ -12,6 +12,7 @@ export type UnifiedLiveRecord = {
   fetchedAt: string;
   lat: number | null;
   lon: number | null;
+  zoneId: string | null;
   zone: string | null;
   raw?: unknown;
 };
@@ -58,9 +59,13 @@ export type LayerVisibility = {
 
 export type ZoneFeature = {
   id: string;
-  label: string;
+  displayName: string;
   center: [number, number];
-  polygon: [number, number][];
+  labelPosition: [number, number];
+  geometry: {
+    type: "point" | "polygon";
+    coordinates: [number, number] | [number, number][];
+  };
   recordCount: number;
   activeWarnings: number;
   mobilityScore: number;

@@ -1,4 +1,5 @@
-import { zoneConfigs } from "./mapConfig";
+import { getDefaultSitePlace, getSitePlaceByDisplayName, getSitePlaceById } from "../../../config/sitePlaces.js";
+import { sitePlaces } from "./mapConfig";
 import { getSensorPoints, summarizeSensorPoints } from "./sensorCatalog";
 import type {
   OpsHealthResponse,
@@ -25,18 +26,16 @@ function maxStatus(statuses: UnifiedLiveRecord["status"][]) {
   }, "unknown");
 }
 
-function findZoneConfig(zoneLabel: string | null) {
-  if (!zoneLabel) {
-    return zoneConfigs.find((zone) => zone.id === "general") ?? zoneConfigs[0];
+function resolveSitePlace(record: Pick<UnifiedLiveRecord, "zoneId" | "zone">) {
+  if (record.zoneId) {
+    return getSitePlaceById(record.zoneId) ?? getDefaultSitePlace();
   }
 
-  const normalized = zoneLabel.toLowerCase();
-  return (
-    zoneConfigs.find((zone) => zone.label.toLowerCase() === normalized) ??
-    zoneConfigs.find((zone) => normalized.includes(zone.label.toLowerCase())) ??
-    zoneConfigs.find((zone) => zone.id === "general") ??
-    zoneConfigs[0]
-  );
+  if (record.zone) {
+    return getSitePlaceByDisplayName(record.zone) ?? getDefaultSitePlace();
+  }
+
+  return getDefaultSitePlace();
 }
 
 function formatObservedAt(value: string) {
@@ -46,10 +45,9 @@ function formatObservedAt(value: string) {
 }
 
 export function buildZoneFeatures(records: UnifiedLiveRecord[]): ZoneFeature[] {
-  return zoneConfigs.map((zone) => {
+  return sitePlaces.map((place) => {
     const zoneRecords = records.filter((record) => {
-      const recordZone = findZoneConfig(record.zone);
-      return recordZone.id === zone.id;
+      return resolveSitePlace(record)?.id === place.id;
     });
 
     const weatherRecord = zoneRecords.find((record) => record.category === "weather" && record.metric === "condition_text");
@@ -58,10 +56,11 @@ export function buildZoneFeatures(records: UnifiedLiveRecord[]): ZoneFeature[] {
     const warnings = zoneRecords.filter((record) => record.category === "warning");
 
     return {
-      id: zone.id,
-      label: zone.label,
-      center: zone.center,
-      polygon: zone.polygon,
+      id: place.id,
+      displayName: place.displayName,
+      center: place.geometry.type === "point" ? place.geometry.coordinates : place.labelPosition,
+      labelPosition: place.labelPosition,
+      geometry: place.geometry,
       recordCount: zoneRecords.length,
       activeWarnings: warnings.length,
       mobilityScore: totalFlowRecord ? toNumber(totalFlowRecord.value) : 0,
@@ -88,12 +87,18 @@ export function buildWeatherPoints(records: UnifiedLiveRecord[]): WeatherPoint[]
   return records
     .filter((record) => record.category === "weather" && supportedMetrics.includes(record.metric))
     .map((record) => {
-      const zone = findZoneConfig(record.zone);
+      const place = resolveSitePlace(record) ?? getDefaultSitePlace();
+      const fallbackCenter: [number, number] = [52.37278, 4.91535];
       const offset = offsets[record.metric] || [0, 0];
+      const baseCenter = place
+        ? place.geometry.type === "point"
+          ? place.geometry.coordinates
+          : place.labelPosition
+        : fallbackCenter;
       return {
         id: record.id,
-        center: [zone.center[0] + offset[0], zone.center[1] + offset[1]],
-        zone: zone.label,
+        center: [baseCenter[0] + offset[0], baseCenter[1] + offset[1]],
+        zone: place?.displayName || "Unknown place",
         title: record.label,
         value: record.unit ? `${record.value ?? "n/a"} ${record.unit}` : String(record.value ?? "n/a"),
         status: record.status,
@@ -106,11 +111,16 @@ export function buildWarningPoints(records: UnifiedLiveRecord[]): WarningPoint[]
   return records
     .filter((record) => record.category === "warning")
     .map((record) => {
-      const zone = findZoneConfig(record.zone);
+      const place = resolveSitePlace(record) ?? getDefaultSitePlace();
+      const center: [number, number] = place
+        ? place.geometry.type === "point"
+          ? place.geometry.coordinates
+          : place.labelPosition
+        : [52.37278, 4.91535];
       return {
         id: record.id,
-        center: zone.center,
-        zone: zone.label,
+        center,
+        zone: place?.displayName || "Unknown place",
         title: record.label,
         detail: typeof record.value === "string" ? record.value : "Warning active",
         status: record.status,
