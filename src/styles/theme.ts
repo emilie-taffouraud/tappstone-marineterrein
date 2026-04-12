@@ -18,6 +18,51 @@ export const MAIN_COLORS = {
 } as const;
 
 /* ============================================================================
+   DASHBOARD HERO TYPOGRAPHY
+   ============================================================================ */
+
+export const DASHBOARD_HEADER_THEME = {
+  title: {
+    color: MAIN_COLORS.aColorWhite,
+    fontFamily: '"Poppins", "Segoe UI", sans-serif',
+    fontWeight: 600,
+    letterSpacing: "-0.02em",
+  },
+  subtitle: {
+    color: MAIN_COLORS.aColor3,
+    fontFamily: '"Poppins", "Segoe UI", sans-serif',
+    fontWeight: 400,
+    letterSpacing: "0.005em",
+  },
+} as const;
+
+/* ============================================================================
+   TELRAAM LIVE CARD THEME
+   ============================================================================ */
+
+export const TELRAAM_LIVE_CARD_THEME = {
+  icon: {
+    width: "3.25rem",
+    height: "3.25rem",
+    objectFit: "contain" as const,
+  },
+  travelTypeLabelColors: {
+    Pedestrians: "#016991",
+    Bicycles: "#00ADEF",
+    Cars: "#0f766e",
+    Buses: "#f59e0b",
+    "Light trucks": "#94a3b8",
+    Motorcycles: "#ef4444",
+    Trucks: "#22c55e",
+    Trailers: "#f97316",
+    Tractors: "#14b8a6",
+    Strollers: "#64748b",
+  },
+  fallbackTravelTypeLabelColor: MAIN_COLORS.aColor1,
+  inactiveTravelTypeLabelColor: MAIN_COLORS.aColorGray,
+} as const;
+
+/* ============================================================================
    COMPONENT STYLES
    ============================================================================ */
 

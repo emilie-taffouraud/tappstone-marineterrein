@@ -3,6 +3,111 @@ import { getOrSetCache } from "../lib/cache.js";
 import { fetchJson } from "../lib/http.js";
 import { createUnifiedRecord } from "../lib/normalize.js";
 
+const TELRAAM_MODE_DEFINITIONS = [
+  {
+    metric: "bicycle_count",
+    label: "Bicycles",
+    directionalFields: ["mode_bicycle_lft", "mode_bicycle_rgt"],
+    fallbackFields: ["bike", "bicycle", "bike_count", "bicycle_count"],
+  },
+  {
+    metric: "bus_count",
+    label: "Buses",
+    directionalFields: ["mode_bus_lft", "mode_bus_rgt"],
+    fallbackFields: ["bus", "bus_count"],
+  },
+  {
+    metric: "car_count",
+    label: "Cars",
+    directionalFields: ["mode_car_lft", "mode_car_rgt"],
+    fallbackFields: ["car", "car_count"],
+  },
+  {
+    metric: "light_truck_count",
+    label: "Light trucks",
+    directionalFields: ["mode_lighttruck_lft", "mode_lighttruck_rgt"],
+    fallbackFields: ["lighttruck", "light_truck", "lighttruck_count"],
+  },
+  {
+    metric: "motorcycle_count",
+    label: "Motorcycles",
+    directionalFields: ["mode_motorcycle_lft", "mode_motorcycle_rgt"],
+    fallbackFields: ["motorcycle", "motorcycle_count"],
+  },
+  {
+    metric: "pedestrian_count",
+    label: "Pedestrians",
+    directionalFields: ["mode_pedestrian_lft", "mode_pedestrian_rgt"],
+    fallbackFields: ["pedestrian", "pedestrian_count", "pedestrians"],
+  },
+  {
+    metric: "stroller_count",
+    label: "Strollers",
+    directionalFields: ["mode_stroller_lft", "mode_stroller_rgt"],
+    fallbackFields: ["stroller", "stroller_count"],
+  },
+  {
+    metric: "tractor_count",
+    label: "Tractors",
+    directionalFields: ["mode_tractor_lft", "mode_tractor_rgt"],
+    fallbackFields: ["tractor", "tractor_count"],
+  },
+  {
+    metric: "trailer_count",
+    label: "Trailers",
+    directionalFields: ["mode_trailer_lft", "mode_trailer_rgt"],
+    fallbackFields: ["trailer", "trailer_count"],
+  },
+  {
+    metric: "truck_count",
+    label: "Trucks",
+    directionalFields: ["mode_truck_lft", "mode_truck_rgt"],
+    fallbackFields: ["truck", "truck_count"],
+  },
+];
+
+function resolveDirectionalCount(row, directionalFields = [], fallbackFields = []) {
+  const directionalValues = directionalFields
+    .map((field) => row?.[field])
+    .filter((value) => value !== undefined && value !== null)
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+
+  if (directionalValues.length) {
+    return directionalValues.reduce((sum, value) => sum + value, 0);
+  }
+
+  return resolveCount(row, fallbackFields);
+}
+
+const TELRAAM_ADVANCED_COLUMNS = [
+  "segment_id",
+  "date",
+  "uptime",
+  "mode_bicycle_lft",
+  "mode_bicycle_rgt",
+  "mode_bus_lft",
+  "mode_bus_rgt",
+  "mode_car_lft",
+  "mode_car_rgt",
+  "mode_lighttruck_lft",
+  "mode_lighttruck_rgt",
+  "mode_motorcycle_lft",
+  "mode_motorcycle_rgt",
+  "mode_pedestrian_lft",
+  "mode_pedestrian_rgt",
+  "mode_stroller_lft",
+  "mode_stroller_rgt",
+  "mode_tractor_lft",
+  "mode_tractor_rgt",
+  "mode_trailer_lft",
+  "mode_trailer_rgt",
+  "mode_truck_lft",
+  "mode_truck_rgt",
+  "mode_night_lft",
+  "mode_night_rgt",
+];
+
 function resolveCount(row, candidates) {
   for (const candidate of candidates) {
     const value = row?.[candidate];
@@ -30,6 +135,7 @@ function buildTrafficRequestBody(env) {
     id: String(env.telraamSegmentId),
     time_start: dateStart.toISOString(),
     time_end: dateEnd.toISOString(),
+    columns: TELRAAM_ADVANCED_COLUMNS.join(","),
   };
 }
 
@@ -58,7 +164,7 @@ export async function getTelraamLiveData(env) {
   return getOrSetCache("ops:telraam", env.opsCacheTtlMs, async () => {
     try {
       const body = buildTrafficRequestBody(env);
-      const url = `${env.telraamBaseUrl.replace(/\/$/, "")}/v1/reports/traffic`;
+      const url = `${env.telraamBaseUrl.replace(/\/$/, "")}/advanced/reports/traffic`;
       const rawJson = await fetchJson(url, {
         timeoutMs: env.opsHttpTimeoutMs,
         method: "POST",
@@ -74,56 +180,52 @@ export async function getTelraamLiveData(env) {
       const zone = getTelraamZone(env.telraamSegmentId);
       const observedAt =
         latestRow.date || latestRow.recorded_at || latestRow.time || latestRow.timestamp || fetchedAt;
-      const pedestrians = resolveCount(latestRow, ["pedestrian", "pedestrian_count", "pedestrians"]);
-      const bicycles = resolveCount(latestRow, ["bike", "bicycle", "bike_count", "bicycle_count"]);
-      const cars = resolveCount(latestRow, ["car", "vehicle", "car_count", "vehicle_count"]);
-      const heavy = resolveCount(latestRow, ["heavy", "heavy_count", "heavy_vehicle"]);
-      const totalFlow = pedestrians + bicycles + cars + heavy;
+      const modeCounts = Object.fromEntries(
+        TELRAAM_MODE_DEFINITIONS.map((definition) => [
+          definition.metric,
+          resolveDirectionalCount(latestRow, definition.directionalFields, definition.fallbackFields),
+        ]),
+      );
+      const pedestrians = modeCounts.pedestrian_count || 0;
+      const bicycles = modeCounts.bicycle_count || 0;
+      const vehicles =
+        (modeCounts.bus_count || 0) +
+        (modeCounts.car_count || 0) +
+        (modeCounts.light_truck_count || 0) +
+        (modeCounts.motorcycle_count || 0) +
+        (modeCounts.tractor_count || 0) +
+        (modeCounts.trailer_count || 0) +
+        (modeCounts.truck_count || 0);
+      const totalFlow = Object.values(modeCounts).reduce((sum, value) => sum + Number(value || 0), 0);
 
       const records = [
-        createUnifiedRecord({
-          id: `telraam-${env.telraamSegmentId}-pedestrians`,
-          source: "telraam",
-          category: "mobility",
-          metric: "pedestrian_count",
-          label: "Pedestrians",
-          value: pedestrians,
-          unit: "count/hour",
-          status: statusFromTotalFlow(totalFlow),
-          confidence: "high",
-          observedAt,
-          fetchedAt,
-          lat: zone.lat,
-          lon: zone.lon,
-          zoneId: zone.id,
-          zone: zone.label,
-          raw: latestRow,
-        }),
-        createUnifiedRecord({
-          id: `telraam-${env.telraamSegmentId}-bicycles`,
-          source: "telraam",
-          category: "mobility",
-          metric: "bicycle_count",
-          label: "Bicycles",
-          value: bicycles,
-          unit: "count/hour",
-          status: statusFromTotalFlow(totalFlow),
-          confidence: "high",
-          observedAt,
-          fetchedAt,
-          lat: zone.lat,
-          lon: zone.lon,
-          zoneId: zone.id,
-          zone: zone.label,
-          raw: latestRow,
-        }),
+        ...TELRAAM_MODE_DEFINITIONS.map((definition) =>
+          createUnifiedRecord({
+            id: `telraam-${env.telraamSegmentId}-${definition.metric}`,
+            source: "telraam",
+            category: "mobility",
+            metric: definition.metric,
+            label: definition.label,
+            value: modeCounts[definition.metric] || 0,
+            unit: "count/hour",
+            status: statusFromTotalFlow(totalFlow),
+            confidence: "high",
+            observedAt,
+            fetchedAt,
+            lat: zone.lat,
+            lon: zone.lon,
+            zoneId: zone.id,
+            zone: zone.label,
+            raw: latestRow,
+          }),
+        ),
         createUnifiedRecord({
           id: `telraam-${env.telraamSegmentId}-vehicles`,
           source: "telraam",
           category: "mobility",
           metric: "vehicle_count",
           label: "Vehicles",
-          value: cars + heavy,
+          value: vehicles,
           unit: "count/hour",
           status: totalFlow >= 350 ? "warning" : "ok",
           confidence: "medium",

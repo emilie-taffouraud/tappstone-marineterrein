@@ -58,11 +58,6 @@ export default function PublicHolidaysCard({ holidaysLoading, holidays }: Public
 
   const nationalCount = normalized.filter((holiday) => holiday.global !== false).length;
   const regionalCount = normalized.filter((holiday) => holiday.global === false).length;
-  const totalRegionalAreas = new Set(
-    normalized
-      .flatMap((holiday) => holiday.counties || [])
-      .filter((county): county is string => typeof county === "string"),
-  ).size;
 
   return (
     <Card>
@@ -70,7 +65,7 @@ export default function PublicHolidaysCard({ holidaysLoading, holidays }: Public
         <SectionTitle title="Public Holidays" />
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-3">
           <div className="flex h-full flex-col justify-between rounded-xl border border-slate-200 bg-slate-50 p-3">
             <p className="text-xs uppercase tracking-[0.1em] text-slate-500">Next holiday</p>
             <p className="mt-2 min-h-[40px] text-sm font-semibold leading-5 text-slate-900">
@@ -96,12 +91,6 @@ export default function PublicHolidaysCard({ holidaysLoading, holidays }: Public
             </p>
           </div>
 
-          <div className="flex h-full flex-col justify-between rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <p className="text-xs uppercase tracking-[0.1em] text-slate-500">Regional coverage</p>
-            <p className="mt-2 min-h-[40px] text-sm font-semibold leading-5 text-slate-900">
-              {pluralize(regionalCount, "holiday", "holidays")} • {pluralize(totalRegionalAreas, "area", "areas")}
-            </p>
-          </div>
         </div>
 
         {holidaysLoading ? (
