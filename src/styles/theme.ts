@@ -15,6 +15,7 @@ export const MAIN_COLORS = {
   aColor2: "#00ADEF",      // Secondary accent (blue)
   aColor3: "#fcfcfcec",    // Light background
   aColor4: "#0e1124ec",    // Dark blue overlay
+  aColor5: "#f37158",      // Additional accent color(coral)
 } as const;
 
 /* ============================================================================
@@ -23,7 +24,7 @@ export const MAIN_COLORS = {
 
 export const DASHBOARD_HEADER_THEME = {
   title: {
-    color: MAIN_COLORS.aColorWhite,
+    color: MAIN_COLORS.aColor5,
     fontFamily: '"Poppins", "Segoe UI", sans-serif',
     fontWeight: 600,
     letterSpacing: "-0.02em",
@@ -34,6 +35,16 @@ export const DASHBOARD_HEADER_THEME = {
     fontWeight: 400,
     letterSpacing: "0.005em",
   },
+} as const;
+
+/* ============================================================================
+  DASHBOARD CARDS TITLE COLORS
+  ============================================================================ */
+
+export const DASHBOARD_CARD_TITLE_THEME = {
+  sectionTitleColor: MAIN_COLORS.aColor5,
+  sectionSubtitleColor: MAIN_COLORS.aColorGray,
+  cardTitleColor: MAIN_COLORS.aColorBlack,
 } as const;
 
 /* ============================================================================

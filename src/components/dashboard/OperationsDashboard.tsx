@@ -18,6 +18,7 @@ import { useTelraamTraffic } from "../../hooks/useTelraamTraffic";
 import { DASHBOARD_HEADER_THEME, MAIN_COLORS, getBadgeStyle } from "../../styles/theme";
 import mt_down from "../../assets/mt_down.jpg";
 import mt_up from "../../assets/mt_up.jpg";
+import TelraamStoredCard from "./TelraamStoredCard";
 import PublicHolidaysCard from "./PublicHolidaysCard";
 import TelraamLiveCard from "./TelraamLiveCard";
 import TelraamDetailsCard from "./TelraamDetailsCard";
@@ -525,6 +526,8 @@ export function OperationsDashboard() {
                 </div>
               </CardContent>
             </Card>
+
+            <TelraamStoredCard points={telraamHistory} error={telraamHistoryError} />
 
             <Card>
               <CardHeader>

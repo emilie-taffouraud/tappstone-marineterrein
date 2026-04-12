@@ -1,5 +1,5 @@
 import React from "react";
-import { MAIN_COLORS } from "../../styles/theme";
+import { DASHBOARD_CARD_TITLE_THEME, MAIN_COLORS } from "../../styles/theme";
 
 export function Card({
   className = "",
@@ -40,7 +40,10 @@ export function CardTitle({
   children: React.ReactNode;
 }) {
   return (
-    <h3 className={`text-sm font-semibold tracking-tight ${className}`} style={{ color: MAIN_COLORS.aColorBlack }}>
+    <h3
+      className={`text-sm font-semibold tracking-tight ${className}`}
+      style={{ color: DASHBOARD_CARD_TITLE_THEME.cardTitleColor }}
+    >
       {children}
     </h3>
   );
@@ -111,11 +114,11 @@ export function SectionTitle({
   return (
     <div className="mb-4 flex items-end justify-between gap-3">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
+        <h2 className="text-lg font-semibold tracking-tight" style={{ color: DASHBOARD_CARD_TITLE_THEME.sectionTitleColor }}>
           {title}
         </h2>
         {subtitle ? (
-          <p className="mt-1 text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
+          <p className="mt-1 text-sm" style={{ color: DASHBOARD_CARD_TITLE_THEME.sectionSubtitleColor }}>
             {subtitle}
           </p>
         ) : null}
