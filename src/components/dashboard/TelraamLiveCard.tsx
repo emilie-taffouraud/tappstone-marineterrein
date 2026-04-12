@@ -67,7 +67,7 @@ export default function TelraamLiveCard({
     <Card className="min-h-[460px]">
       <CardHeader>
         <SectionTitle
-          title="Live Telraam travel types"
+          title="Live Telraam Data"
           subtitle="Counts by travel type"
         />
       </CardHeader>
