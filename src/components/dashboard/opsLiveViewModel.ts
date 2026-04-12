@@ -495,6 +495,26 @@ export function deriveCurrentModalityChart(overview: OpsLiveOverviewResponse): B
   ];
 }
 
+const TELRAAM_LIVE_MODE_METRICS: Array<{ metric: string; label: string }> = [
+  { metric: "pedestrian_count", label: "Pedestrians" },
+  { metric: "bicycle_count", label: "Bicycles" },
+  { metric: "car_count", label: "Cars" },
+  { metric: "bus_count", label: "Buses" },
+  { metric: "light_truck_count", label: "Light trucks" },
+  { metric: "motorcycle_count", label: "Motorcycles" },
+  { metric: "truck_count", label: "Trucks" },
+  { metric: "trailer_count", label: "Trailers" },
+  { metric: "tractor_count", label: "Tractors" },
+  { metric: "stroller_count", label: "Strollers" },
+];
+
+export function deriveTelraamLiveModeSplitChart(overview: OpsLiveOverviewResponse): BreakdownChartPoint[] {
+  return TELRAAM_LIVE_MODE_METRICS.map(({ metric, label }) => ({
+    label,
+    value: asNumber(findRecord(overview, "telraam", metric)?.value ?? null) || 0,
+  })).sort((left, right) => right.value - left.value || left.label.localeCompare(right.label));
+}
+
 function formatChartTime(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }

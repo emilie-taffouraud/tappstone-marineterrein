@@ -1,14 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import {
   Area,
   AreaChart,
   CartesianGrid,
-  Cell,
   ComposedChart,
   Line,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Scatter,
   ScatterChart,
@@ -18,9 +15,11 @@ import {
 } from "recharts";
 import { useOpsLiveData } from "../../hooks/useOpsLiveData";
 import { useTelraamTraffic } from "../../hooks/useTelraamTraffic";
-import { MAIN_COLORS, getBadgeStyle } from "../../styles/theme";
+import { DASHBOARD_HEADER_THEME, MAIN_COLORS, getBadgeStyle } from "../../styles/theme";
 import mt_down from "../../assets/mt_down.jpg";
 import mt_up from "../../assets/mt_up.jpg";
+import PublicHolidaysCard from "./PublicHolidaysCard";
+import TelraamLiveCard from "./TelraamLiveCard";
 import TelraamDetailsCard from "./TelraamDetailsCard";
 import WeatherWidget from "./WeatherWidget";
 import { LiveOperationsMapSection } from "./live-map/LiveOperationsMapSection";
@@ -33,6 +32,7 @@ import {
   deriveLiveKpis,
   deriveLiveMetaSummary,
   deriveSoundSummary,
+  deriveTelraamLiveModeSplitChart,
   deriveWaterSummary,
   deriveWeatherWidgetModel,
 } from "./opsLiveViewModel";
@@ -160,6 +160,18 @@ function matchesZoneSelection(selection: string, alertZone: string) {
   return normalizedZone.includes(normalizedSelection) || normalizedSelection.includes(normalizedZone);
 }
 
+type HolidayItem = {
+  date: string;
+  localName: string;
+  name?: string;
+  countryCode?: string;
+  fixed?: boolean;
+  global?: boolean;
+  counties?: string[] | null;
+  launchYear?: number | null;
+  types?: string[];
+};
+
 export function OperationsDashboard() {
   const [zone, setZone] = useState("All locations");
   const [category, setCategory] = useState("All categories");
@@ -169,8 +181,42 @@ export function OperationsDashboard() {
   const [flowThreshold, setFlowThreshold] = useState(150);
   const [anomalyThreshold, setAnomalyThreshold] = useState(20);
   const [soundThreshold, setSoundThreshold] = useState(75);
+  const [holidays, setHolidays] = useState<HolidayItem[]>([]);
+  const [holidaysLoading, setHolidaysLoading] = useState(true);
   const { overview, health, loading: opsLoading, error: opsError } = useOpsLiveData();
   const { points: telraamHistory, error: telraamHistoryError } = useTelraamTraffic();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHolidays() {
+      try {
+        setHolidaysLoading(true);
+        const year = new Date().getFullYear();
+        const response = await fetch(`/api/holidays?year=${year}`);
+        const json = (await response.json()) as { data?: HolidayItem[] };
+
+        if (!cancelled) {
+          setHolidays(Array.isArray(json.data) ? json.data : []);
+        }
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) {
+          setHolidays([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setHolidaysLoading(false);
+        }
+      }
+    }
+
+    loadHolidays();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const liveKpis = useMemo(() => deriveLiveKpis(overview, health, opsLoading), [overview, health, opsLoading]);
   const liveWeatherWidget = useMemo(() => deriveWeatherWidgetModel(overview, health), [overview, health]);
@@ -178,6 +224,7 @@ export function OperationsDashboard() {
   const soundSummary = useMemo(() => deriveSoundSummary(overview, health), [overview, health]);
   const waterSummary = useMemo(() => deriveWaterSummary(overview, health), [overview, health]);
   const currentModalityChart = useMemo(() => deriveCurrentModalityChart(overview), [overview]);
+  const telraamLiveModeSplitChart = useMemo(() => deriveTelraamLiveModeSplitChart(overview), [overview]);
   const anomalyChart = useMemo(() => deriveAnomalyChart(telraamHistory), [telraamHistory]);
   const incidentCorrelationChart = useMemo(
     () => deriveIncidentCorrelationChart(telraamHistory, overview),
@@ -195,7 +242,18 @@ export function OperationsDashboard() {
     [telraamHistory],
   );
 
-  const chartPalette = [MAIN_COLORS.aColor1, MAIN_COLORS.aColor2, "#0f766e", "#f59e0b", "#94a3b8"];
+  const chartPalette = [
+    MAIN_COLORS.aColor1,
+    MAIN_COLORS.aColor2,
+    "#0f766e",
+    "#f59e0b",
+    "#94a3b8",
+    "#ef4444",
+    "#22c55e",
+    "#f97316",
+    "#14b8a6",
+    "#64748b",
+  ];
   const latestAnomaly = anomalyChart.length ? anomalyChart[anomalyChart.length - 1] : undefined;
   const husenseConnected =
     health?.sources.husense?.status === "ok" &&
@@ -282,15 +340,16 @@ export function OperationsDashboard() {
             border: `1px solid ${MAIN_COLORS.aColorWhite}cc`,
             backgroundColor: MAIN_COLORS.aColorBlack,
             backgroundImage: `linear-gradient(${MAIN_COLORS.aColor4}, ${MAIN_COLORS.aColor4}), url(${mt_up})`,
+            backgroundPosition: "bottom center",
             boxShadow: `0 12px 35px ${MAIN_COLORS.aColorBlack}22`,
           }}
         >
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-4xl">
-              <h1 className="text-3xl font-semibold tracking-tight md:text-[2rem]" style={{ color: MAIN_COLORS.aColor2 }}>
+              <h1 className="text-3xl font-semibold tracking-tight md:text-[2rem]" style={DASHBOARD_HEADER_THEME.title}>
                 Tapp Marineterrein Operations Dashboard
               </h1>
-              <p className="mt-3 max-w-4xl text-sm leading-6" style={{ color: MAIN_COLORS.aColorWhite }}>
+              <p className="mt-3 max-w-4xl text-sm leading-6" style={DASHBOARD_HEADER_THEME.subtitle}>
                 Live overview of gate activity, mapped sound context, weather, and swim-area conditions across the public
                 space.
               </p>
@@ -512,6 +571,8 @@ export function OperationsDashboard() {
                 )}
               </CardContent>
             </Card>
+
+            <PublicHolidaysCard holidaysLoading={holidaysLoading} holidays={holidays} />
           </div>
 
           <div className="space-y-5">
@@ -574,45 +635,7 @@ export function OperationsDashboard() {
               </CardContent>
             </Card>
 
-            <Card className="min-h-[460px]">
-              <CardHeader>
-                <SectionTitle
-                  title="Current mobility split"
-                  subtitle="Latest modality mix beside the live movement and anomaly views"
-                />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="h-[240px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={currentModalityChart} dataKey="value" nameKey="label" innerRadius={46} outerRadius={88} paddingAngle={4}>
-                        {currentModalityChart.map((entry, index) => (
-                          <Cell key={entry.label} fill={chartPalette[index % chartPalette.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {currentModalityChart.map((item, index) => (
-                    <div
-                      key={item.label}
-                      className="rounded-2xl border p-4"
-                      style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
-                    >
-                      <p className="text-sm" style={{ color: chartPalette[index] }}>
-                        {item.label}
-                      </p>
-                      <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                        {item.value}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            <TelraamLiveCard data={telraamLiveModeSplitChart} chartPalette={chartPalette} />
 
             <div className="grid auto-rows-fr gap-5 md:grid-cols-2 xl:grid-cols-1">
               <SignalCard {...soundSummary} className="h-full" />
