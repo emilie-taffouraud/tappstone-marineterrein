@@ -247,6 +247,81 @@ app.get("/api/weather", async (req, res) => {
   }
 });
 
+// ---------- Husense API routes (Live Occupancy) ----------
+app.get("/api/husense/presence", async (req, res) => {
+  try {
+    const safeZones = [
+      {
+        id: "b9c17619-be37-4c6a-a1f3-45e08fd3466c",
+        name: "Marineterrein Hoofd Ingang",
+        capacity: 100,
+        presenceCount: 0
+      },
+      {
+        id: "5db05d88-7833-440a-9c3e-24c93fb08406",
+        name: "UvA Ingang Roetersstraat",
+        capacity: 100,
+        presenceCount: 0
+      },
+      {
+        id: "9b4a6d95-b5dc-426f-a5ae-ea31200b09b5",
+        name: "Marineterrein Commandantsbrug",
+        capacity: 100,
+        presenceCount: 0
+      },
+      {
+        id: "781e09a4-b0b1-4bcb-ad7c-67dfc0182792",
+        name: "Marineterrein Oude Poort",
+        capacity: 100,
+        presenceCount: 0
+      }
+    ];
+
+    res.json(safeZones);
+
+  } catch (err) {
+    console.error("Husense Live API error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------- Husense Historical Heatmap Route ----------
+app.get("/api/husense/historical", async (req, res) => {
+  try {
+    const jwtToken = process.env.HUSENSE_JWT_TOKEN;
+    if (!jwtToken) return res.status(500).json({ error: "Missing HUSENSE_JWT_TOKEN" });
+
+    // 接收前端传来的 空间ID 和 两个时间戳
+    const { spaceId, startTimestamp, endTimestamp } = req.query;
+    
+    // 👇 完全按照你截图里的格式拼装真实 URL 👇
+    const apiUrl = `https://bff.husense.io/space/${spaceId}/heatmap?startTimestamp=${startTimestamp}&endTimestamp=${endTimestamp}`;
+
+    console.log(`[Husense] Requesting real heatmap: ${apiUrl}`);
+
+    const response = await fetch(apiUrl, {
+      method: "GET",
+      headers: { 
+        "Authorization": `Bearer ${jwtToken}`,
+        "Accept": "application/json"
+      }
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Husense API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    res.json(data); // 把真实的 JSON 返回给前端
+
+  } catch (err) {
+    console.error("Historical API error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 
 // ---------- Holidays API routes ----------
 app.get("/api/holidays", async (req, res) => {

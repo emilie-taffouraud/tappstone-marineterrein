@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
+import HusenseHeatmapCard from "./HusenseHeatmapCard";
 import {
   Area,
   AreaChart,
@@ -184,6 +185,40 @@ export function OperationsDashboard() {
   const [soundThreshold, setSoundThreshold] = useState(75);
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
   const [holidaysLoading, setHolidaysLoading] = useState(true);
+  
+  const [occupancyData, setOccupancyData] = useState<any[]>([]);
+  const [husenseError, setHusenseError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchOccupancy = async () => {
+      try {
+        const response = await fetch('http://localhost:3000/api/husense/presence');
+        if (!response.ok) throw new Error('Husense Network Error');
+        const data = await response.json();
+        
+        console.log("Husense Data fetched successfully:", data); // 打印出来看结构
+        
+        // try to handle different possible structures
+        const zones = Array.isArray(data) ? data : (data?.value || data?.zones || data?.data || [data]);
+
+        if (!cancelled) {
+          setOccupancyData(zones);
+        }
+      } catch (err: any) {
+        console.error("Failed to fetch Husense:", err);
+        if (!cancelled) setHusenseError(err.message);
+      }
+    };
+
+    fetchOccupancy(); 
+    const intervalId = setInterval(fetchOccupancy, 60 * 1000); // refresh every 1 minute
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, []);
+
   const { overview, health, loading: opsLoading, error: opsError } = useOpsLiveData();
   const { points: telraamHistory, error: telraamHistoryError } = useTelraamTraffic();
 
@@ -473,6 +508,70 @@ export function OperationsDashboard() {
               </Card>
             );
           })}
+        </div>
+
+        {/* Husense */}
+        <div className="mt-5 mb-5">
+          <Card>
+            <CardHeader>
+              <SectionTitle
+                title="Live Area Occupancy"
+                subtitle="Real-time presence data from Husense radar sensors (Swimming / Voorwerf)"
+              />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {husenseError ? (
+                <div className="text-red-500 text-sm p-4 bg-red-50 rounded-xl">Error loading Husense: {husenseError}</div>
+              ) : occupancyData.length === 0 ? (
+                 <div className="p-4 animate-pulse text-sm" style={{ color: MAIN_COLORS.aColor1 }}>Loading live occupancy data...</div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  {occupancyData.map((zone: any, index: number) => {
+                     
+                     const maxCapacity = zone.capacity || 100;
+                     const currentCount = zone.presenceCount || zone.currentPresence || zone.count || 0;
+                     const density = Math.min(100, Math.round((currentCount / maxCapacity) * 100));
+
+                     return (
+                      <div key={index} className="rounded-2xl border p-4" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
+                            {zone.name || `Zone ${index + 1}`}
+                          </p>
+                          <Pill tone={density >= 85 ? "rose" : density >= 60 ? "amber" : "emerald"}>
+                            {density >= 85 ? "Busy" : density >= 60 ? "Watch" : "Stable"}
+                          </Pill>
+                        </div>
+
+                        <p className="mt-3 text-3xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>{currentCount}</p>
+                        <p className="text-xs" style={{ color: MAIN_COLORS.aColorGray }}>live individuals</p>
+
+                        <div className="mt-4">
+                          <div className="mb-1 flex items-center justify-between text-[10px] font-medium uppercase tracking-wider" style={{ color: MAIN_COLORS.aColorGray }}>
+                            <span>Occupancy</span>
+                            <span>{density}%</span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-1000"
+                              style={{
+                                width: `${density}%`,
+                                backgroundColor: density >= 85 ? "#ef4444" : density >= 60 ? "#f59e0b" : MAIN_COLORS.aColor1
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="mb-5">
+          <HusenseHeatmapCard />
         </div>
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] xl:items-start">
