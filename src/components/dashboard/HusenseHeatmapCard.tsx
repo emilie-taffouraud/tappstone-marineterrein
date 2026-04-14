@@ -27,7 +27,7 @@ export default function HusenseHeatmapCard() {
         const endTimestamp = startTimestamp + 86400000;
 
         const response = await fetch(
-          `http://localhost:3000/api/husense/historical?spaceId=${spaceId}&startTimestamp=${startTimestamp}&endTimestamp=${endTimestamp}`
+          `/api/husense/historical?spaceId=${spaceId}&startTimestamp=${startTimestamp}&endTimestamp=${endTimestamp}`
         );
 
         if (!response.ok) {
@@ -37,7 +37,13 @@ export default function HusenseHeatmapCard() {
         const data = await response.json();
         
         // 确保数据结构正确
-        if (isMounted && data && data.width && data.height && data.data) {
+        if (
+          isMounted &&
+          data &&
+          Number.isFinite(data.width) &&
+          Number.isFinite(data.height) &&
+          Array.isArray(data.data)
+        ) {
           drawHeatmap(data.width, data.height, data.data);
         } else if (isMounted) {
           throw new Error("Invalid heatmap data format received.");

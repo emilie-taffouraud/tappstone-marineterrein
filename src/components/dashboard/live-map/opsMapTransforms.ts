@@ -52,7 +52,6 @@ export function buildZoneFeatures(records: UnifiedLiveRecord[]): ZoneFeature[] {
 
     const weatherRecord = zoneRecords.find((record) => record.category === "weather" && record.metric === "condition_text");
     const totalFlowRecord = zoneRecords.find((record) => record.metric === "total_flow");
-    const soundClassRecord = zoneRecords.find((record) => record.metric === "sound_classification");
     const warnings = zoneRecords.filter((record) => record.category === "warning");
 
     return {
@@ -64,12 +63,7 @@ export function buildZoneFeatures(records: UnifiedLiveRecord[]): ZoneFeature[] {
       recordCount: zoneRecords.length,
       activeWarnings: warnings.length,
       mobilityScore: totalFlowRecord ? toNumber(totalFlowRecord.value) : 0,
-      weatherSummary:
-        typeof soundClassRecord?.value === "string"
-          ? `Sound: ${soundClassRecord.value}`
-          : typeof weatherRecord?.value === "string"
-            ? weatherRecord.value
-            : null,
+      weatherSummary: typeof weatherRecord?.value === "string" ? weatherRecord.value : null,
       status: maxStatus(zoneRecords.map((record) => record.status)),
     };
   });

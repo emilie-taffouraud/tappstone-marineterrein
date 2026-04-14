@@ -24,7 +24,6 @@ const SENSOR_SEEDS: SensorSeed[] = [
   { id: "mmwave-hoofdingang", name: "MMwave - Hoofdingang", category: "Mobility & Access", center: [52.372558, 4.917779], installState: "installed" },
   { id: "mmwave-commandantsbrug", name: "MMwave - Commandantsbrug", category: "Mobility & Access", center: [52.37564677, 4.914343403], installState: "installed" },
   { id: "mmwave-oude-poort", name: "MMwave - Oude poort", category: "Mobility & Access", center: [52.37184678, 4.916340498], installState: "installed" },
-  { id: "sound-classification", name: "Sound Classification", category: "Sound Monitoring", center: [52.372621, 4.917676], backendSource: "husense", installState: "installed" },
   { id: "vehicle-classification", name: "Vehicle Classification", category: "Mobility & Access", center: [52.37312298, 4.916791023], installState: "installed" },
   { id: "busyness-terrace", name: "Busyness Monitor - Terrace", category: "Crowd & Presence", center: [52.373141, 4.91674], installState: "installed" },
   { id: "busyness-swimming", name: "Busyness Monitor - Swimming", category: "Crowd & Presence", center: [52.372524, 4.915365], installState: "installed" },

@@ -5,6 +5,7 @@ import { Pool } from "pg";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { getUnifiedLiveData, getOpsHealth } from "./server/ops/services/liveDataService.js";
+import { getAgendaFeed } from "./server/ops/services/agendaService.js";
 import { getKnmiLiveData } from "./server/ops/adapters/knmiAdapter.js";
 import { getWeatherLiveData } from "./server/ops/adapters/weatherAdapter.js";
 import { getOpsEnv } from "./server/ops/config/env.js";
@@ -37,6 +38,199 @@ const pool = process.env.DATABASE_URL
 app.use(express.static(path.join(__dirname, "public")));
 
 const KNMI_OPEN_DATA_API_KEY = process.env.KNMI_OPEN_DATA_API_KEY;
+const HUSENSE_DEFAULT_SPACES = [
+  {
+    id: "b9c17619-be37-4c6a-a1f3-45e08fd3466c",
+    name: "Marineterrein Hoofd Ingang",
+    capacity: 100,
+  },
+  {
+    id: "5db05d88-7833-440a-9c3e-24c93fb08406",
+    name: "UvA Ingang Roetersstraat",
+    capacity: 100,
+  },
+  {
+    id: "9b4a6d95-b5dc-426f-a5ae-ea31200b09b5",
+    name: "Marineterrein Commandantsbrug",
+    capacity: 100,
+  },
+  {
+    id: "781e09a4-b0b1-4bcb-ad7c-67dfc0182792",
+    name: "Marineterrein Oude Poort",
+    capacity: 100,
+  },
+];
+
+function isObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function firstFiniteNumber(...values) {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function firstText(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function normalizeHusenseCollection(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.results)) return payload.results;
+  if (Array.isArray(payload?.spaces)) return payload.spaces;
+  if (Array.isArray(payload?.zones)) return payload.zones;
+  if (isObject(payload)) return [payload];
+  return [];
+}
+
+function extractPresencePayload(payload) {
+  if (!payload) return null;
+  if (Array.isArray(payload)) {
+    return payload.find((item) => extractPresencePayload(item)) || null;
+  }
+  if (!isObject(payload)) return null;
+
+  const nestedKeys = ["data", "result", "space", "zone", "presence", "occupancy", "live"];
+  for (const key of nestedKeys) {
+    const nested = extractPresencePayload(payload[key]);
+    if (nested) return nested;
+  }
+
+  const presenceCount = firstFiniteNumber(
+    payload.presenceCount,
+    payload.currentPresence,
+    payload.currentOccupancy,
+    payload.occupancyCount,
+    payload.peopleCount,
+    payload.personCount,
+    payload.count,
+    payload.total,
+    payload.value,
+  );
+  const capacity = firstFiniteNumber(payload.capacity, payload.maxCapacity, payload.limit);
+
+  if (presenceCount !== null || capacity !== null) {
+    return { presenceCount, capacity, raw: payload };
+  }
+
+  return null;
+}
+
+function normalizePresenceZones(payload, fallbackZones = HUSENSE_DEFAULT_SPACES) {
+  const entries = normalizeHusenseCollection(payload);
+  const normalized = entries
+    .map((entry, index) => {
+      const presence = extractPresencePayload(entry);
+      return {
+        id: firstText(entry?.id, entry?.spaceId, entry?.zoneId) || fallbackZones[index]?.id || `zone-${index + 1}`,
+        name: firstText(entry?.name, entry?.label, entry?.spaceName, entry?.zoneName) || fallbackZones[index]?.name || `Zone ${index + 1}`,
+        capacity:
+          firstFiniteNumber(entry?.capacity, entry?.maxCapacity, presence?.capacity, fallbackZones[index]?.capacity) ??
+          fallbackZones[index]?.capacity ??
+          100,
+        presenceCount:
+          firstFiniteNumber(
+            entry?.presenceCount,
+            entry?.currentPresence,
+            entry?.currentOccupancy,
+            entry?.occupancyCount,
+            entry?.peopleCount,
+            entry?.personCount,
+            entry?.count,
+            presence?.presenceCount,
+          ) ?? 0,
+      };
+    })
+    .filter((entry) => entry.id);
+
+  return normalized.length
+    ? normalized
+    : fallbackZones.map((zone) => ({
+        ...zone,
+        presenceCount: 0,
+      }));
+}
+
+function extractHeatmapPayload(payload) {
+  if (!payload) return null;
+
+  if (
+    isObject(payload) &&
+    Array.isArray(payload.data) &&
+    Number.isFinite(Number(payload.width)) &&
+    Number.isFinite(Number(payload.height))
+  ) {
+    return {
+      width: Number(payload.width),
+      height: Number(payload.height),
+      data: payload.data.map((value) => Number(value) || 0),
+    };
+  }
+
+  const nestedKeys = ["data", "result", "heatmap", "payload"];
+  for (const key of nestedKeys) {
+    const nested = extractHeatmapPayload(payload[key]);
+    if (nested) return nested;
+  }
+
+  return null;
+}
+
+async function fetchJsonOrThrow(url, headers) {
+  const response = await fetch(url, {
+    method: "GET",
+    headers,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Husense API error: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+async function fetchHusensePresenceForSpace(space, headers) {
+  const candidateUrls = [
+    `https://bff.husense.io/space/${space.id}/presence`,
+    `https://bff.husense.io/space/${space.id}/occupancy`,
+    `https://bff.husense.io/space/${space.id}/live`,
+    `https://bff.husense.io/space/${space.id}`,
+  ];
+
+  let lastError = null;
+
+  for (const url of candidateUrls) {
+    try {
+      const payload = await fetchJsonOrThrow(url, headers);
+      const presence = extractPresencePayload(payload);
+      if (presence) {
+        return {
+          id: space.id,
+          name: space.name,
+          capacity: presence.capacity ?? space.capacity,
+          presenceCount: presence.presenceCount ?? 0,
+        };
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) throw lastError;
+
+  return {
+    ...space,
+    presenceCount: 0,
+  };
+}
 
 // ---------- health ----------
 app.get("/api/health", async (req, res) => {
@@ -76,6 +270,23 @@ app.get("/api/ops/live/raw", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/ops/agenda", async (req, res) => {
+  try {
+    const limit = Number(req.query.limit || 4);
+    const agenda = await getAgendaFeed({ limit });
+    res.json(agenda);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      items: [],
+      sourceUrl: "https://marineterrein.nl/wat-is-er-te-doen/agenda/",
+      fetchedAt: new Date().toISOString(),
+      error: "Unable to load Marineterrein agenda.",
+      fallback: true,
+    });
   }
 });
 
@@ -250,35 +461,42 @@ app.get("/api/weather", async (req, res) => {
 // ---------- Husense API routes (Live Occupancy) ----------
 app.get("/api/husense/presence", async (req, res) => {
   try {
-    const safeZones = [
-      {
-        id: "b9c17619-be37-4c6a-a1f3-45e08fd3466c",
-        name: "Marineterrein Hoofd Ingang",
-        capacity: 100,
-        presenceCount: 0
-      },
-      {
-        id: "5db05d88-7833-440a-9c3e-24c93fb08406",
-        name: "UvA Ingang Roetersstraat",
-        capacity: 100,
-        presenceCount: 0
-      },
-      {
-        id: "9b4a6d95-b5dc-426f-a5ae-ea31200b09b5",
-        name: "Marineterrein Commandantsbrug",
-        capacity: 100,
-        presenceCount: 0
-      },
-      {
-        id: "781e09a4-b0b1-4bcb-ad7c-67dfc0182792",
-        name: "Marineterrein Oude Poort",
-        capacity: 100,
-        presenceCount: 0
+    const bearerToken = process.env.HUSENSE_API_TOKEN || process.env.HUSENSE_JWT_TOKEN;
+    const headers = {
+      Accept: "application/json",
+      ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
+    };
+
+    if (process.env.HUSENSE_API_URL) {
+      const payload = await fetchJsonOrThrow(process.env.HUSENSE_API_URL, headers);
+      return res.json(normalizePresenceZones(payload));
+    }
+
+    if (!bearerToken) {
+      return res.status(500).json({ error: "Missing HUSENSE_API_URL or Husense bearer token." });
+    }
+
+    const zoneResults = await Promise.allSettled(
+      HUSENSE_DEFAULT_SPACES.map((space) => fetchHusensePresenceForSpace(space, headers)),
+    );
+
+    const zones = zoneResults.map((result, index) => {
+      if (result.status === "fulfilled") {
+        return result.value;
       }
-    ];
 
-    res.json(safeZones);
+      const fallback = HUSENSE_DEFAULT_SPACES[index];
+      console.warn(
+        `Husense presence fetch failed for space ${fallback.id} (${fallback.name}):`,
+        result.reason,
+      );
+      return {
+        ...fallback,
+        presenceCount: 0,
+      };
+    });
 
+    res.json(zones);
   } catch (err) {
     console.error("Husense Live API error:", err);
     res.status(500).json({ error: err.message });
@@ -288,31 +506,30 @@ app.get("/api/husense/presence", async (req, res) => {
 // ---------- Husense Historical Heatmap Route ----------
 app.get("/api/husense/historical", async (req, res) => {
   try {
-    const jwtToken = process.env.HUSENSE_JWT_TOKEN;
-    if (!jwtToken) return res.status(500).json({ error: "Missing HUSENSE_JWT_TOKEN" });
+    const jwtToken = process.env.HUSENSE_JWT_TOKEN || process.env.HUSENSE_API_TOKEN;
+    if (!jwtToken) return res.status(500).json({ error: "Missing HUSENSE_JWT_TOKEN or HUSENSE_API_TOKEN" });
 
     // 接收前端传来的 空间ID 和 两个时间戳
     const { spaceId, startTimestamp, endTimestamp } = req.query;
+    if (!spaceId || !startTimestamp || !endTimestamp) {
+      return res.status(400).json({ error: "spaceId, startTimestamp, and endTimestamp are required." });
+    }
     
     // 👇 完全按照你截图里的格式拼装真实 URL 👇
     const apiUrl = `https://bff.husense.io/space/${spaceId}/heatmap?startTimestamp=${startTimestamp}&endTimestamp=${endTimestamp}`;
 
     console.log(`[Husense] Requesting real heatmap: ${apiUrl}`);
 
-    const response = await fetch(apiUrl, {
-      method: "GET",
-      headers: { 
-        "Authorization": `Bearer ${jwtToken}`,
-        "Accept": "application/json"
-      }
+    const payload = await fetchJsonOrThrow(apiUrl, {
+      Authorization: `Bearer ${jwtToken}`,
+      Accept: "application/json",
     });
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Husense API error: ${response.status} - ${errorText}`);
-    }
+    const data = extractHeatmapPayload(payload);
 
-    const data = await response.json();
+    if (!data) {
+      return res.status(502).json({ error: "Husense heatmap response did not include width, height, and data." });
+    }
     res.json(data); // 把真实的 JSON 返回给前端
 
   } catch (err) {

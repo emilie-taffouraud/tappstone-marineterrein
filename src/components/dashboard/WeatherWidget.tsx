@@ -1,4 +1,4 @@
-import { CloudRain, Wind } from "lucide-react";
+import { Cloud, CloudRain, Sun, Wind } from "lucide-react";
 import { Pill } from "./ui";
 import { MAIN_COLORS } from "../../styles/theme";
 
@@ -19,13 +19,26 @@ const iconToneStyle: Record<WeatherWidgetModel["statusTone"], { backgroundColor:
   rose:    { backgroundColor: `${MAIN_COLORS.aColorBlack}22`, color: MAIN_COLORS.aColorBlack },
 };
 
-function WeatherGlyph({ tone }: { tone: WeatherWidgetModel["statusTone"] }) {
+function WeatherGlyph({
+  tone,
+  condition,
+}: {
+  tone: WeatherWidgetModel["statusTone"];
+  condition: string;
+}) {
+  const normalizedCondition = condition.toLowerCase();
+  const Icon = normalizedCondition.includes("sunny") || normalizedCondition.includes("clear")
+    ? Sun
+    : normalizedCondition.includes("rain") || normalizedCondition.includes("shower")
+      ? CloudRain
+      : Cloud;
+
   return (
     <div
       className="flex h-20 w-20 items-center justify-center rounded-[1.5rem]"
       style={iconToneStyle[tone]}
     >
-      <CloudRain className="h-10 w-10" />
+      <Icon className="h-10 w-10" />
     </div>
   );
 }
@@ -45,7 +58,7 @@ const WeatherWidget = ({ model }: { model: WeatherWidgetModel }) => {
           className="flex items-center gap-5 md:pr-10"
           style={{ borderRight: `1px solid ${MAIN_COLORS.aColorWhite}80` }}
         >
-          <WeatherGlyph tone={model.statusTone} />
+          <WeatherGlyph tone={model.statusTone} condition={model.condition} />
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-2xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>{model.location}</h2>

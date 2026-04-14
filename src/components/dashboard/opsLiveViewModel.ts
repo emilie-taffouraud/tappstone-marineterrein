@@ -1,4 +1,4 @@
-import { Activity, CloudSun, ShieldCheck, TrafficCone, Volume2, Waves } from "lucide-react";
+import { Activity, CloudSun, Radar, ShieldCheck, TrafficCone, Waves } from "lucide-react";
 import type { AlertItem, Kpi, SensorHealthItem } from "./types";
 import type {
   OpsHealthResponse,
@@ -25,6 +25,7 @@ type SummaryModel = {
   helper: string;
   tone: Tone;
   detail: string[];
+  stats?: { label: string; value: string }[];
 };
 
 export type SoundChartPoint = {
@@ -112,6 +113,10 @@ function formatTimestamp(value: string | null) {
   });
 }
 
+function formatTemperatureStat(value: number | null) {
+  return value === null ? "Unavailable" : `${value.toFixed(1)} C`;
+}
+
 function mapAlertSeverity(status: UnifiedLiveRecord["status"]): AlertItem["severity"] {
   if (status === "critical") return "critical";
   if (status === "warning") return "warning";
@@ -144,9 +149,9 @@ export function deriveLiveKpis(
   loading: boolean,
 ): Kpi[] {
   const telraamTotal = findRecord(overview, "telraam", "total_flow");
-  const soundSensors = new Set(
+  const husenseZones = new Set(
     overview.records
-      .filter((record) => record.source === "husense" && record.category === "sound")
+      .filter((record) => record.source === "husense" && record.category !== "sound")
       .map((record) => record.zone || record.id),
   );
   const waterTemp = findRecord(overview, "water", "water_temperature_c");
@@ -186,12 +191,12 @@ export function deriveLiveKpis(
       icon: TrafficCone,
     },
     {
-      label: "Sound classifiers",
-      value: soundSensors.size.toLocaleString(),
+      label: "Husense activity zones",
+      value: husenseZones.size.toLocaleString(),
       delta: "",
       trend: "up",
-      helper: soundSensors.size ? "sound feed reporting now" : "awaiting Marineterrein Husense feed",
-      icon: Volume2,
+      helper: husenseZones.size ? "presence and movement zones reporting now" : "awaiting Marineterrein Husense feed",
+      icon: Radar,
     },
     {
       label: "Water temperature",
@@ -243,7 +248,7 @@ export function deriveSourceHealthItems(
 
   const categoryMap: Record<string, string> = {
     telraam: "Mobility & Access",
-    husense: "Sound Monitoring",
+    husense: "Crowd & Presence",
     weather: "Environmental Conditions",
     water: "Recreation & Water",
     knmi: "Safety & Monitoring",
@@ -251,7 +256,7 @@ export function deriveSourceHealthItems(
 
   const zoneMap: Record<string, string> = {
     telraam: "Kattenburgerstraat 7",
-    husense: "Mapped Marineterrein sound points",
+    husense: "Marineterrein movement zones",
     weather: "Marineterrein",
     water: "Swim area",
     knmi: "Marineterrein",
@@ -419,8 +424,25 @@ export function deriveWaterSummary(
         "The Marineterrein sports page mentions water temperature, but a stable numeric reading was not detectable yet.",
       tone: statusTone(health?.sources.water?.status || "unknown"),
       detail: ["This card stays explicit about availability so we do not imply a live feed that is not there yet."],
+      stats: [
+        { label: "Yesterday avg", value: "Unavailable" },
+        { label: "7-day avg", value: "Unavailable" },
+      ],
     };
   }
+
+  const history = (water.raw &&
+    typeof water.raw === "object" &&
+    "history" in water.raw &&
+    water.raw.history &&
+    typeof water.raw.history === "object"
+      ? water.raw.history
+      : null) as
+    | {
+        yesterdayAvg?: number | null;
+        trailingWeekAvg?: number | null;
+      }
+    | null;
 
   return {
     title: "Binnenhaven water temperature",
@@ -428,6 +450,10 @@ export function deriveWaterSummary(
     helper: "Useful swim context for recreation planning and public communications around the water edge.",
     tone: statusTone(health?.sources.water?.status || "unknown"),
     detail: [`Last observed ${formatTimestamp(water.observedAt)}`],
+    stats: [
+      { label: "Yesterday avg", value: formatTemperatureStat(history?.yesterdayAvg ?? null) },
+      { label: "7-day avg", value: formatTemperatureStat(history?.trailingWeekAvg ?? null) },
+    ],
   };
 }
 

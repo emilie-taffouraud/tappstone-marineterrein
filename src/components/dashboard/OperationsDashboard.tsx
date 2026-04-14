@@ -8,8 +8,6 @@ import {
   ComposedChart,
   Line,
   ResponsiveContainer,
-  Scatter,
-  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
@@ -20,20 +18,18 @@ import { DASHBOARD_HEADER_THEME, MAIN_COLORS, getBadgeStyle } from "../../styles
 import mt_down from "../../assets/mt_down.jpg";
 import mt_up from "../../assets/mt_up.jpg";
 import TelraamStoredCard from "./TelraamStoredCard";
-import PublicHolidaysCard from "./PublicHolidaysCard";
+import UpcomingAgendaCard from "./UpcomingAgendaCard";
 import TelraamLiveCard from "./TelraamLiveCard";
 import TelraamDetailsCard from "./TelraamDetailsCard";
 import WeatherWidget from "./WeatherWidget";
 import { LiveOperationsMapSection } from "./live-map/LiveOperationsMapSection";
+import { fetchOpsAgenda, type AgendaItem } from "../../lib/opsLiveClient";
 import {
   deriveAnomalyChart,
-  deriveCrowdingSoundChart,
   deriveCurrentModalityChart,
-  deriveIncidentCorrelationChart,
   deriveLiveAlerts,
   deriveLiveKpis,
   deriveLiveMetaSummary,
-  deriveSoundSummary,
   deriveTelraamLiveModeSplitChart,
   deriveWaterSummary,
   deriveWeatherWidgetModel,
@@ -45,7 +41,7 @@ const locationOptions = ["All locations", "Portiersloge", "TAPP", "CODAM", "AHK 
 const sensorCategories = [
   "All categories",
   "Mobility & Access",
-  "Sound Monitoring",
+  "Crowd & Presence",
   "Environmental Conditions",
   "Recreation & Water",
   "Safety & Monitoring",
@@ -59,6 +55,7 @@ function SignalCard({
   value,
   helper,
   detail,
+  stats,
   tone,
   className,
 }: {
@@ -66,6 +63,7 @@ function SignalCard({
   value: string;
   helper: string;
   detail: string[];
+  stats?: { label: string; value: string }[];
   tone: "slate" | "emerald" | "amber" | "rose";
   className?: string;
 }) {
@@ -81,6 +79,27 @@ function SignalCard({
         <p className="text-3xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
           {value}
         </p>
+        {stats?.length ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {stats.map((stat) => (
+              <div
+                key={stat.label}
+                className="rounded-2xl border px-4 py-3"
+                style={{
+                  borderColor: `${MAIN_COLORS.aColor1}26`,
+                  backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
+                }}
+              >
+                <p className="text-[11px] font-medium uppercase tracking-[0.12em]" style={{ color: MAIN_COLORS.aColorGray }}>
+                  {stat.label}
+                </p>
+                <p className="mt-1 text-sm font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                  {stat.value}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : null}
         {detail.map((item) => (
           <div
             key={item}
@@ -182,9 +201,11 @@ export function OperationsDashboard() {
   const [mode, setMode] = useState("Live");
   const [flowThreshold, setFlowThreshold] = useState(150);
   const [anomalyThreshold, setAnomalyThreshold] = useState(20);
-  const [soundThreshold, setSoundThreshold] = useState(75);
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
   const [holidaysLoading, setHolidaysLoading] = useState(true);
+  const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([]);
+  const [agendaLoading, setAgendaLoading] = useState(true);
+  const [agendaError, setAgendaError] = useState<string | null>(null);
   
   const [occupancyData, setOccupancyData] = useState<any[]>([]);
   const [husenseError, setHusenseError] = useState<string | null>(null);
@@ -193,7 +214,7 @@ export function OperationsDashboard() {
     let cancelled = false;
     const fetchOccupancy = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/husense/presence');
+        const response = await fetch("/api/husense/presence");
         if (!response.ok) throw new Error('Husense Network Error');
         const data = await response.json();
         
@@ -203,6 +224,7 @@ export function OperationsDashboard() {
         const zones = Array.isArray(data) ? data : (data?.value || data?.zones || data?.data || [data]);
 
         if (!cancelled) {
+          setHusenseError(null);
           setOccupancyData(zones);
         }
       } catch (err: any) {
@@ -254,19 +276,45 @@ export function OperationsDashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAgenda() {
+      try {
+        setAgendaLoading(true);
+        const agenda = await fetchOpsAgenda(4);
+
+        if (!cancelled) {
+          setAgendaItems(Array.isArray(agenda.items) ? agenda.items : []);
+          setAgendaError(agenda.error);
+        }
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) {
+          setAgendaItems([]);
+          setAgendaError("Unable to load Marineterrein agenda.");
+        }
+      } finally {
+        if (!cancelled) {
+          setAgendaLoading(false);
+        }
+      }
+    }
+
+    loadAgenda();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const liveKpis = useMemo(() => deriveLiveKpis(overview, health, opsLoading), [overview, health, opsLoading]);
   const liveWeatherWidget = useMemo(() => deriveWeatherWidgetModel(overview, health), [overview, health]);
   const liveMetaSummary = useMemo(() => deriveLiveMetaSummary(overview, health), [overview, health]);
-  const soundSummary = useMemo(() => deriveSoundSummary(overview, health), [overview, health]);
   const waterSummary = useMemo(() => deriveWaterSummary(overview, health), [overview, health]);
   const currentModalityChart = useMemo(() => deriveCurrentModalityChart(overview), [overview]);
   const telraamLiveModeSplitChart = useMemo(() => deriveTelraamLiveModeSplitChart(overview), [overview]);
   const anomalyChart = useMemo(() => deriveAnomalyChart(telraamHistory), [telraamHistory]);
-  const incidentCorrelationChart = useMemo(
-    () => deriveIncidentCorrelationChart(telraamHistory, overview),
-    [telraamHistory, overview],
-  );
-  const crowdingSoundChart = useMemo(() => deriveCrowdingSoundChart(overview), [overview]);
   const telraamTrendChart = useMemo(
     () =>
       [...telraamHistory].reverse().map((point) => ({
@@ -291,17 +339,7 @@ export function OperationsDashboard() {
     "#64748b",
   ];
   const latestAnomaly = anomalyChart.length ? anomalyChart[anomalyChart.length - 1] : undefined;
-  const husenseConnected =
-    health?.sources.husense?.status === "ok" &&
-    overview.records.some((record) => record.source === "husense" && record.metric === "sound_level_db");
   const latestTelraamPoint = telraamTrendChart.length ? telraamTrendChart[telraamTrendChart.length - 1] : null;
-  const latestSoundValue = husenseConnected
-    ? overview.records
-        .filter((record) => record.source === "husense" && record.metric === "sound_level_db")
-        .map((record) => Number(record.value))
-        .filter((value) => Number.isFinite(value))
-        .reduce((max, value) => Math.max(max, value), 0)
-    : null;
   const thresholdAlerts = useMemo<AlertItem[]>(() => {
     const alerts: AlertItem[] = [];
     let id = 1000;
@@ -332,28 +370,8 @@ export function OperationsDashboard() {
       });
     }
 
-    if (latestSoundValue !== null && latestSoundValue >= soundThreshold) {
-      alerts.push({
-        id: id++,
-        severity: latestSoundValue >= soundThreshold * 1.1 ? "critical" : "warning",
-        title: "Sound level above threshold",
-        zone: "Marineterrein",
-        source: "THRESHOLD",
-        time: liveMetaSummary.generatedAt,
-        detail: `Peak live sound level is ${latestSoundValue.toFixed(0)} dB, above the editable threshold of ${soundThreshold} dB.`,
-      });
-    }
-
     return alerts;
-  }, [
-    flowThreshold,
-    anomalyThreshold,
-    soundThreshold,
-    latestTelraamPoint,
-    latestAnomaly,
-    latestSoundValue,
-    liveMetaSummary.generatedAt,
-  ]);
+  }, [flowThreshold, anomalyThreshold, latestTelraamPoint, latestAnomaly]);
   const filteredAlerts = useMemo(() => {
     const feedAlerts = deriveLiveAlerts(overview, "All locations", "All severities");
     return [...thresholdAlerts, ...feedAlerts]
@@ -386,8 +404,7 @@ export function OperationsDashboard() {
                 Tapp Marineterrein Operations Dashboard
               </h1>
               <p className="mt-3 max-w-4xl text-sm leading-6" style={DASHBOARD_HEADER_THEME.subtitle}>
-                Live overview of gate activity, mapped sound context, weather, and swim-area conditions across the public
-                space.
+                Live overview of gate activity, weather, occupancy, and swim-area conditions across the public space.
               </p>
             </div>
 
@@ -470,6 +487,66 @@ export function OperationsDashboard() {
             {opsError}
           </div>
         ) : null}
+
+        <Card>
+          <CardHeader>
+            <SectionTitle title="Active alerts" subtitle="Current warning feed plus editable threshold-driven alerts" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <ThresholdField label="Flow threshold" value={flowThreshold} unit="moves/hr" onChange={setFlowThreshold} />
+              <ThresholdField label="Anomaly threshold" value={anomalyThreshold} unit="%" onChange={setAnomalyThreshold} />
+            </div>
+
+            {filteredAlerts.length ? (
+              <div className="grid gap-3 xl:grid-cols-2">
+                {filteredAlerts.map((alert) => (
+                  <div
+                    key={alert.id}
+                    className="rounded-2xl border p-4"
+                    style={{
+                      borderColor: `${MAIN_COLORS.aColor1}26`,
+                      backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium"
+                            style={getBadgeStyle(alert.severity)}
+                          >
+                            {alert.severity}
+                          </span>
+                          <span className="text-xs text-slate-500">{alert.time}</span>
+                        </div>
+                        <h4 className="text-sm font-semibold text-slate-900">{alert.title}</h4>
+                        <p className="text-sm text-slate-600">{alert.detail}</p>
+                      </div>
+                      <AlertTriangle className="mt-1 h-4 w-4" style={{ color: MAIN_COLORS.aColor1 }} />
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Pill>{alert.zone}</Pill>
+                      <Pill>{alert.source}</Pill>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                className="rounded-2xl border p-4 text-sm"
+                style={{
+                  borderColor: `${MAIN_COLORS.aColor1}26`,
+                  backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
+                  color: MAIN_COLORS.aColorGray,
+                }}
+              >
+                No live warnings match the current filters.
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           {liveKpis.map((kpi) => {
@@ -574,240 +651,114 @@ export function OperationsDashboard() {
           <HusenseHeatmapCard />
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] xl:items-start">
-          <div className="space-y-5">
-            <TelraamDetailsCard overview={overview} />
+        <div className="space-y-5">
+          <TelraamDetailsCard overview={overview} />
+          <TelraamLiveCard data={telraamLiveModeSplitChart} chartPalette={chartPalette} />
 
-            <Card>
-              <CardHeader>
-                <SectionTitle
-                  title="Telraam traffic over time"
-                  subtitle="Recent pedestrian, bicycle, and vehicle counts with the latest modality snapshot alongside"
+          <Card>
+            <CardHeader>
+              <SectionTitle
+                title="Telraam traffic over time"
+                subtitle="Recent pedestrian, bicycle, and vehicle counts with the latest modality snapshot alongside"
+              />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {telraamTrendChart.length ? (
+                <div className="h-[260px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={telraamTrendChart}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
+                      <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                      <Tooltip />
+                      <Area type="monotone" dataKey="pedestrians" stackId="1" stroke={MAIN_COLORS.aColor1} fill={MAIN_COLORS.aColor1} fillOpacity={0.85} />
+                      <Area type="monotone" dataKey="bicycles" stackId="1" stroke={MAIN_COLORS.aColor2} fill={MAIN_COLORS.aColor2} fillOpacity={0.8} />
+                      <Area type="monotone" dataKey="vehicles" stackId="1" stroke="#0f766e" fill="#0f766e" fillOpacity={0.75} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <ChartPlaceholder
+                  title="Telraam trend unavailable"
+                  detail={telraamHistoryError || "Recent Telraam history is not available yet."}
                 />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {telraamTrendChart.length ? (
-                  <div className="h-[260px]">
+              )}
+
+              <div className="grid gap-3 md:grid-cols-3">
+                {currentModalityChart.map((item, index) => (
+                  <div
+                    key={item.label}
+                    className="rounded-2xl border p-4"
+                    style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+                  >
+                    <p className="text-sm" style={{ color: chartPalette[index] }}>
+                      {item.label}
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                      {item.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <TelraamStoredCard points={telraamHistory} error={telraamHistoryError} />
+
+          <Card>
+            <CardHeader>
+              <SectionTitle
+                title="Busyness anomaly vs baseline"
+                subtitle="Current movement compared against the expected pattern from the recent Telraam hourly window"
+              />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {anomalyChart.length ? (
+                <>
+                  <div className="h-[240px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={telraamTrendChart}>
+                      <ComposedChart data={anomalyChart}>
                         <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
                         <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
                         <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
                         <Tooltip />
-                        <Area type="monotone" dataKey="pedestrians" stackId="1" stroke={MAIN_COLORS.aColor1} fill={MAIN_COLORS.aColor1} fillOpacity={0.85} />
-                        <Area type="monotone" dataKey="bicycles" stackId="1" stroke={MAIN_COLORS.aColor2} fill={MAIN_COLORS.aColor2} fillOpacity={0.8} />
-                        <Area type="monotone" dataKey="vehicles" stackId="1" stroke="#0f766e" fill="#0f766e" fillOpacity={0.75} />
-                      </AreaChart>
+                        <Area type="monotone" dataKey="expected" stroke={MAIN_COLORS.aColor2} fill={MAIN_COLORS.aColor2} fillOpacity={0.18} />
+                        <Line type="monotone" dataKey="actual" stroke={MAIN_COLORS.aColor1} strokeWidth={3} dot={false} />
+                      </ComposedChart>
                     </ResponsiveContainer>
                   </div>
-                ) : (
-                  <ChartPlaceholder
-                    title="Telraam trend unavailable"
-                    detail={telraamHistoryError || "Recent Telraam history is not available yet."}
-                  />
-                )}
-
-                <div className="grid gap-3 md:grid-cols-3">
-                  {currentModalityChart.map((item, index) => (
-                    <div
-                      key={item.label}
-                      className="rounded-2xl border p-4"
-                      style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
-                    >
-                      <p className="text-sm" style={{ color: chartPalette[index] }}>
-                        {item.label}
-                      </p>
-                      <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                        {item.value}
-                      </p>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-2xl border p-4" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}>
+                      <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>Latest actual</p>
+                      <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>{latestAnomaly?.actual ?? 0}</p>
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            <TelraamStoredCard points={telraamHistory} error={telraamHistoryError} />
-
-            <Card>
-              <CardHeader>
-                <SectionTitle
-                  title="Busyness anomaly vs baseline"
-                  subtitle="Current movement compared against the expected pattern from the recent Telraam hourly window"
-                />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {anomalyChart.length ? (
-                  <>
-                    <div className="h-[240px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={anomalyChart}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
-                          <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                          <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                          <Tooltip />
-                          <Area type="monotone" dataKey="expected" stroke={MAIN_COLORS.aColor2} fill={MAIN_COLORS.aColor2} fillOpacity={0.18} />
-                          <Line type="monotone" dataKey="actual" stroke={MAIN_COLORS.aColor1} strokeWidth={3} dot={false} />
-                        </ComposedChart>
-                      </ResponsiveContainer>
+                    <div className="rounded-2xl border p-4" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}>
+                      <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>Expected baseline</p>
+                      <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>{latestAnomaly?.expected ?? 0}</p>
                     </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <div className="rounded-2xl border p-4" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}>
-                        <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>Latest actual</p>
-                        <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>{latestAnomaly?.actual ?? 0}</p>
-                      </div>
-                      <div className="rounded-2xl border p-4" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}>
-                        <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>Expected baseline</p>
-                        <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>{latestAnomaly?.expected ?? 0}</p>
-                      </div>
-                      <div className="rounded-2xl border p-4" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}>
-                        <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>Deviation</p>
-                        <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>{latestAnomaly ? `${latestAnomaly.deviationPct}%` : "0%"}</p>
-                      </div>
+                    <div className="rounded-2xl border p-4" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}>
+                      <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>Deviation</p>
+                      <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>{latestAnomaly ? `${latestAnomaly.deviationPct}%` : "0%"}</p>
                     </div>
-                  </>
-                ) : (
-                  <ChartPlaceholder
-                    title="No busyness trend yet"
-                    detail={telraamHistoryError || "Recent Telraam history is needed before anomaly tracking can be calculated."}
-                  />
-                )}
-              </CardContent>
-            </Card>
-
-            <PublicHolidaysCard holidaysLoading={holidaysLoading} holidays={holidays} />
-          </div>
-
-          <div className="space-y-5">
-            <Card className="min-h-[560px]">
-              <CardHeader>
-                <SectionTitle title="Active alerts" subtitle="Current warning feed plus editable threshold-driven alerts" />
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <ThresholdField label="Flow threshold" value={flowThreshold} unit="moves/hr" onChange={setFlowThreshold} />
-                  <ThresholdField label="Anomaly threshold" value={anomalyThreshold} unit="%" onChange={setAnomalyThreshold} />
-                  <ThresholdField label="Sound threshold" value={soundThreshold} unit="dB" onChange={setSoundThreshold} />
-                </div>
-
-                {filteredAlerts.length ? (
-                  filteredAlerts.map((alert) => (
-                    <div
-                      key={alert.id}
-                      className="rounded-2xl border p-4"
-                      style={{
-                        borderColor: `${MAIN_COLORS.aColor1}26`,
-                        backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium"
-                              style={getBadgeStyle(alert.severity)}
-                            >
-                              {alert.severity}
-                            </span>
-                            <span className="text-xs text-slate-500">{alert.time}</span>
-                          </div>
-                          <h4 className="text-sm font-semibold text-slate-900">{alert.title}</h4>
-                          <p className="text-sm text-slate-600">{alert.detail}</p>
-                        </div>
-                        <AlertTriangle className="mt-1 h-4 w-4" style={{ color: MAIN_COLORS.aColor1 }} />
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Pill>{alert.zone}</Pill>
-                        <Pill>{alert.source}</Pill>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div
-                    className="rounded-2xl border p-4 text-sm"
-                    style={{
-                      borderColor: `${MAIN_COLORS.aColor1}26`,
-                      backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
-                      color: MAIN_COLORS.aColorGray,
-                    }}
-                  >
-                    No live warnings match the current filters.
                   </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <TelraamLiveCard data={telraamLiveModeSplitChart} chartPalette={chartPalette} />
-
-            <div className="grid auto-rows-fr gap-5 md:grid-cols-2 xl:grid-cols-1">
-              <SignalCard {...soundSummary} className="h-full" />
-              <SignalCard {...waterSummary} className="h-full" />
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-5 xl:grid-cols-1">
-          <div className="space-y-5">
-            <Card className="min-h-[360px]">
-              <CardHeader>
-                <SectionTitle
-                  title="Multi-sensor incident correlation"
-                  subtitle="Shared timeline for crowding, vehicle activity, and sound context so possible disruptions sit together"
+                </>
+              ) : (
+                <ChartPlaceholder
+                  title="No busyness trend yet"
+                  detail={telraamHistoryError || "Recent Telraam history is needed before anomaly tracking can be calculated."}
                 />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {incidentCorrelationChart.length ? (
-                  <>
-                    <div className="h-[240px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={incidentCorrelationChart}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
-                          <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                          <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                          <Tooltip />
-                          <Area type="monotone" dataKey="busyness" stroke={MAIN_COLORS.aColor2} fill={MAIN_COLORS.aColor2} fillOpacity={0.18} />
-                          <Line type="monotone" dataKey="vehicles" stroke="#0f766e" strokeWidth={2.5} dot={false} />
-                          {husenseConnected ? <Line type="monotone" dataKey="sound" stroke={MAIN_COLORS.aColor1} strokeWidth={2.5} dot={false} /> : null}
-                        </ComposedChart>
-                      </ResponsiveContainer>
-                    </div>
-                    {!husenseConnected ? <ChartPlaceholder title="Sound feed" detail="Waiting for Husense to connect" /> : null}
-                  </>
-                ) : (
-                  <ChartPlaceholder
-                    title="Correlation view unavailable"
-                    detail={telraamHistoryError || "Recent movement history is needed before this incident-correlation card can populate."}
-                  />
-                )}
-              </CardContent>
-            </Card>
+              )}
+            </CardContent>
+          </Card>
 
-            <Card className="min-h-[320px]">
-              <CardHeader>
-                <SectionTitle
-                  title="Crowding vs sound"
-                  subtitle="Noise pressure in relation to crowding, kept beside the incident view for quick comparison"
-                />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {husenseConnected && crowdingSoundChart.length ? (
-                  <div className="h-[280px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ScatterChart>
-                        <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
-                        <XAxis type="number" dataKey="crowding" name="Crowding" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                        <YAxis type="number" dataKey="sound" name="Sound" unit=" dB" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                        <Tooltip cursor={{ strokeDasharray: "3 3" }} />
-                        <Scatter data={crowdingSoundChart} fill={MAIN_COLORS.aColor1} />
-                      </ScatterChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <ChartPlaceholder title="Sound comparison" detail="Waiting for Husense to connect" />
-                )}
-              </CardContent>
-            </Card>
-          </div>
+          <SignalCard {...waterSummary} />
+          <UpcomingAgendaCard
+            loading={agendaLoading}
+            error={agendaError}
+            items={agendaItems}
+            holidaysLoading={holidaysLoading}
+            holidays={holidays}
+          />
         </div>
 
         <LiveOperationsMapSection />

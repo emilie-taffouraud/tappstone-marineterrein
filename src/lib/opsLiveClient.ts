@@ -57,6 +57,24 @@ export type TelraamTrafficPoint = {
   vehicle_count: number;
 };
 
+export type AgendaItem = {
+  id: string;
+  title: string;
+  dateLabel: string;
+  venue: string | null;
+  detailUrl: string;
+  imageUrl: string | null;
+  summary: string | null;
+};
+
+export type OpsAgendaResponse = {
+  items: AgendaItem[];
+  sourceUrl: string;
+  fetchedAt: string;
+  error: string | null;
+  fallback: boolean;
+};
+
 export async function fetchOpsOverview() {
   const response = await fetch("/api/ops/live/overview");
   if (!response.ok) {
@@ -83,4 +101,13 @@ export async function fetchTelraamTrafficLatest() {
   }
 
   return response.json() as Promise<TelraamTrafficPoint[]>;
+}
+
+export async function fetchOpsAgenda(limit = 4) {
+  const response = await fetch(`/api/ops/agenda?limit=${limit}`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch /api/ops/agenda");
+  }
+
+  return response.json() as Promise<OpsAgendaResponse>;
 }

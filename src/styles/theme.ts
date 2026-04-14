@@ -24,14 +24,14 @@ export const MAIN_COLORS = {
 
 export const DASHBOARD_HEADER_THEME = {
   title: {
-    color: MAIN_COLORS.aColor5,
-    fontFamily: '"Poppins", "Segoe UI", sans-serif',
-    fontWeight: 600,
-    letterSpacing: "-0.02em",
+    color: MAIN_COLORS.aColorWhite,
+    fontFamily: '"Manrope", "Segoe UI", sans-serif',
+    fontWeight: 700,
+    letterSpacing: "-0.025em",
   },
   subtitle: {
     color: MAIN_COLORS.aColor3,
-    fontFamily: '"Poppins", "Segoe UI", sans-serif',
+    fontFamily: '"Manrope", "Segoe UI", sans-serif',
     fontWeight: 400,
     letterSpacing: "0.005em",
   },
@@ -42,7 +42,7 @@ export const DASHBOARD_HEADER_THEME = {
   ============================================================================ */
 
 export const DASHBOARD_CARD_TITLE_THEME = {
-  sectionTitleColor: MAIN_COLORS.aColor5,
+  sectionTitleColor: MAIN_COLORS.aColorBlack,
   sectionSubtitleColor: MAIN_COLORS.aColorGray,
   cardTitleColor: MAIN_COLORS.aColorBlack,
 } as const;

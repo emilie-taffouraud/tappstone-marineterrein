@@ -90,6 +90,49 @@ async function readWaterTemperatureFromDatabase() {
   };
 }
 
+async function readWaterTemperatureStatsFromDatabase() {
+  const db = getPool();
+  if (!db) return null;
+
+  const query = `
+    select
+      avg(case
+        when recorded_at >= date_trunc('day', now() - interval '1 day')
+         and recorded_at < date_trunc('day', now())
+        then water_temperature
+      end) as yesterday_avg,
+      avg(case
+        when recorded_at >= now() - interval '7 days'
+        then water_temperature
+      end) as trailing_week_avg,
+      count(case
+        when recorded_at >= date_trunc('day', now() - interval '1 day')
+         and recorded_at < date_trunc('day', now())
+        then 1
+      end) as yesterday_samples,
+      count(case
+        when recorded_at >= now() - interval '7 days'
+        then 1
+      end) as trailing_week_samples
+    from water_quality_observations
+    where water_temperature is not null
+  `;
+
+  const result = await db.query(query);
+  const row = result.rows[0];
+  if (!row) return null;
+
+  const yesterdayAvg = row.yesterday_avg === null ? null : Number(row.yesterday_avg);
+  const trailingWeekAvg = row.trailing_week_avg === null ? null : Number(row.trailing_week_avg);
+
+  return {
+    yesterdayAvg: Number.isFinite(yesterdayAvg) ? yesterdayAvg : null,
+    trailingWeekAvg: Number.isFinite(trailingWeekAvg) ? trailingWeekAvg : null,
+    yesterdaySamples: Number(row.yesterday_samples || 0),
+    trailingWeekSamples: Number(row.trailing_week_samples || 0),
+  };
+}
+
 export async function getWaterTemperatureLiveData(env) {
   const fetchedAt = new Date().toISOString();
   const zone = getZoneById("swim-area");
@@ -128,7 +171,10 @@ export async function getWaterTemperatureLiveData(env) {
         };
       }
 
-      const dbReading = await readWaterTemperatureFromDatabase().catch(() => null);
+      const [dbReading, dbStats] = await Promise.all([
+        readWaterTemperatureFromDatabase().catch(() => null),
+        readWaterTemperatureStatsFromDatabase().catch(() => null),
+      ]);
       if (dbReading) {
         return {
           source: "water",
@@ -152,10 +198,16 @@ export async function getWaterTemperatureLiveData(env) {
               lon: zone.lon,
               zoneId: zone.id,
               zone: zone.label,
-              raw: { source: dbReading.sourceName || "database" },
+              raw: {
+                source: dbReading.sourceName || "database",
+                history: dbStats,
+              },
             }),
           ],
-          raw: { source: dbReading.sourceName || "database" },
+          raw: {
+            source: dbReading.sourceName || "database",
+            history: dbStats,
+          },
           error: null,
         };
       }
