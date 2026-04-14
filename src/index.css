@@ -20,6 +20,10 @@ body {
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
+  background: #f4f8fb;
+  color: #10233a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .leaflet-container {

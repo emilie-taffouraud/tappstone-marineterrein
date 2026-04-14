@@ -8,14 +8,14 @@
    ============================================================================ */
 
 export const MAIN_COLORS = {
-  aColorBlack: "#000000",
+  aColorBlack: "#10233a",
   aColorWhite: "#ffffff",
-  aColorGray: "#6c6c6c",
-  aColor1: "#016991",      // Primary accent (teal)
-  aColor2: "#00ADEF",      // Secondary accent (blue)
-  aColor3: "#fcfcfcec",    // Light background
-  aColor4: "#0e1124ec",    // Dark blue overlay
-  aColor5: "#f37158",      // Additional accent color(coral)
+  aColorGray: "#64748b",
+  aColor1: "#1f5f86",      // Primary accent (harbor blue)
+  aColor2: "#78a9c6",      // Secondary accent (mist blue)
+  aColor3: "#f7fafc",      // Light background
+  aColor4: "#08192bd9",    // Dark blue overlay
+  aColor5: "#c98369",      // Additional accent color(coral)
 } as const;
 
 /* ============================================================================
@@ -30,7 +30,7 @@ export const DASHBOARD_HEADER_THEME = {
     letterSpacing: "-0.025em",
   },
   subtitle: {
-    color: MAIN_COLORS.aColor3,
+    color: "rgba(241, 245, 249, 0.88)",
     fontFamily: '"Manrope", "Segoe UI", sans-serif',
     fontWeight: 400,
     letterSpacing: "0.005em",
@@ -79,9 +79,9 @@ export const TELRAAM_LIVE_CARD_THEME = {
 
 const BADGE_STYLES = {
   base: {
-    border: `1px solid ${MAIN_COLORS.aColor1}40`,
-    backgroundColor: MAIN_COLORS.aColor3,
-    color: MAIN_COLORS.aColor1,
+    border: `1px solid rgba(100, 116, 139, 0.22)`,
+    backgroundColor: "rgba(255, 255, 255, 0.86)",
+    color: MAIN_COLORS.aColorBlack,
     padding: "0.25rem 0.75rem",
     borderRadius: "9999px",
     fontSize: "0.75rem",
@@ -90,8 +90,8 @@ const BADGE_STYLES = {
   },
   info: {
     border: `1px solid ${MAIN_COLORS.aColor2}66`,
-    backgroundColor: MAIN_COLORS.aColor3,
-    color: MAIN_COLORS.aColor2,
+    backgroundColor: `${MAIN_COLORS.aColor2}14`,
+    color: "#2f6f92",
   },
   warning: {
     border: "1px solid rgba(245, 158, 11, 0.45)",
@@ -104,18 +104,18 @@ const BADGE_STYLES = {
     color: "#b91c1c",
   },
   healthy: {
-    border: `1px solid ${MAIN_COLORS.aColor2}66`,
-    backgroundColor: MAIN_COLORS.aColor3,
-    color: MAIN_COLORS.aColor2,
+    border: `1px solid rgba(22, 163, 74, 0.28)`,
+    backgroundColor: "rgba(22, 163, 74, 0.08)",
+    color: "#166534",
   },
   degraded: {
     border: `1px solid ${MAIN_COLORS.aColor1}4d`,
-    backgroundColor: MAIN_COLORS.aColor3,
+    backgroundColor: `${MAIN_COLORS.aColor1}12`,
     color: MAIN_COLORS.aColor1,
   },
   offline: {
-    border: `1px solid ${MAIN_COLORS.aColorBlack}33`,
-    backgroundColor: MAIN_COLORS.aColor3,
+    border: `1px solid ${MAIN_COLORS.aColorGray}33`,
+    backgroundColor: "rgba(248, 250, 252, 0.92)",
     color: MAIN_COLORS.aColorGray,
   },
 } as const;
@@ -155,8 +155,8 @@ export const LIVE_MAP_LEGEND_THEME = {
 
 export const LAYER_TOGGLE_THEME = {
   active: {
-    border: `1px solid ${MAIN_COLORS.aColor2}99`,
-    backgroundColor: `${MAIN_COLORS.aColor2}18`,
+    border: `1px solid ${MAIN_COLORS.aColor2}88`,
+    backgroundColor: `${MAIN_COLORS.aColor2}14`,
     color: MAIN_COLORS.aColor1,
   },
   inactive: {

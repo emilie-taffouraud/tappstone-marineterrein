@@ -384,36 +384,39 @@ export function OperationsDashboard() {
       className="min-h-screen px-4 py-5 md:px-6 md:py-6"
       style={{
         color: MAIN_COLORS.aColorBlack,
-        backgroundImage: `radial-gradient(circle at top, ${MAIN_COLORS.aColor2}16, transparent 28%), linear-gradient(180deg, #edf6fa 0%, #dfeef4 52%, #edf6fa 100%)`,
+        backgroundImage:
+          "radial-gradient(circle at top, rgba(120, 169, 198, 0.12), transparent 26%), linear-gradient(180deg, #f4f8fb 0%, #edf3f7 48%, #f6f9fb 100%)",
       }}
     >
       <div className="mx-auto max-w-7xl space-y-5">
         <div
-          className="rounded-[30px] px-6 py-6 backdrop-blur md:px-8"
+          className="rounded-[30px] px-6 py-7 backdrop-blur-sm md:px-8 md:py-8"
           style={{
-            border: `1px solid ${MAIN_COLORS.aColorWhite}cc`,
+            border: "1px solid rgba(148, 163, 184, 0.18)",
             backgroundColor: MAIN_COLORS.aColorBlack,
-            backgroundImage: `linear-gradient(${MAIN_COLORS.aColor4}, ${MAIN_COLORS.aColor4}), url(${mt_up})`,
-            backgroundPosition: "bottom center",
-            boxShadow: `0 12px 35px ${MAIN_COLORS.aColorBlack}22`,
+            backgroundImage: `linear-gradient(135deg, rgba(8, 25, 43, 0.94) 0%, rgba(14, 37, 60, 0.92) 56%, rgba(16, 35, 58, 0.88) 100%), url(${mt_up})`,
+            backgroundPosition: "center",
+            backgroundSize: "cover",
+            boxShadow: "0 22px 48px rgba(8, 15, 27, 0.18)",
           }}
         >
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-4xl">
-              <h1 className="text-3xl font-semibold tracking-tight md:text-[2rem]" style={DASHBOARD_HEADER_THEME.title}>
+              <h1 className="text-3xl font-semibold tracking-[-0.04em] md:text-[2.1rem]" style={DASHBOARD_HEADER_THEME.title}>
                 Tapp Marineterrein Operations Dashboard
               </h1>
-              <p className="mt-3 max-w-4xl text-sm leading-6" style={DASHBOARD_HEADER_THEME.subtitle}>
+              <p className="mt-3 max-w-4xl text-sm leading-7" style={DASHBOARD_HEADER_THEME.subtitle}>
                 Live overview of gate activity, weather, occupancy, and swim-area conditions across the public space.
               </p>
             </div>
 
             <div
-              className="rounded-2xl px-4 py-3 text-sm"
+              className="rounded-[1.35rem] px-4 py-3 text-sm"
               style={{
-                border: `1px solid ${MAIN_COLORS.aColor1}66`,
-                backgroundColor: `${MAIN_COLORS.aColor3}`,
-                color: MAIN_COLORS.aColorBlack,
+                border: "1px solid rgba(191, 219, 254, 0.18)",
+                backgroundColor: "rgba(248, 250, 252, 0.12)",
+                color: MAIN_COLORS.aColorWhite,
+                boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.08)",
               }}
             >
               <div className="flex items-center gap-2">
@@ -432,19 +435,19 @@ export function OperationsDashboard() {
         <div
           className="rounded-[28px] px-6 py-5 md:px-8"
           style={{
-            border: `1px solid ${MAIN_COLORS.aColor1}44`,
-            backgroundImage: `linear-gradient(rgba(252, 252, 252, 0.68), rgba(252, 252, 252, 0.78)), url(${mt_down})`,
+            border: "1px solid rgba(203, 213, 225, 0.9)",
+            backgroundImage: `linear-gradient(rgba(248, 250, 252, 0.9), rgba(248, 250, 252, 0.94)), url(${mt_down})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
-            boxShadow: `0 14px 36px ${MAIN_COLORS.aColorBlack}14`,
+            boxShadow: "0 18px 38px rgba(15, 23, 42, 0.08)",
           }}
         >
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
-              <p className="text-xs font-medium uppercase tracking-[0.22em]" style={{ color: MAIN_COLORS.aColor1 }}>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "#48657f" }}>
                 Operator controls
               </p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight">Filter the current operational view</h2>
+              <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em]">Filter the current operational view</h2>
               <p className="mt-2 text-sm leading-6" style={{ color: MAIN_COLORS.aColorGray }}>
                 Telraam is handled as one site-edge counter, while the broader sensor network appears lower on the page
                 after the key operational summaries and charts.
@@ -452,14 +455,14 @@ export function OperationsDashboard() {
             </div>
 
             <div
-              className="rounded-2xl px-4 py-3 text-sm"
+              className="rounded-[1.35rem] px-4 py-3 text-sm"
               style={{
-                border: `1px solid ${MAIN_COLORS.aColor1}55`,
-                backgroundColor: `${MAIN_COLORS.aColorWhite}c7`,
+                border: "1px solid rgba(203, 213, 225, 0.92)",
+                backgroundColor: "rgba(255, 255, 255, 0.84)",
                 color: MAIN_COLORS.aColorBlack,
               }}
             >
-              <span className="font-medium" style={{ color: MAIN_COLORS.aColor1 }}>
+              <span className="font-semibold" style={{ color: "#36546f" }}>
                 Current view:
               </span>{" "}
               {zone} • {category} • {severity} • {range} • {mode}
@@ -560,7 +563,7 @@ export function OperationsDashboard() {
                       <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
                         {kpi.label}
                       </p>
-                      <p className="mt-2 text-2xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
+                      <p className="mt-2 text-[1.8rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
                         {kpi.value}
                       </p>
                       <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>

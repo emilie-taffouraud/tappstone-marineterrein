@@ -10,11 +10,11 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-3xl backdrop-blur ${className}`}
+      className={`rounded-3xl backdrop-blur-sm ${className}`}
       style={{
-        border: `1px solid ${MAIN_COLORS.aColorWhite}b8`,
-        backgroundColor: `rgba(252, 252, 252, 0.82)`,
-        boxShadow: `0 10px 26px ${MAIN_COLORS.aColorBlack}10`,
+        border: `1px solid rgba(226, 232, 240, 0.95)`,
+        background: "linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 251, 253, 0.94) 100%)",
+        boxShadow: "0 16px 36px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.72)",
       }}
     >
       {children}
@@ -29,7 +29,7 @@ export function CardHeader({
   className?: string;
   children: React.ReactNode;
 }) {
-  return <div className={`p-5 pb-2 ${className}`}>{children}</div>;
+  return <div className={`p-6 pb-2 ${className}`}>{children}</div>;
 }
 
 export function CardTitle({
@@ -56,7 +56,7 @@ export function CardContent({
   className?: string;
   children: React.ReactNode;
 }) {
-  return <div className={`px-5 pb-5 ${className}`}>{children}</div>;
+  return <div className={`px-6 pb-6 ${className}`}>{children}</div>;
 }
 
 export function Pill({
@@ -68,35 +68,35 @@ export function Pill({
 }) {
   const tones: Record<string, React.CSSProperties> = {
     slate: {
-      borderColor: `${MAIN_COLORS.aColorGray}4d`,
-      backgroundColor: `${MAIN_COLORS.aColorGray}14`,
-      color: MAIN_COLORS.aColorGray,
+      borderColor: `${MAIN_COLORS.aColorGray}40`,
+      backgroundColor: "rgba(248, 250, 252, 0.88)",
+      color: "#475569",
     },
     sky: {
       borderColor: `${MAIN_COLORS.aColor2}66`,
-      backgroundColor: `${MAIN_COLORS.aColor2}1a`,
-      color: MAIN_COLORS.aColor2,
+      backgroundColor: `${MAIN_COLORS.aColor2}14`,
+      color: "#2f6f92",
     },
     emerald: {
-      borderColor: `${MAIN_COLORS.aColor1}66`,
-      backgroundColor: `${MAIN_COLORS.aColor1}1a`,
-      color: MAIN_COLORS.aColor1,
+      borderColor: "rgba(22, 163, 74, 0.28)",
+      backgroundColor: "rgba(22, 163, 74, 0.08)",
+      color: "#166534",
     },
     amber: {
-      borderColor: `${MAIN_COLORS.aColor1}99`,
-      backgroundColor: `${MAIN_COLORS.aColor1}26`,
-      color: MAIN_COLORS.aColor1,
+      borderColor: "rgba(245, 158, 11, 0.34)",
+      backgroundColor: "rgba(245, 158, 11, 0.1)",
+      color: "#b45309",
     },
     rose: {
-      borderColor: `${MAIN_COLORS.aColorBlack}66`,
-      backgroundColor: `${MAIN_COLORS.aColorBlack}12`,
-      color: MAIN_COLORS.aColorBlack,
+      borderColor: "rgba(220, 38, 38, 0.25)",
+      backgroundColor: "rgba(220, 38, 38, 0.08)",
+      color: "#b91c1c",
     },
   };
 
   return (
     <span
-      className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium"
+      className="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em]"
       style={tones[tone]}
     >
       {children}
@@ -114,11 +114,11 @@ export function SectionTitle({
   return (
     <div className="mb-4 flex items-end justify-between gap-3">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight" style={{ color: DASHBOARD_CARD_TITLE_THEME.sectionTitleColor }}>
+        <h2 className="text-[1.05rem] font-semibold tracking-[-0.02em]" style={{ color: DASHBOARD_CARD_TITLE_THEME.sectionTitleColor }}>
           {title}
         </h2>
         {subtitle ? (
-          <p className="mt-1 text-sm" style={{ color: DASHBOARD_CARD_TITLE_THEME.sectionSubtitleColor }}>
+          <p className="mt-1 max-w-3xl text-sm leading-6" style={{ color: DASHBOARD_CARD_TITLE_THEME.sectionSubtitleColor }}>
             {subtitle}
           </p>
         ) : null}
@@ -141,10 +141,10 @@ export function SelectLike({
   dark?: boolean;
 }) {
   return (
-    <label className="flex min-w-[150px] flex-col gap-1.5">
+    <label className="flex min-w-[150px] flex-col gap-2">
       <span
         className="text-xs font-medium uppercase tracking-[0.14em]"
-        style={{ color: dark ? MAIN_COLORS.aColor1 : MAIN_COLORS.aColorGray }}
+        style={{ color: dark ? "#36546f" : MAIN_COLORS.aColorGray }}
       >
         {label}
       </span>
@@ -153,9 +153,10 @@ export function SelectLike({
         onChange={(e) => onChange(e.target.value)}
         className="rounded-2xl border px-3 py-2.5 text-sm outline-none ring-0 transition"
         style={{
-          borderColor: dark ? `${MAIN_COLORS.aColor1}66` : `${MAIN_COLORS.aColorGray}4d`,
-          backgroundColor: `${MAIN_COLORS.aColorWhite}d6`,
+          borderColor: dark ? "rgba(120, 169, 198, 0.45)" : `${MAIN_COLORS.aColorGray}33`,
+          backgroundColor: "rgba(255, 255, 255, 0.9)",
           color: MAIN_COLORS.aColorBlack,
+          boxShadow: dark ? "0 8px 20px rgba(15, 23, 42, 0.06)" : "none",
         }}
       >
         {options.map((opt) => (
