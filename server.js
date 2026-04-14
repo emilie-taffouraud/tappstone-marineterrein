@@ -509,13 +509,11 @@ app.get("/api/husense/historical", async (req, res) => {
     const jwtToken = process.env.HUSENSE_JWT_TOKEN || process.env.HUSENSE_API_TOKEN;
     if (!jwtToken) return res.status(500).json({ error: "Missing HUSENSE_JWT_TOKEN or HUSENSE_API_TOKEN" });
 
-    // 接收前端传来的 空间ID 和 两个时间戳
     const { spaceId, startTimestamp, endTimestamp } = req.query;
     if (!spaceId || !startTimestamp || !endTimestamp) {
       return res.status(400).json({ error: "spaceId, startTimestamp, and endTimestamp are required." });
     }
     
-    // 👇 完全按照你截图里的格式拼装真实 URL 👇
     const apiUrl = `https://bff.husense.io/space/${spaceId}/heatmap?startTimestamp=${startTimestamp}&endTimestamp=${endTimestamp}`;
 
     console.log(`[Husense] Requesting real heatmap: ${apiUrl}`);
@@ -527,9 +525,12 @@ app.get("/api/husense/historical", async (req, res) => {
 
     const data = extractHeatmapPayload(payload);
 
-    if (!data) {
-      return res.status(502).json({ error: "Husense heatmap response did not include width, height, and data." });
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Husense API error: ${response.status} - ${errorText}`);
     }
+
+    const data = await response.json();
     res.json(data); // 把真实的 JSON 返回给前端
 
   } catch (err) {
