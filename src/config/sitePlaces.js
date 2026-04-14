@@ -36,9 +36,9 @@ export const SITE_PLACES = [
     description: "Food and gathering area with midday crowd pressure.",
     geometry: {
       type: "point",
-      coordinates: [52.37358, 4.91456],
+      coordinates: [52.3737, 4.91542],
     },
-    labelPosition: [52.37358, 4.91456],
+    labelPosition: [52.37359, 4.91533],
     lookupKeys: ["tapp", "027 e"],
   },
   {
@@ -48,9 +48,9 @@ export const SITE_PLACES = [
     description: "Education and event activity zone with environmental sensitivity.",
     geometry: {
       type: "point",
-      coordinates: [52.37312, 4.91628],
+      coordinates: [52.37354, 4.91485],
     },
-    labelPosition: [52.37312, 4.91628],
+    labelPosition: [52.37363, 4.91494],
     lookupKeys: ["codam", "039"],
   },
   {
@@ -60,9 +60,9 @@ export const SITE_PLACES = [
     description: "Creative production zone and monitoring point.",
     geometry: {
       type: "point",
-      coordinates: [52.37336, 4.91477],
+      coordinates: [52.37336, 4.9147],
     },
-    labelPosition: [52.37336, 4.91477],
+    labelPosition: [52.37345, 4.91478],
     lookupKeys: ["ahk makerspace", "makerspace", "027 n"],
   },
   {
@@ -72,9 +72,9 @@ export const SITE_PLACES = [
     description: "Primary gate and access corridor for arrivals.",
     geometry: {
       type: "point",
-      coordinates: [52.37352, 4.91409],
+      coordinates: [52.37248, 4.91749],
     },
-    labelPosition: [52.37352, 4.91409],
+    labelPosition: [52.37257, 4.91736],
     lookupKeys: ["portiersloge", "polo", "gate"],
   },
   {
@@ -84,9 +84,9 @@ export const SITE_PLACES = [
     description: "Waterfront recreation area and weather-sensitive zone.",
     geometry: {
       type: "point",
-      coordinates: [52.37217, 4.91622],
+      coordinates: [52.37252, 4.91537],
     },
-    labelPosition: [52.37217, 4.91622],
+    labelPosition: [52.37261, 4.91522],
     lookupKeys: ["swim area", "swim", "water", "shore"],
   },
   {

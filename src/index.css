@@ -69,3 +69,7 @@ select {
   font-weight: 600;
   padding: 4px 10px;
 }
+
+.heatmap-label-tooltip::before {
+  display: none;
+}

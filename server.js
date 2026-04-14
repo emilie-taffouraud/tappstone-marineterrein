@@ -525,12 +525,9 @@ app.get("/api/husense/historical", async (req, res) => {
 
     const data = extractHeatmapPayload(payload);
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Husense API error: ${response.status} - ${errorText}`);
+    if (!data) {
+      return res.status(502).json({ error: "Husense heatmap response did not include width, height, and data." });
     }
-
-    const data = await response.json();
     res.json(data); // 把真实的 JSON 返回给前端
 
   } catch (err) {
