@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import HusenseHeatmapCard from "./HusenseHeatmapCard";
 import {
@@ -32,6 +32,7 @@ import {
   deriveLiveMetaSummary,
   deriveTelraamLiveModeSplitChart,
   deriveWaterSummary,
+  deriveWeatherRangeModel,
   deriveWeatherWidgetModel,
 } from "./opsLiveViewModel";
 import { Card, CardContent, CardHeader, Pill, SectionTitle, SelectLike } from "./ui";
@@ -49,6 +50,291 @@ const sensorCategories = [
 const severityOptions = ["All severities", "info", "warning", "critical"];
 const timeRangeOptions = ["Last 30 min", "Last 2 hrs", "Today"];
 const modeOptions = ["Live", "Incident mode"];
+const ANCHOR_SCROLL_STYLE = { scrollMarginTop: "2rem" } as const;
+
+type DashboardNavItem = {
+  id: string;
+  label: string;
+};
+
+type DashboardNavSection = {
+  id: string;
+  label: string;
+  description: string;
+  items: DashboardNavItem[];
+};
+
+const DASHBOARD_NAV: DashboardNavSection[] = [
+  {
+    id: "overview",
+    label: "Overview",
+    description: "Immediate health, controls, alerts, and a live site snapshot.",
+    items: [
+      { id: "overview-site-summary", label: "Site summary" },
+      { id: "overview-controls", label: "Controls" },
+      { id: "overview-alerts", label: "Alerts" },
+    ],
+  },
+  {
+    id: "crowd",
+    label: "Crowd",
+    description: "Occupancy, movement flow, gate pressure, and crowd context.",
+    items: [
+      { id: "crowd-occupancy", label: "Occupancy" },
+      { id: "crowd-heatmap", label: "Heatmap" },
+      { id: "crowd-gate-snapshot", label: "Gate snapshot" },
+      { id: "crowd-mobility-split", label: "Movement mix" },
+      { id: "crowd-traffic", label: "Movement over time" },
+      { id: "crowd-history", label: "History summary" },
+      { id: "crowd-baseline", label: "Vs normal" },
+    ],
+  },
+  {
+    id: "water",
+    label: "Water",
+    description: "Swim-area context and waterfront conditions.",
+    items: [{ id: "water-summary", label: "Water summary" }],
+  },
+  {
+    id: "events",
+    label: "Events",
+    description: "Planning context from the agenda and public calendar.",
+    items: [
+      { id: "events-agenda", label: "Agenda" },
+      { id: "events-holidays", label: "Holidays" },
+    ],
+  },
+  {
+    id: "weather",
+    label: "Weather",
+    description: "Current conditions and recent temperature context.",
+    items: [
+      { id: "weather-conditions", label: "Conditions" },
+      { id: "weather-weekly-range", label: "Weekly range" },
+    ],
+  },
+  {
+    id: "sensors",
+    label: "Sensors",
+    description: "Network visibility, source health, and infrastructure inventory.",
+    items: [
+      { id: "sensors-network", label: "Network map" },
+      { id: "sensors-source-health", label: "Source health" },
+      { id: "sensors-inventory", label: "Inventory" },
+    ],
+  },
+];
+
+function resolveActiveSection(activeId: string) {
+  return DASHBOARD_NAV.find((section) => section.id === activeId || section.items.some((item) => item.id === activeId));
+}
+
+function CategoryHeader({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="px-1">
+      <h2 className="text-[2.02rem] font-semibold tracking-[-0.045em]" style={{ color: MAIN_COLORS.aColorBlack }}>
+        {title}
+      </h2>
+      <p className="mt-1.5 w-full max-w-none text-[0.94rem] leading-6 xl:whitespace-nowrap" style={{ color: "#617389" }}>
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function SubsectionIntro({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="px-1">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: "#5a748c" }}>
+        {title}
+      </p>
+      <p className="mt-1 text-sm leading-6" style={{ color: MAIN_COLORS.aColorGray }}>
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function DashboardNavigation({ activeId }: { activeId: string }) {
+  const activeSection = resolveActiveSection(activeId) || DASHBOARD_NAV[0];
+  const desktopRailSlotRef = useRef<HTMLDivElement | null>(null);
+  const [desktopRailMetrics, setDesktopRailMetrics] = useState({ left: 0, width: 220, startY: 0 });
+  const [desktopRailPinned, setDesktopRailPinned] = useState(false);
+
+  useEffect(() => {
+    const measureDesktopRail = () => {
+      if (window.innerWidth < 1280 || !desktopRailSlotRef.current) {
+        setDesktopRailPinned(false);
+        return;
+      }
+
+      const rect = desktopRailSlotRef.current.getBoundingClientRect();
+      const startY = rect.top + window.scrollY;
+      const nextMetrics = {
+        left: rect.left,
+        width: rect.width,
+        startY,
+      };
+
+      setDesktopRailMetrics((current) =>
+        current.left === nextMetrics.left &&
+        current.width === nextMetrics.width &&
+        current.startY === nextMetrics.startY
+          ? current
+          : nextMetrics,
+      );
+      setDesktopRailPinned(window.scrollY >= startY - 24);
+    };
+
+    const syncDesktopRail = () => {
+      if (window.innerWidth < 1280) {
+        setDesktopRailPinned(false);
+        return;
+      }
+
+      measureDesktopRail();
+    };
+
+    syncDesktopRail();
+    window.addEventListener("resize", syncDesktopRail);
+    window.addEventListener("scroll", syncDesktopRail, { passive: true });
+
+    return () => {
+      window.removeEventListener("resize", syncDesktopRail);
+      window.removeEventListener("scroll", syncDesktopRail);
+    };
+  }, []);
+
+  return (
+    <>
+      <div className="sticky top-4 z-20 xl:hidden">
+        <Card className="overflow-hidden">
+          <CardContent className="p-4">
+            <div className="overflow-x-auto pb-1">
+              <div className="flex min-w-max gap-2">
+                {DASHBOARD_NAV.map((section) => {
+                  const isActive = section.id === activeSection.id;
+
+                  return (
+                    <a
+                      key={section.id}
+                      href={`#${section.id}`}
+                      className="rounded-full px-3 py-2 text-sm font-medium transition"
+                      style={{
+                        border: `1px solid ${isActive ? "rgba(120, 169, 198, 0.75)" : "rgba(148, 163, 184, 0.24)"}`,
+                        backgroundColor: isActive ? "rgba(120, 169, 198, 0.14)" : "rgba(255, 255, 255, 0.82)",
+                        color: isActive ? MAIN_COLORS.aColor1 : MAIN_COLORS.aColorGray,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {section.label}
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {activeSection.items.map((item) => {
+                const isActive = item.id === activeId;
+
+                return (
+                  <a
+                    key={item.id}
+                    href={`#${item.id}`}
+                    className="rounded-2xl px-3 py-2 text-sm transition"
+                    style={{
+                      border: `1px solid ${isActive ? "rgba(120, 169, 198, 0.72)" : "rgba(148, 163, 184, 0.2)"}`,
+                      backgroundColor: isActive ? "rgba(120, 169, 198, 0.12)" : "rgba(255, 255, 255, 0.7)",
+                      color: isActive ? MAIN_COLORS.aColorBlack : MAIN_COLORS.aColorGray,
+                    }}
+                  >
+                    {item.label}
+                  </a>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <aside className="hidden xl:block xl:self-start">
+        <div ref={desktopRailSlotRef} className="w-[220px]">
+          <div
+            className={desktopRailPinned ? "fixed top-5 z-20" : "relative"}
+            style={
+              desktopRailPinned
+                ? {
+                    left: `${desktopRailMetrics.left}px`,
+                    width: `${desktopRailMetrics.width}px`,
+                }
+                : undefined
+            }
+          >
+            <Card
+              className="rounded-[22px]"
+              style={{
+                border: "1px solid rgba(214, 224, 234, 0.78)",
+                background: "linear-gradient(180deg, rgba(252, 253, 255, 0.86) 0%, rgba(247, 250, 253, 0.8) 100%)",
+                boxShadow: "0 14px 28px rgba(15, 23, 42, 0.055), inset 0 1px 0 rgba(255, 255, 255, 0.78)",
+              }}
+            >
+              <CardContent className="p-2.5">
+                <nav className="space-y-2">
+                  {DASHBOARD_NAV.map((section) => {
+                    const isSectionActive = section.id === activeSection.id;
+
+                    return (
+                      <div key={section.id} className="space-y-0.5">
+                        <a
+                          href={`#${section.id}`}
+                          className="block rounded-lg px-2 py-0.5 text-[13px] font-semibold whitespace-nowrap transition"
+                          style={{
+                            backgroundColor: isSectionActive ? "rgba(31, 95, 134, 0.12)" : "transparent",
+                            color: isSectionActive ? MAIN_COLORS.aColorBlack : "#3f5870",
+                          }}
+                        >
+                          {section.label}
+                        </a>
+
+                        <div className="space-y-0.5 pl-2.5">
+                          {section.items.map((item) => {
+                            const isActive = item.id === activeId;
+
+                            return (
+                              <a
+                                key={item.id}
+                                href={`#${item.id}`}
+                                className="block rounded-md px-1.5 py-px text-[12px] leading-4 whitespace-nowrap transition"
+                                style={{
+                                  backgroundColor: isActive ? "rgba(31, 95, 134, 0.11)" : "transparent",
+                                  color: isActive ? MAIN_COLORS.aColorBlack : "#6a7b8f",
+                                  fontWeight: isActive ? 600 : 500,
+                                }}
+                              >
+                                {item.label}
+                              </a>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </nav>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
 
 function SignalCard({
   title,
@@ -113,6 +399,57 @@ function SignalCard({
             {item}
           </div>
         ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function WeatherRangeCard({
+  helper,
+  periodLabel,
+  stats,
+  tone,
+}: {
+  helper: string;
+  periodLabel: string;
+  stats: { label: string; value: string }[];
+  tone: "slate" | "emerald" | "amber" | "rose";
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <SectionTitle title="Weekly temperature range" subtitle={helper} />
+          <Pill tone={tone}>{tone === "slate" ? "limited" : "7-day view"}</Pill>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill tone="sky">Last 7 days</Pill>
+          <span className="text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+            {periodLabel}
+          </span>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          {stats.map((stat) => (
+            <div
+              key={stat.label}
+              className="rounded-2xl border p-4"
+              style={{
+                borderColor: `${MAIN_COLORS.aColor1}26`,
+                backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
+              }}
+            >
+              <p className="text-[11px] font-medium uppercase tracking-[0.12em]" style={{ color: MAIN_COLORS.aColorGray }}>
+                {stat.label}
+              </p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
+                {stat.value}
+              </p>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
@@ -206,21 +543,22 @@ export function OperationsDashboard() {
   const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([]);
   const [agendaLoading, setAgendaLoading] = useState(true);
   const [agendaError, setAgendaError] = useState<string | null>(null);
-  
+  const [activeNavId, setActiveNavId] = useState(DASHBOARD_NAV[0].id);
   const [occupancyData, setOccupancyData] = useState<any[]>([]);
   const [husenseError, setHusenseError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+
     const fetchOccupancy = async () => {
       try {
         const response = await fetch("/api/husense/presence");
-        if (!response.ok) throw new Error('Husense Network Error');
+        if (!response.ok) throw new Error("Husense Network Error");
         const data = await response.json();
-        
-        console.log("Husense Data fetched successfully:", data); // 打印出来看结构
-        
-        // try to handle different possible structures
+
+        console.log("Husense Data fetched successfully:", data);
+
+        // Handle the live endpoint defensively because the upstream payload shape can vary.
         const zones = Array.isArray(data) ? data : (data?.value || data?.zones || data?.data || [data]);
 
         if (!cancelled) {
@@ -233,8 +571,9 @@ export function OperationsDashboard() {
       }
     };
 
-    fetchOccupancy(); 
-    const intervalId = setInterval(fetchOccupancy, 60 * 1000); // refresh every 1 minute
+    fetchOccupancy();
+    const intervalId = setInterval(fetchOccupancy, 60 * 1000);
+
     return () => {
       cancelled = true;
       clearInterval(intervalId);
@@ -310,6 +649,7 @@ export function OperationsDashboard() {
 
   const liveKpis = useMemo(() => deriveLiveKpis(overview, health, opsLoading), [overview, health, opsLoading]);
   const liveWeatherWidget = useMemo(() => deriveWeatherWidgetModel(overview, health), [overview, health]);
+  const weatherRange = useMemo(() => deriveWeatherRangeModel(overview, health), [overview, health]);
   const liveMetaSummary = useMemo(() => deriveLiveMetaSummary(overview, health), [overview, health]);
   const waterSummary = useMemo(() => deriveWaterSummary(overview, health), [overview, health]);
   const currentModalityChart = useMemo(() => deriveCurrentModalityChart(overview), [overview]);
@@ -379,39 +719,71 @@ export function OperationsDashboard() {
       .filter((alert) => severity === "All severities" || alert.severity === severity);
   }, [overview, thresholdAlerts, zone, severity]);
 
+  useEffect(() => {
+    const anchorIds = DASHBOARD_NAV.flatMap((section) => [section.id, ...section.items.map((item) => item.id)]);
+
+    const updateActiveAnchor = () => {
+      const threshold = window.innerWidth >= 1280 ? 220 : 180;
+      let nextActiveId = anchorIds[0];
+
+      for (const id of anchorIds) {
+        const element = document.getElementById(id);
+        if (!element) continue;
+
+        if (element.getBoundingClientRect().top - threshold <= 0) {
+          nextActiveId = id;
+        } else {
+          break;
+        }
+      }
+
+      setActiveNavId((current) => (current === nextActiveId ? current : nextActiveId));
+    };
+
+    updateActiveAnchor();
+    window.addEventListener("scroll", updateActiveAnchor, { passive: true });
+    window.addEventListener("resize", updateActiveAnchor);
+
+    return () => {
+      window.removeEventListener("scroll", updateActiveAnchor);
+      window.removeEventListener("resize", updateActiveAnchor);
+    };
+  }, []);
+
   return (
     <div
       className="min-h-screen px-4 py-5 md:px-6 md:py-6"
       style={{
         color: MAIN_COLORS.aColorBlack,
         backgroundImage:
-          "radial-gradient(circle at top, rgba(120, 169, 198, 0.12), transparent 26%), linear-gradient(180deg, #f4f8fb 0%, #edf3f7 48%, #f6f9fb 100%)",
+          "radial-gradient(circle at top, rgba(120, 169, 198, 0.18), transparent 28%), linear-gradient(180deg, #edf4f8 0%, #e5eef4 48%, #eef5f9 100%)",
       }}
     >
-      <div className="mx-auto max-w-7xl space-y-5">
+      <div className="mx-auto max-w-[1480px] space-y-6">
         <div
-          className="rounded-[30px] px-6 py-7 backdrop-blur-sm md:px-8 md:py-8"
+          className="rounded-[28px] px-6 py-5 backdrop-blur-sm md:px-8 md:py-[1.35rem]"
           style={{
             border: "1px solid rgba(148, 163, 184, 0.18)",
             backgroundColor: MAIN_COLORS.aColorBlack,
-            backgroundImage: `linear-gradient(135deg, rgba(8, 25, 43, 0.94) 0%, rgba(14, 37, 60, 0.92) 56%, rgba(16, 35, 58, 0.88) 100%), url(${mt_up})`,
+            backgroundImage:
+              `linear-gradient(135deg, rgba(8, 25, 43, 0.94) 0%, rgba(14, 37, 60, 0.92) 56%, rgba(16, 35, 58, 0.88) 100%), url(${mt_up})`,
             backgroundPosition: "center",
             backgroundSize: "cover",
-            boxShadow: "0 22px 48px rgba(8, 15, 27, 0.18)",
+            boxShadow: "0 20px 42px rgba(8, 15, 27, 0.18)",
           }}
         >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-4xl">
-              <h1 className="text-3xl font-semibold tracking-[-0.04em] md:text-[2.1rem]" style={DASHBOARD_HEADER_THEME.title}>
+              <h1 className="text-3xl font-semibold tracking-[-0.04em] md:text-[2.03rem]" style={DASHBOARD_HEADER_THEME.title}>
                 Tapp Marineterrein Operations Dashboard
               </h1>
-              <p className="mt-3 max-w-4xl text-sm leading-7" style={DASHBOARD_HEADER_THEME.subtitle}>
+              <p className="mt-2.5 max-w-4xl text-sm leading-7" style={DASHBOARD_HEADER_THEME.subtitle}>
                 Live overview of gate activity, weather, occupancy, and swim-area conditions across the public space.
               </p>
             </div>
 
             <div
-              className="rounded-[1.35rem] px-4 py-3 text-sm"
+              className="rounded-[1.1rem] px-4 py-2.5 text-sm"
               style={{
                 border: "1px solid rgba(191, 219, 254, 0.18)",
                 backgroundColor: "rgba(248, 250, 252, 0.12)",
@@ -423,348 +795,476 @@ export function OperationsDashboard() {
                 <Pill tone={liveMetaSummary.statusTone}>{health?.status || "unknown"}</Pill>
                 <span>{liveMetaSummary.totalRecords} live records</span>
               </div>
-              <p className="mt-2 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                Last ops refresh {liveMetaSummary.generatedAt} • degraded sources {liveMetaSummary.degradedCount}
+              <p className="mt-2 text-xs" style={{ color: "rgba(226, 232, 240, 0.78)" }}>
+                {liveWeatherWidget.condition} | {liveWeatherWidget.temperature} | {liveWeatherWidget.location}
+              </p>
+              <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                Last ops refresh {liveMetaSummary.generatedAt} | degraded sources {liveMetaSummary.degradedCount}
               </p>
             </div>
           </div>
         </div>
 
-        <WeatherWidget model={liveWeatherWidget} />
+        <div className="grid gap-9 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start">
+          <DashboardNavigation activeId={activeNavId} />
 
-        <div
-          className="rounded-[28px] px-6 py-5 md:px-8"
-          style={{
-            border: "1px solid rgba(203, 213, 225, 0.9)",
-            backgroundImage: `linear-gradient(rgba(248, 250, 252, 0.9), rgba(248, 250, 252, 0.94)), url(${mt_down})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            boxShadow: "0 18px 38px rgba(15, 23, 42, 0.08)",
-          }}
-        >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-2xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "#48657f" }}>
-                Operator controls
-              </p>
-              <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em]">Filter the current operational view</h2>
-              <p className="mt-2 text-sm leading-6" style={{ color: MAIN_COLORS.aColorGray }}>
-                Telraam is handled as one site-edge counter, while the broader sensor network appears lower on the page
-                after the key operational summaries and charts.
-              </p>
-            </div>
-
-            <div
-              className="rounded-[1.35rem] px-4 py-3 text-sm"
-              style={{
-                border: "1px solid rgba(203, 213, 225, 0.92)",
-                backgroundColor: "rgba(255, 255, 255, 0.84)",
-                color: MAIN_COLORS.aColorBlack,
-              }}
-            >
-              <span className="font-semibold" style={{ color: "#36546f" }}>
-                Current view:
-              </span>{" "}
-              {zone} • {category} • {severity} • {range} • {mode}
-            </div>
-          </div>
-
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <SelectLike dark label="Time range" value={range} onChange={setRange} options={timeRangeOptions} />
-            <SelectLike dark label="Location" value={zone} onChange={setZone} options={locationOptions} />
-            <SelectLike dark label="Sensor category" value={category} onChange={setCategory} options={sensorCategories} />
-            <SelectLike dark label="Alert severity" value={severity} onChange={setSeverity} options={severityOptions} />
-            <SelectLike dark label="View mode" value={mode} onChange={setMode} options={modeOptions} />
-          </div>
-        </div>
-
-        {opsError ? (
-          <div
-            className="rounded-2xl px-5 py-4 text-sm"
-            style={{
-              border: `1px solid ${MAIN_COLORS.aColorBlack}44`,
-              backgroundColor: `${MAIN_COLORS.aColor3}`,
-              color: MAIN_COLORS.aColorBlack,
-            }}
-          >
-            {opsError}
-          </div>
-        ) : null}
-
-        <Card>
-          <CardHeader>
-            <SectionTitle title="Active alerts" subtitle="Current warning feed plus editable threshold-driven alerts" />
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <ThresholdField label="Flow threshold" value={flowThreshold} unit="moves/hr" onChange={setFlowThreshold} />
-              <ThresholdField label="Anomaly threshold" value={anomalyThreshold} unit="%" onChange={setAnomalyThreshold} />
-            </div>
-
-            {filteredAlerts.length ? (
-              <div className="grid gap-3 xl:grid-cols-2">
-                {filteredAlerts.map((alert) => (
-                  <div
-                    key={alert.id}
-                    className="rounded-2xl border p-4"
-                    style={{
-                      borderColor: `${MAIN_COLORS.aColor1}26`,
-                      backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
-                    }}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium"
-                            style={getBadgeStyle(alert.severity)}
-                          >
-                            {alert.severity}
-                          </span>
-                          <span className="text-xs text-slate-500">{alert.time}</span>
-                        </div>
-                        <h4 className="text-sm font-semibold text-slate-900">{alert.title}</h4>
-                        <p className="text-sm text-slate-600">{alert.detail}</p>
-                      </div>
-                      <AlertTriangle className="mt-1 h-4 w-4" style={{ color: MAIN_COLORS.aColor1 }} />
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Pill>{alert.zone}</Pill>
-                      <Pill>{alert.source}</Pill>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div
-                className="rounded-2xl border p-4 text-sm"
-                style={{
-                  borderColor: `${MAIN_COLORS.aColor1}26`,
-                  backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
-                  color: MAIN_COLORS.aColorGray,
-                }}
-              >
-                No live warnings match the current filters.
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          {liveKpis.map((kpi) => {
-            const Icon = typeof kpi.icon === "string" ? null : kpi.icon;
-
-            return (
-              <Card key={kpi.label} className="overflow-hidden">
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
-                        {kpi.label}
-                      </p>
-                      <p className="mt-2 text-[1.8rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
-                        {kpi.value}
-                      </p>
-                      <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                        {kpi.helper}
-                      </p>
-                    </div>
-
-                    {Icon ? (
-                      <div
-                        className="rounded-2xl p-2.5"
-                        style={{
-                          border: `1px solid ${MAIN_COLORS.aColor1}33`,
-                          backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
-                          color: MAIN_COLORS.aColor1,
-                        }}
-                      >
-                        <Icon className="h-5 w-5" />
-                      </div>
-                    ) : null}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        {/* Husense */}
-        <div className="mt-5 mb-5">
-          <Card>
-            <CardHeader>
-              <SectionTitle
-                title="Live Area Occupancy"
-                subtitle="Real-time presence data from Husense radar sensors (Swimming / Voorwerf)"
+          <div className="min-w-0 space-y-8 xl:mx-auto xl:w-full xl:max-w-[1080px]">
+            <section id="overview" className="space-y-4" style={ANCHOR_SCROLL_STYLE}>
+              <CategoryHeader
+                title="Overview"
+                description="Immediate dashboard health, operator controls, active alerts, and the quickest cross-source snapshot of what is happening right now."
               />
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {husenseError ? (
-                <div className="text-red-500 text-sm p-4 bg-red-50 rounded-xl">Error loading Husense: {husenseError}</div>
-              ) : occupancyData.length === 0 ? (
-                 <div className="p-4 animate-pulse text-sm" style={{ color: MAIN_COLORS.aColor1 }}>Loading live occupancy data...</div>
-              ) : (
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  {occupancyData.map((zone: any, index: number) => {
-                     
-                     const maxCapacity = zone.capacity || 100;
-                     const currentCount = zone.presenceCount || zone.currentPresence || zone.count || 0;
-                     const density = Math.min(100, Math.round((currentCount / maxCapacity) * 100));
 
-                     return (
-                      <div key={index} className="rounded-2xl border p-4" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}>
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
-                            {zone.name || `Zone ${index + 1}`}
-                          </p>
-                          <Pill tone={density >= 85 ? "rose" : density >= 60 ? "amber" : "emerald"}>
-                            {density >= 85 ? "Busy" : density >= 60 ? "Watch" : "Stable"}
-                          </Pill>
-                        </div>
+              {opsError ? (
+                <div
+                  className="rounded-2xl px-5 py-4 text-sm"
+                  style={{
+                    border: `1px solid ${MAIN_COLORS.aColorBlack}44`,
+                    backgroundColor: `${MAIN_COLORS.aColor3}`,
+                    color: MAIN_COLORS.aColorBlack,
+                  }}
+                >
+                  {opsError}
+                </div>
+              ) : null}
 
-                        <p className="mt-3 text-3xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>{currentCount}</p>
-                        <p className="text-xs" style={{ color: MAIN_COLORS.aColorGray }}>live individuals</p>
+              <div id="overview-site-summary" className="space-y-3" style={ANCHOR_SCROLL_STYLE}>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  {liveKpis.map((kpi) => {
+                    const Icon = typeof kpi.icon === "string" ? null : kpi.icon;
 
-                        <div className="mt-4">
-                          <div className="mb-1 flex items-center justify-between text-[10px] font-medium uppercase tracking-wider" style={{ color: MAIN_COLORS.aColorGray }}>
-                            <span>Occupancy</span>
-                            <span>{density}%</span>
+                    return (
+                      <Card key={kpi.label} className="h-full overflow-hidden">
+                        <CardContent className="p-[1.1rem]">
+                          <div className="flex items-start gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
+                                {kpi.label}
+                              </p>
+                              <p className="mt-2 text-[1.75rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
+                                {kpi.value}
+                              </p>
+                              <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                                {kpi.helper}
+                              </p>
+                            </div>
+
+                            {Icon ? (
+                              <div
+                                className="shrink-0 rounded-[16px] p-2.5"
+                                style={{
+                                  border: `1px solid ${MAIN_COLORS.aColor1}33`,
+                                  backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
+                                  color: MAIN_COLORS.aColor1,
+                                }}
+                              >
+                                <Icon className="h-5 w-5" />
+                              </div>
+                            ) : null}
                           </div>
-                          <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all duration-1000"
-                              style={{
-                                width: `${density}%`,
-                                backgroundColor: density >= 85 ? "#ef4444" : density >= 60 ? "#f59e0b" : MAIN_COLORS.aColor1
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )
+                        </CardContent>
+                      </Card>
+                    );
                   })}
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="mb-5">
-          <HusenseHeatmapCard />
-        </div>
-
-        <div className="space-y-5">
-          <TelraamDetailsCard overview={overview} />
-          <TelraamLiveCard data={telraamLiveModeSplitChart} chartPalette={chartPalette} />
-
-          <Card>
-            <CardHeader>
-              <SectionTitle
-                title="Telraam traffic over time"
-                subtitle="Recent pedestrian, bicycle, and vehicle counts with the latest modality snapshot alongside"
-              />
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {telraamTrendChart.length ? (
-                <div className="h-[260px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={telraamTrendChart}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
-                      <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                      <Tooltip />
-                      <Area type="monotone" dataKey="pedestrians" stackId="1" stroke={MAIN_COLORS.aColor1} fill={MAIN_COLORS.aColor1} fillOpacity={0.85} />
-                      <Area type="monotone" dataKey="bicycles" stackId="1" stroke={MAIN_COLORS.aColor2} fill={MAIN_COLORS.aColor2} fillOpacity={0.8} />
-                      <Area type="monotone" dataKey="vehicles" stackId="1" stroke="#0f766e" fill="#0f766e" fillOpacity={0.75} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <ChartPlaceholder
-                  title="Telraam trend unavailable"
-                  detail={telraamHistoryError || "Recent Telraam history is not available yet."}
-                />
-              )}
-
-              <div className="grid gap-3 md:grid-cols-3">
-                {currentModalityChart.map((item, index) => (
-                  <div
-                    key={item.label}
-                    className="rounded-2xl border p-4"
-                    style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
-                  >
-                    <p className="text-sm" style={{ color: chartPalette[index] }}>
-                      {item.label}
-                    </p>
-                    <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                      {item.value}
-                    </p>
-                  </div>
-                ))}
               </div>
-            </CardContent>
-          </Card>
 
-          <TelraamStoredCard points={telraamHistory} error={telraamHistoryError} />
+              <div id="overview-controls" style={ANCHOR_SCROLL_STYLE}>
+                <div
+                  className="rounded-[24px] px-5 py-4 md:px-6 md:py-4"
+                  style={{
+                    border: "1px solid rgba(196, 210, 223, 0.94)",
+                    backgroundImage:
+                      `linear-gradient(rgba(249, 251, 253, 0.92), rgba(244, 248, 251, 0.95)), url(${mt_down})`,
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                    boxShadow: "0 18px 36px rgba(15, 23, 42, 0.075)",
+                  }}
+                >
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="max-w-2xl">
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "#48657f" }}>
+                        Operator controls
+                      </p>
+                      <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em]">Filter the current operational view</h2>
+                      <p className="mt-1.5 text-sm leading-6" style={{ color: MAIN_COLORS.aColorGray }}>
+                        Telraam remains the site-edge movement counter, while the broader sensor network appears later in the
+                        infrastructure section where operators expect to inspect source health and coverage.
+                      </p>
+                    </div>
 
-          <Card>
-            <CardHeader>
-              <SectionTitle
-                title="Busyness anomaly vs baseline"
-                subtitle="Current movement compared against the expected pattern from the recent Telraam hourly window"
+                    <div
+                      className="rounded-[1.1rem] px-4 py-2.5 text-sm"
+                      style={{
+                        border: "1px solid rgba(203, 213, 225, 0.92)",
+                        backgroundColor: "rgba(255, 255, 255, 0.9)",
+                        color: MAIN_COLORS.aColorBlack,
+                      }}
+                    >
+                      <span className="font-semibold" style={{ color: "#36546f" }}>
+                        Current view:
+                      </span>{" "}
+                      {zone} | {category} | {severity} | {range} | {mode}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    <SelectLike dark label="Time range" value={range} onChange={setRange} options={timeRangeOptions} />
+                    <SelectLike dark label="Location" value={zone} onChange={setZone} options={locationOptions} />
+                    <SelectLike dark label="Sensor category" value={category} onChange={setCategory} options={sensorCategories} />
+                    <SelectLike dark label="Alert severity" value={severity} onChange={setSeverity} options={severityOptions} />
+                    <SelectLike dark label="View mode" value={mode} onChange={setMode} options={modeOptions} />
+                  </div>
+                </div>
+              </div>
+
+              <div id="overview-alerts" style={ANCHOR_SCROLL_STYLE}>
+                <Card>
+                  <CardHeader>
+                    <SectionTitle title="Active alerts" subtitle="Current warning feed plus editable threshold-driven alerts" />
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      <ThresholdField label="Flow threshold" value={flowThreshold} unit="moves/hr" onChange={setFlowThreshold} />
+                      <ThresholdField label="Anomaly threshold" value={anomalyThreshold} unit="%" onChange={setAnomalyThreshold} />
+                    </div>
+
+                    {filteredAlerts.length ? (
+                      <div className="grid gap-3 xl:grid-cols-2">
+                        {filteredAlerts.map((alert) => (
+                          <div
+                            key={alert.id}
+                            className="rounded-2xl border p-4"
+                            style={{
+                              borderColor: `${MAIN_COLORS.aColor1}26`,
+                              backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
+                            }}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium"
+                                    style={getBadgeStyle(alert.severity)}
+                                  >
+                                    {alert.severity}
+                                  </span>
+                                  <span className="text-xs text-slate-500">{alert.time}</span>
+                                </div>
+                                <h4 className="text-sm font-semibold text-slate-900">{alert.title}</h4>
+                                <p className="text-sm text-slate-600">{alert.detail}</p>
+                              </div>
+                              <AlertTriangle className="mt-1 h-4 w-4" style={{ color: MAIN_COLORS.aColor1 }} />
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Pill>{alert.zone}</Pill>
+                              <Pill>{alert.source}</Pill>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div
+                        className="rounded-2xl border p-4 text-sm"
+                        style={{
+                          borderColor: `${MAIN_COLORS.aColor1}26`,
+                          backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
+                          color: MAIN_COLORS.aColorGray,
+                        }}
+                      >
+                        No live warnings match the current filters.
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </section>
+
+            <section id="crowd" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
+              <CategoryHeader
+                title="Crowd"
+                description="Movement and occupancy signals grouped together to read current pressure, mode mix, and change versus normal."
               />
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {anomalyChart.length ? (
-                <>
-                  <div className="h-[240px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={anomalyChart}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
-                        <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                        <Tooltip />
-                        <Area type="monotone" dataKey="expected" stroke={MAIN_COLORS.aColor2} fill={MAIN_COLORS.aColor2} fillOpacity={0.18} />
-                        <Line type="monotone" dataKey="actual" stroke={MAIN_COLORS.aColor1} strokeWidth={3} dot={false} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <div className="rounded-2xl border p-4" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}>
-                      <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>Latest actual</p>
-                      <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>{latestAnomaly?.actual ?? 0}</p>
+
+              <div id="crowd-occupancy" style={ANCHOR_SCROLL_STYLE}>
+                <Card>
+                  <CardHeader>
+                    <SectionTitle
+                      title="Live area occupancy"
+                      subtitle="Real-time presence data from Husense radar sensors across the active Marineterrein zones."
+                    />
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {husenseError ? (
+                      <div className="rounded-xl bg-red-50 p-4 text-sm text-red-500">Error loading Husense: {husenseError}</div>
+                    ) : occupancyData.length === 0 ? (
+                      <div className="animate-pulse p-4 text-sm" style={{ color: MAIN_COLORS.aColor1 }}>
+                        Loading live occupancy data...
+                      </div>
+                    ) : (
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        {occupancyData.map((occupancyZone: any, index: number) => {
+                          const maxCapacity = occupancyZone.capacity || 100;
+                          const currentCount =
+                            occupancyZone.presenceCount || occupancyZone.currentPresence || occupancyZone.count || 0;
+                          const density = Math.min(100, Math.round((currentCount / maxCapacity) * 100));
+
+                          return (
+                            <div
+                              key={index}
+                              className="rounded-2xl border p-4"
+                              style={{
+                                borderColor: `${MAIN_COLORS.aColor1}26`,
+                                backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
+                              }}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
+                                  {occupancyZone.name || `Zone ${index + 1}`}
+                                </p>
+                                <Pill tone={density >= 85 ? "rose" : density >= 60 ? "amber" : "emerald"}>
+                                  {density >= 85 ? "Busy" : density >= 60 ? "Watch" : "Stable"}
+                                </Pill>
+                              </div>
+
+                              <p className="mt-3 text-3xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
+                                {currentCount}
+                              </p>
+                              <p className="text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                                live individuals
+                              </p>
+
+                              <div className="mt-4">
+                                <div
+                                  className="mb-1 flex items-center justify-between text-[10px] font-medium uppercase tracking-wider"
+                                  style={{ color: MAIN_COLORS.aColorGray }}
+                                >
+                                  <span>Occupancy</span>
+                                  <span>{density}%</span>
+                                </div>
+                                <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
+                                  <div
+                                    className="h-full rounded-full transition-all duration-1000"
+                                    style={{
+                                      width: `${density}%`,
+                                      backgroundColor: density >= 85 ? "#ef4444" : density >= 60 ? "#f59e0b" : MAIN_COLORS.aColor1,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div id="crowd-heatmap" style={ANCHOR_SCROLL_STYLE}>
+                <HusenseHeatmapCard />
+              </div>
+
+              <div className="grid gap-5 xl:grid-cols-2">
+                <div id="crowd-gate-snapshot" style={ANCHOR_SCROLL_STYLE}>
+                  <TelraamDetailsCard overview={overview} />
+                </div>
+
+                <div id="crowd-mobility-split" style={ANCHOR_SCROLL_STYLE}>
+                  <TelraamLiveCard data={telraamLiveModeSplitChart} chartPalette={chartPalette} />
+                </div>
+              </div>
+
+              <div id="crowd-traffic" style={ANCHOR_SCROLL_STYLE}>
+                <Card>
+                  <CardHeader>
+                    <SectionTitle
+                      title="Movement over time"
+                      subtitle="Recent pedestrian, bicycle, and vehicle counts from the live Telraam gate counter, with the latest split shown below."
+                    />
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {telraamTrendChart.length ? (
+                      <div className="h-[260px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={telraamTrendChart}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
+                            <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                            <Tooltip />
+                            <Area type="monotone" dataKey="pedestrians" stackId="1" stroke={MAIN_COLORS.aColor1} fill={MAIN_COLORS.aColor1} fillOpacity={0.85} />
+                            <Area type="monotone" dataKey="bicycles" stackId="1" stroke={MAIN_COLORS.aColor2} fill={MAIN_COLORS.aColor2} fillOpacity={0.8} />
+                            <Area type="monotone" dataKey="vehicles" stackId="1" stroke="#0f766e" fill="#0f766e" fillOpacity={0.75} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <ChartPlaceholder
+                        title="Movement trend unavailable"
+                        detail={telraamHistoryError || "Recent movement history is not available yet."}
+                      />
+                    )}
+
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {currentModalityChart.map((item, index) => (
+                        <div
+                          key={item.label}
+                          className="rounded-2xl border p-4"
+                          style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+                        >
+                          <p className="text-sm" style={{ color: chartPalette[index] }}>
+                            {item.label}
+                          </p>
+                          <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                            {item.value}
+                          </p>
+                        </div>
+                      ))}
                     </div>
-                    <div className="rounded-2xl border p-4" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}>
-                      <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>Expected baseline</p>
-                      <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>{latestAnomaly?.expected ?? 0}</p>
-                    </div>
-                    <div className="rounded-2xl border p-4" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}>
-                      <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>Deviation</p>
-                      <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>{latestAnomaly ? `${latestAnomaly.deviationPct}%` : "0%"}</p>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <ChartPlaceholder
-                  title="No busyness trend yet"
-                  detail={telraamHistoryError || "Recent Telraam history is needed before anomaly tracking can be calculated."}
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid gap-5 xl:grid-cols-2">
+                <div id="crowd-history" style={ANCHOR_SCROLL_STYLE}>
+                  <TelraamStoredCard points={telraamHistory} error={telraamHistoryError} />
+                </div>
+
+                <div id="crowd-baseline" style={ANCHOR_SCROLL_STYLE}>
+                  <Card>
+                    <CardHeader>
+                      <SectionTitle
+                        title="Movement vs normal pattern"
+                        subtitle="Current movement compared with the expected recent pattern from the Telraam hourly window."
+                      />
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {anomalyChart.length ? (
+                        <>
+                          <div className="h-[240px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <ComposedChart data={anomalyChart}>
+                                <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
+                                <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                                <Tooltip />
+                                <Area type="monotone" dataKey="expected" stroke={MAIN_COLORS.aColor2} fill={MAIN_COLORS.aColor2} fillOpacity={0.18} />
+                                <Line type="monotone" dataKey="actual" stroke={MAIN_COLORS.aColor1} strokeWidth={3} dot={false} />
+                              </ComposedChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <div
+                              className="rounded-2xl border p-4"
+                              style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+                            >
+                              <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
+                                Latest actual
+                              </p>
+                              <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                                {latestAnomaly?.actual ?? 0}
+                              </p>
+                            </div>
+                            <div
+                              className="rounded-2xl border p-4"
+                              style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+                            >
+                              <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
+                                Expected baseline
+                              </p>
+                              <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                                {latestAnomaly?.expected ?? 0}
+                              </p>
+                            </div>
+                            <div
+                              className="rounded-2xl border p-4"
+                              style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+                            >
+                              <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
+                                Deviation
+                              </p>
+                              <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                                {latestAnomaly ? `${latestAnomaly.deviationPct}%` : "0%"}
+                              </p>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <ChartPlaceholder
+                          title="No movement pattern yet"
+                          detail={
+                            telraamHistoryError ||
+                            "Recent movement history is needed before normal-pattern tracking can be calculated."
+                          }
+                        />
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            </section>
+
+            <section id="water" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
+              <CategoryHeader
+                title="Water"
+                description="Swim-area conditions grouped into one clear recreation context block so water-edge decisions do not get buried inside the movement feed."
+              />
+
+              <div id="water-summary" style={ANCHOR_SCROLL_STYLE}>
+                <SignalCard {...waterSummary} />
+              </div>
+            </section>
+
+            <section id="events" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
+              <CategoryHeader
+                title="Events"
+                description="Upcoming site activity and public holidays placed together as planning support rather than as a live operational metric block."
+              />
+
+              <UpcomingAgendaCard
+                loading={agendaLoading}
+                error={agendaError}
+                items={agendaItems}
+                holidaysLoading={holidaysLoading}
+                holidays={holidays}
+                eventsId="events-agenda"
+                holidaysId="events-holidays"
+              />
+            </section>
+
+            <section id="weather" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
+              <CategoryHeader
+                title="Weather"
+                description="Fuller weather context"
+              />
+
+              <div id="weather-conditions" style={ANCHOR_SCROLL_STYLE}>
+                <WeatherWidget model={liveWeatherWidget} />
+              </div>
+
+              <div id="weather-weekly-range" style={ANCHOR_SCROLL_STYLE}>
+                <WeatherRangeCard
+                  helper={weatherRange.helper}
+                  periodLabel={weatherRange.periodLabel}
+                  stats={weatherRange.stats}
+                  tone={weatherRange.tone}
                 />
-              )}
-            </CardContent>
-          </Card>
+              </div>
+            </section>
 
-          <SignalCard {...waterSummary} />
-          <UpcomingAgendaCard
-            loading={agendaLoading}
-            error={agendaError}
-            items={agendaItems}
-            holidaysLoading={holidaysLoading}
-            holidays={holidays}
-          />
+            <section id="sensors" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
+              <CategoryHeader
+                title="Sensors"
+                description="network overview, source-health detail, and installed or planned sensor inventory."
+              />
+
+              <div id="sensors-network" style={ANCHOR_SCROLL_STYLE}>
+                <LiveOperationsMapSection sourceHealthId="sensors-source-health" inventoryId="sensors-inventory" />
+              </div>
+            </section>
+          </div>
         </div>
-
-        <LiveOperationsMapSection />
       </div>
     </div>
   );

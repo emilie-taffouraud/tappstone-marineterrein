@@ -9,6 +9,63 @@ function toStatusFromWeather(current) {
   return "ok";
 }
 
+function formatApiDate(value) {
+  const year = value.getUTCFullYear();
+  const month = `${value.getUTCMonth() + 1}`.padStart(2, "0");
+  const day = `${value.getUTCDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+async function fetchRecentTemperatureRange(env) {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  const dateLabels = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setUTCDate(today.getUTCDate() - index);
+    return formatApiDate(date);
+  });
+
+  const historyResponses = await Promise.allSettled(
+    dateLabels.map((dateLabel) => {
+      const historyUrl =
+        `https://api.weatherapi.com/v1/history.json?key=${env.weatherApiKey}` +
+        `&q=${encodeURIComponent(env.weatherLocation)}&dt=${dateLabel}&aqi=no`;
+
+      return fetchJson(historyUrl, { timeoutMs: env.opsHttpTimeoutMs });
+    }),
+  );
+
+  const sampledDays = historyResponses
+    .flatMap((result) => {
+      if (result.status !== "fulfilled") return [];
+
+      const day = result.value?.forecast?.forecastday?.[0]?.day;
+      const date = result.value?.forecast?.forecastday?.[0]?.date;
+      const min = Number(day?.mintemp_c);
+      const max = Number(day?.maxtemp_c);
+
+      if (!date || !Number.isFinite(min) || !Number.isFinite(max)) {
+        return [];
+      }
+
+      return [{ date, min, max }];
+    })
+    .sort((left, right) => left.date.localeCompare(right.date));
+
+  if (!sampledDays.length) {
+    return null;
+  }
+
+  return {
+    min: Math.min(...sampledDays.map((day) => day.min)),
+    max: Math.max(...sampledDays.map((day) => day.max)),
+    sampleDays: sampledDays.length,
+    startDate: sampledDays[0]?.date || null,
+    endDate: sampledDays[sampledDays.length - 1]?.date || null,
+  };
+}
+
 export async function getWeatherLiveData(env) {
   const fetchedAt = new Date().toISOString();
 
@@ -26,10 +83,13 @@ export async function getWeatherLiveData(env) {
 
   return getOrSetCache("ops:weather", env.opsCacheTtlMs, async () => {
     try {
-      const url =
+      const forecastUrl =
         `https://api.weatherapi.com/v1/forecast.json?key=${env.weatherApiKey}` +
         `&q=${encodeURIComponent(env.weatherLocation)}&days=2&aqi=no&alerts=yes`;
-      const data = await fetchJson(url, { timeoutMs: env.opsHttpTimeoutMs });
+      const [data, weeklyRange] = await Promise.all([
+        fetchJson(forecastUrl, { timeoutMs: env.opsHttpTimeoutMs }),
+        fetchRecentTemperatureRange(env).catch(() => null),
+      ]);
       const current = data?.current || {};
       const locationName = data?.location?.name || env.weatherLocation;
       const zoneFields = zoneFieldsFromText(locationName);
@@ -50,7 +110,10 @@ export async function getWeatherLiveData(env) {
           observedAt,
           fetchedAt,
           ...zoneFields,
-          raw: current,
+          raw: {
+            current,
+            weeklyRange,
+          },
         }),
         createUnifiedRecord({
           id: "weather-feels-like",
@@ -120,7 +183,10 @@ export async function getWeatherLiveData(env) {
         fetchedAt,
         lastSuccessAt: fetchedAt,
         records,
-        raw: data,
+        raw: {
+          current: data,
+          weeklyRange,
+        },
         error: null,
       };
     } catch (error) {

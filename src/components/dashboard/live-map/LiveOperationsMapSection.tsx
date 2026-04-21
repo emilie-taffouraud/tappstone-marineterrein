@@ -25,7 +25,13 @@ const DEFAULT_VISIBILITY: LayerVisibility = {
   labels: true,
 };
 
-export function LiveOperationsMapSection() {
+export function LiveOperationsMapSection({
+  sourceHealthId,
+  inventoryId,
+}: {
+  sourceHealthId?: string;
+  inventoryId?: string;
+}) {
   const [visibility, setVisibility] = useState<LayerVisibility>(DEFAULT_VISIBILITY);
   const { overview, health, loading, error } = useOpsLiveData();
 
@@ -75,7 +81,7 @@ export function LiveOperationsMapSection() {
       <CardHeader className="pb-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <SectionTitle
-            title="Sensor network map"
+            title="Sensor network overview"
             subtitle="Installed and planned sensor locations across Marineterrein, with live availability shown where this dashboard already has a connected feed."
           />
 
@@ -191,7 +197,13 @@ export function LiveOperationsMapSection() {
           </div>
         ) : null}
 
-        <SpatialSummaryPanel summary={spatialSummary} health={health} sensorPoints={sensorPoints} />
+        <SpatialSummaryPanel
+          summary={spatialSummary}
+          health={health}
+          sensorPoints={sensorPoints}
+          sourceHealthId={sourceHealthId}
+          inventoryId={inventoryId}
+        />
       </CardContent>
     </Card>
   );

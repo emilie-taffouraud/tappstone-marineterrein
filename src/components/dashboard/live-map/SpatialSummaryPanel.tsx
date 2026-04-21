@@ -33,10 +33,14 @@ export function SpatialSummaryPanel({
   summary,
   health,
   sensorPoints,
+  sourceHealthId,
+  inventoryId,
 }: {
   summary: SpatialSummary;
   health: OpsHealthResponse | null;
   sensorPoints: SensorPoint[];
+  sourceHealthId?: string;
+  inventoryId?: string;
 }) {
   return (
     <div className="space-y-4">
@@ -81,7 +85,11 @@ export function SpatialSummaryPanel({
         <div className="space-y-4">
           <MapLegend />
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div
+            id={sourceHealthId}
+            className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+            style={sourceHealthId ? { scrollMarginTop: "2rem" } : undefined}
+          >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-medium text-slate-800">Source health</p>
@@ -114,7 +122,11 @@ export function SpatialSummaryPanel({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div
+          id={inventoryId}
+          className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+          style={inventoryId ? { scrollMarginTop: "2rem" } : undefined}
+        >
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-slate-800">Sensor inventory</p>

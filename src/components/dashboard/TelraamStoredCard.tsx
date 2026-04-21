@@ -88,8 +88,8 @@ export default function TelraamStoredCard({ points, error }: TelraamStoredCardPr
     <Card>
       <CardHeader>
         <SectionTitle
-          title="Stored Telraam Data"
-          subtitle="Summary from the database"
+          title="Movement history summary"
+          subtitle="Recent Telraam database history for the gate counter"
         />
       </CardHeader>
       <CardContent className="space-y-4">

@@ -4,17 +4,20 @@ import { DASHBOARD_CARD_TITLE_THEME, MAIN_COLORS } from "../../styles/theme";
 export function Card({
   className = "",
   children,
+  style,
 }: {
   className?: string;
   children: React.ReactNode;
+  style?: React.CSSProperties;
 }) {
   return (
     <div
-      className={`rounded-3xl backdrop-blur-sm ${className}`}
+      className={`rounded-[26px] backdrop-blur-sm ${className}`}
       style={{
-        border: `1px solid rgba(226, 232, 240, 0.95)`,
-        background: "linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 251, 253, 0.94) 100%)",
-        boxShadow: "0 16px 36px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.72)",
+        border: `1px solid rgba(214, 224, 234, 0.96)`,
+        background: "linear-gradient(180deg, rgba(255, 255, 255, 0.985) 0%, rgba(247, 250, 253, 0.955) 100%)",
+        boxShadow: "0 18px 36px rgba(15, 23, 42, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.82)",
+        ...style,
       }}
     >
       {children}
@@ -29,7 +32,7 @@ export function CardHeader({
   className?: string;
   children: React.ReactNode;
 }) {
-  return <div className={`p-6 pb-2 ${className}`}>{children}</div>;
+  return <div className={`p-5 pb-2 ${className}`}>{children}</div>;
 }
 
 export function CardTitle({
@@ -56,7 +59,7 @@ export function CardContent({
   className?: string;
   children: React.ReactNode;
 }) {
-  return <div className={`px-6 pb-6 ${className}`}>{children}</div>;
+  return <div className={`px-5 pb-5 ${className}`}>{children}</div>;
 }
 
 export function Pill({
@@ -112,13 +115,13 @@ export function SectionTitle({
   subtitle?: string;
 }) {
   return (
-    <div className="mb-4 flex items-end justify-between gap-3">
+    <div className="mb-3 flex items-end justify-between gap-3">
       <div>
-        <h2 className="text-[1.05rem] font-semibold tracking-[-0.02em]" style={{ color: DASHBOARD_CARD_TITLE_THEME.sectionTitleColor }}>
+        <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em]" style={{ color: DASHBOARD_CARD_TITLE_THEME.sectionTitleColor }}>
           {title}
         </h2>
         {subtitle ? (
-          <p className="mt-1 max-w-3xl text-sm leading-6" style={{ color: DASHBOARD_CARD_TITLE_THEME.sectionSubtitleColor }}>
+          <p className="mt-1 max-w-4xl text-[0.94rem] leading-6" style={{ color: DASHBOARD_CARD_TITLE_THEME.sectionSubtitleColor }}>
             {subtitle}
           </p>
         ) : null}
@@ -151,7 +154,7 @@ export function SelectLike({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-2xl border px-3 py-2.5 text-sm outline-none ring-0 transition"
+        className="rounded-[18px] border px-3 py-2.5 text-sm outline-none ring-0 transition"
         style={{
           borderColor: dark ? "rgba(120, 169, 198, 0.45)" : `${MAIN_COLORS.aColorGray}33`,
           backgroundColor: "rgba(255, 255, 255, 0.9)",

@@ -69,8 +69,8 @@ export default function TelraamLiveCard({
     <Card className="min-h-[460px]">
       <CardHeader>
         <SectionTitle
-          title="Live Telraam Data"
-          subtitle="Counts by travel mode"
+          title="Live movement mix"
+          subtitle="Travel-mode split from the live Telraam gate counter"
         />
       </CardHeader>
       <CardContent className="space-y-4">

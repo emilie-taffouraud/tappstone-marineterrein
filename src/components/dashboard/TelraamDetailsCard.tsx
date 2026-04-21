@@ -32,8 +32,8 @@ export default function TelraamDetailsCard({ overview }: TelraamDetailsCardProps
     <Card>
       <CardHeader>
         <SectionTitle
-          title="Telraam gate snapshot"
-          subtitle="Single traffic counter at Kattenburgerstraat 7. This is best used as an arrival-pressure signal, not a full site map layer."
+          title="Gate flow snapshot"
+          subtitle="Live Telraam counter at Kattenburgerstraat 7. Use this as an arrival-pressure signal at the site edge, not a full movement map."
         />
       </CardHeader>
       <CardContent className="space-y-4">

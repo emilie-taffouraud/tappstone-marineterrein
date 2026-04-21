@@ -9,7 +9,6 @@ type WeatherWidgetModel = {
   location: string;
   condition: string;
   metrics: { label: string; value: string }[];
-  helper: string;
 };
 
 const iconToneStyle: Record<WeatherWidgetModel["statusTone"], { backgroundColor: string; color: string }> = {
@@ -67,7 +66,6 @@ const WeatherWidget = ({ model }: { model: WeatherWidgetModel }) => {
             </div>
             <p className="mt-1 text-sm capitalize" style={{ color: "#52667c" }}>{model.condition}</p>
             <div className="mt-2 text-[2.45rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>{model.temperature}</div>
-            <p className="mt-2 max-w-xl text-sm leading-6" style={{ color: MAIN_COLORS.aColorGray }}>{model.helper}</p>
           </div>
         </div>
 

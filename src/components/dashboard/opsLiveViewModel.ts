@@ -28,6 +28,13 @@ type SummaryModel = {
   stats?: { label: string; value: string }[];
 };
 
+export type WeatherRangeModel = {
+  tone: Tone;
+  helper: string;
+  periodLabel: string;
+  stats: { label: string; value: string }[];
+};
+
 export type SoundChartPoint = {
   label: string;
   value: number;
@@ -117,6 +124,17 @@ function formatTemperatureStat(value: number | null) {
   return value === null ? "Unavailable" : `${value.toFixed(1)} C`;
 }
 
+function formatShortDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function mapAlertSeverity(status: UnifiedLiveRecord["status"]): AlertItem["severity"] {
   if (status === "critical") return "critical";
   if (status === "warning") return "warning";
@@ -183,7 +201,7 @@ export function deriveLiveKpis(
       icon: Activity,
     },
     {
-      label: "Telraam gate flow",
+      label: "Telraam gate",
       value: telraamTotal ? formatValue(telraamTotal) : "Unavailable",
       delta: "",
       trend: "up",
@@ -309,6 +327,46 @@ export function deriveWeatherWidgetModel(
     helper:
       health?.sources.weather?.error ||
       (condition?.value ? `Condition: ${condition.value}` : "Weather source currently unavailable"),
+  };
+}
+
+export function deriveWeatherRangeModel(
+  overview: OpsLiveOverviewResponse,
+  health: OpsHealthResponse | null,
+): WeatherRangeModel {
+  const temperature = findRecord(overview, "weather", "temperature_c");
+  const weeklyRange = (temperature?.raw &&
+    typeof temperature.raw === "object" &&
+    "weeklyRange" in temperature.raw &&
+    temperature.raw.weeklyRange &&
+    typeof temperature.raw.weeklyRange === "object"
+      ? temperature.raw.weeklyRange
+      : null) as
+    | {
+        min?: number | null;
+        max?: number | null;
+        sampleDays?: number | null;
+        startDate?: string | null;
+        endDate?: string | null;
+      }
+    | null;
+
+  const startLabel = formatShortDate(weeklyRange?.startDate ?? null);
+  const endLabel = formatShortDate(weeklyRange?.endDate ?? null);
+  const periodLabel =
+    startLabel && endLabel ? `${startLabel} to ${endLabel}` : "Recent seven-day weather window";
+  const sampleDays = Number(weeklyRange?.sampleDays || 0);
+
+  return {
+    tone: statusTone(health?.sources.weather?.status || "unknown"),
+    helper: sampleDays
+      ? `Daily temperature range across ${sampleDays} weather summaries.`
+      : health?.sources.weather?.error || "Weekly weather range is temporarily unavailable.",
+    periodLabel,
+    stats: [
+      { label: "Weekly minimum", value: formatTemperatureStat(weeklyRange?.min ?? null) },
+      { label: "Weekly maximum", value: formatTemperatureStat(weeklyRange?.max ?? null) },
+    ],
   };
 }
 

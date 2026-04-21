@@ -18,6 +18,8 @@ type UpcomingAgendaCardProps = {
   items: AgendaItem[];
   holidaysLoading: boolean;
   holidays: HolidayItem[];
+  eventsId?: string;
+  holidaysId?: string;
 };
 
 function formatUtcDate(value: string) {
@@ -51,6 +53,8 @@ export default function UpcomingAgendaCard({
   items,
   holidaysLoading,
   holidays,
+  eventsId,
+  holidaysId,
 }: UpcomingAgendaCardProps) {
   const normalizedHolidays = [...holidays].sort((a, b) => a.date.localeCompare(b.date));
   const upcomingHolidays = normalizedHolidays.filter((holiday) => {
@@ -62,10 +66,10 @@ export default function UpcomingAgendaCard({
   return (
     <Card>
       <CardHeader>
-        <SectionTitle title="Upcoming agenda" subtitle="Marineterrein events and public holidays" />
+        <SectionTitle title="Upcoming agenda" subtitle="Site events and public holidays for planning context" />
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="space-y-3">
+        <div id={eventsId} className="space-y-3" style={eventsId ? { scrollMarginTop: "2rem" } : undefined}>
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-medium uppercase tracking-[0.1em] text-slate-500">Site events</p>
             <a
@@ -119,7 +123,11 @@ export default function UpcomingAgendaCard({
           )}
         </div>
 
-        <div className="space-y-3 border-t border-slate-200 pt-4">
+        <div
+          id={holidaysId}
+          className="space-y-3 border-t border-slate-200 pt-4"
+          style={holidaysId ? { scrollMarginTop: "2rem" } : undefined}
+        >
           <p className="text-xs font-medium uppercase tracking-[0.1em] text-slate-500">Public holidays</p>
 
           {holidaysLoading ? (
