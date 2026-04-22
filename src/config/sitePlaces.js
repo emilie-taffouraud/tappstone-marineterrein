@@ -36,9 +36,9 @@ export const SITE_PLACES = [
     description: "Food and gathering area with midday crowd pressure.",
     geometry: {
       type: "point",
-      coordinates: [52.3737, 4.91542],
+      coordinates: [52.37217, 4.91692],
     },
-    labelPosition: [52.37359, 4.91533],
+    labelPosition: [52.37226, 4.91679],
     lookupKeys: ["tapp", "027 e"],
   },
   {

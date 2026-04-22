@@ -75,6 +75,25 @@ export type OpsAgendaResponse = {
   fallback: boolean;
 };
 
+export type HusenseHeatmapResponse = {
+  spaceId: string;
+  spaceName: string;
+  timeRangeLabel: string;
+  imageId: string | null;
+  imageUrl: string | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
+  width: number;
+  height: number;
+  data: number[];
+  range: unknown;
+};
+
+export type HusenseHeatmapRequest = {
+  range?: string;
+  date?: string;
+};
+
 export async function fetchOpsOverview() {
   const response = await fetch("/api/ops/live/overview");
   if (!response.ok) {
@@ -110,4 +129,35 @@ export async function fetchOpsAgenda(limit = 4) {
   }
 
   return response.json() as Promise<OpsAgendaResponse>;
+}
+
+export async function fetchHusenseHeatmap(request: string | HusenseHeatmapRequest) {
+  const params = new URLSearchParams();
+
+  if (typeof request === "string") {
+    params.set("range", request);
+  } else {
+    if (request.range) params.set("range", request.range);
+    if (request.date) params.set("date", request.date);
+  }
+
+  const query = params.toString();
+  const response = await fetch(`/api/husense/heatmap${query ? `?${query}` : ""}`);
+
+  if (!response.ok) {
+    let detail = "Failed to fetch /api/husense/heatmap";
+
+    try {
+      const payload = await response.json();
+      if (typeof payload?.error === "string" && payload.error.trim()) {
+        detail = payload.error;
+      }
+    } catch {
+      // Fall back to the generic error when the response is not JSON.
+    }
+
+    throw new Error(detail);
+  }
+
+  return response.json() as Promise<HusenseHeatmapResponse>;
 }

@@ -20,7 +20,6 @@ import mt_up from "../../assets/mt_up.jpg";
 import TelraamStoredCard from "./TelraamStoredCard";
 import UpcomingAgendaCard from "./UpcomingAgendaCard";
 import TelraamLiveCard from "./TelraamLiveCard";
-import TelraamDetailsCard from "./TelraamDetailsCard";
 import WeatherWidget from "./WeatherWidget";
 import { LiveOperationsMapSection } from "./live-map/LiveOperationsMapSection";
 import { fetchOpsAgenda, type AgendaItem } from "../../lib/opsLiveClient";
@@ -30,6 +29,7 @@ import {
   deriveLiveAlerts,
   deriveLiveKpis,
   deriveLiveMetaSummary,
+  deriveTelraamTrendChart,
   deriveTelraamLiveModeSplitChart,
   deriveWaterSummary,
   deriveWeatherRangeModel,
@@ -78,14 +78,13 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
   {
     id: "crowd",
     label: "Crowd",
-    description: "Occupancy, movement flow, gate pressure, and crowd context.",
+    description: "Occupancy, movement flow, and crowd context.",
     items: [
       { id: "crowd-occupancy", label: "Occupancy" },
       { id: "crowd-heatmap", label: "Heatmap" },
-      { id: "crowd-gate-snapshot", label: "Gate snapshot" },
       { id: "crowd-mobility-split", label: "Movement mix" },
       { id: "crowd-traffic", label: "Movement over time" },
-      { id: "crowd-history", label: "History summary" },
+      { id: "crowd-history", label: "Movement summary" },
       { id: "crowd-baseline", label: "Vs normal" },
     ],
   },
@@ -124,6 +123,8 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
     ],
   },
 ];
+
+const HIDDEN_OCCUPANCY_ZONE_IDS = new Set(["5db05d88-7833-440a-9c3e-24c93fb08406"]);
 
 function resolveActiveSection(activeId: string) {
   return DASHBOARD_NAV.find((section) => section.id === activeId || section.items.some((item) => item.id === activeId));
@@ -267,13 +268,15 @@ function DashboardNavigation({ activeId }: { activeId: string }) {
       <aside className="hidden xl:block xl:self-start">
         <div ref={desktopRailSlotRef} className="w-[220px]">
           <div
-            className={desktopRailPinned ? "fixed top-5 z-20" : "relative"}
+            className={desktopRailPinned ? "fixed z-20" : "relative"}
             style={
               desktopRailPinned
                 ? {
                     left: `${desktopRailMetrics.left}px`,
+                    top: "50vh",
+                    transform: "translateY(-50%)",
                     width: `${desktopRailMetrics.width}px`,
-                }
+                  }
                 : undefined
             }
           >
@@ -473,6 +476,66 @@ function ChartPlaceholder({ title, detail }: { title: string; detail: string }) 
   );
 }
 
+function formatMetricNumber(value: number, maximumFractionDigits = 0) {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits }).format(value);
+}
+
+function formatSignedPercent(value: number) {
+  const formatted = formatMetricNumber(Math.abs(value), 1);
+  if (value > 0) return `+${formatted}%`;
+  if (value < 0) return `-${formatted}%`;
+  return `${formatted}%`;
+}
+
+function describeAnomaly(
+  deviationPct: number,
+  threshold: number,
+): {
+  label: string;
+  tone: "emerald" | "amber" | "rose" | "sky";
+  detail: string;
+} {
+  const magnitude = Math.abs(deviationPct);
+
+  if (magnitude < threshold) {
+    return {
+      label: "Normal",
+      tone: "emerald",
+      detail: `${formatSignedPercent(deviationPct)} from the expected baseline, still within the normal range.`,
+    };
+  }
+
+  if (deviationPct >= threshold * 1.5) {
+    return {
+      label: "Unusually high",
+      tone: "rose",
+      detail: `${formatSignedPercent(deviationPct)} above the expected baseline.`,
+    };
+  }
+
+  if (deviationPct >= threshold) {
+    return {
+      label: "Above normal",
+      tone: "amber",
+      detail: `${formatSignedPercent(deviationPct)} above the expected baseline.`,
+    };
+  }
+
+  if (deviationPct <= -threshold * 1.5) {
+    return {
+      label: "Unusually low",
+      tone: "sky",
+      detail: `${formatSignedPercent(deviationPct)} below the expected baseline.`,
+    };
+  }
+
+  return {
+    label: "Below normal",
+    tone: "sky",
+    detail: `${formatSignedPercent(deviationPct)} below the expected baseline.`,
+  };
+}
+
 function ThresholdField({
   label,
   value,
@@ -655,15 +718,10 @@ export function OperationsDashboard() {
   const currentModalityChart = useMemo(() => deriveCurrentModalityChart(overview), [overview]);
   const telraamLiveModeSplitChart = useMemo(() => deriveTelraamLiveModeSplitChart(overview), [overview]);
   const anomalyChart = useMemo(() => deriveAnomalyChart(telraamHistory), [telraamHistory]);
-  const telraamTrendChart = useMemo(
-    () =>
-      [...telraamHistory].reverse().map((point) => ({
-        time: new Date(point.recorded_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        pedestrians: Number(point.pedestrian_count || 0),
-        bicycles: Number(point.bicycle_count || 0),
-        vehicles: Number(point.vehicle_count || 0),
-      })),
-    [telraamHistory],
+  const telraamTrendChart = useMemo(() => deriveTelraamTrendChart(telraamHistory), [telraamHistory]);
+  const visibleOccupancyData = useMemo(
+    () => occupancyData.filter((zone) => !HIDDEN_OCCUPANCY_ZONE_IDS.has(String(zone?.id ?? ""))),
+    [occupancyData],
   );
 
   const chartPalette = [
@@ -679,6 +737,9 @@ export function OperationsDashboard() {
     "#64748b",
   ];
   const latestAnomaly = anomalyChart.length ? anomalyChart[anomalyChart.length - 1] : undefined;
+  const anomalyStatus = latestAnomaly
+    ? describeAnomaly(latestAnomaly.deviationPct, anomalyThreshold)
+    : { label: "Normal", tone: "emerald" as const, detail: "Movement is within the expected baseline range." };
   const latestTelraamPoint = telraamTrendChart.length ? telraamTrendChart[telraamTrendChart.length - 1] : null;
   const thresholdAlerts = useMemo<AlertItem[]>(() => {
     const alerts: AlertItem[] = [];
@@ -998,21 +1059,21 @@ export function OperationsDashboard() {
                   <CardContent className="space-y-4">
                     {husenseError ? (
                       <div className="rounded-xl bg-red-50 p-4 text-sm text-red-500">Error loading Husense: {husenseError}</div>
-                    ) : occupancyData.length === 0 ? (
+                    ) : visibleOccupancyData.length === 0 ? (
                       <div className="animate-pulse p-4 text-sm" style={{ color: MAIN_COLORS.aColor1 }}>
                         Loading live occupancy data...
                       </div>
                     ) : (
-                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        {occupancyData.map((occupancyZone: any, index: number) => {
-                          const maxCapacity = occupancyZone.capacity || 100;
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        {visibleOccupancyData.map((occupancyZone: any, index: number) => {
+                          const maxCapacity = occupancyZone.capacity ?? 100;
                           const currentCount =
-                            occupancyZone.presenceCount || occupancyZone.currentPresence || occupancyZone.count || 0;
+                            occupancyZone.presenceCount ?? occupancyZone.currentPresence ?? occupancyZone.count ?? 0;
                           const density = Math.min(100, Math.round((currentCount / maxCapacity) * 100));
 
                           return (
                             <div
-                              key={index}
+                              key={occupancyZone.id || index}
                               className="rounded-2xl border p-4"
                               style={{
                                 borderColor: `${MAIN_COLORS.aColor1}26`,
@@ -1063,27 +1124,21 @@ export function OperationsDashboard() {
               </div>
 
               <div id="crowd-heatmap" style={ANCHOR_SCROLL_STYLE}>
-                <HusenseHeatmapCard />
+                <HusenseHeatmapCard selectedRange={range} />
               </div>
 
-              <div className="grid gap-5 xl:grid-cols-2">
-                <div id="crowd-gate-snapshot" style={ANCHOR_SCROLL_STYLE}>
-                  <TelraamDetailsCard overview={overview} />
-                </div>
-
-                <div id="crowd-mobility-split" style={ANCHOR_SCROLL_STYLE}>
-                  <TelraamLiveCard data={telraamLiveModeSplitChart} chartPalette={chartPalette} />
-                </div>
+              <div id="crowd-mobility-split" style={ANCHOR_SCROLL_STYLE}>
+                <TelraamLiveCard data={telraamLiveModeSplitChart} chartPalette={chartPalette} />
               </div>
 
               <div id="crowd-traffic" style={ANCHOR_SCROLL_STYLE}>
                 <Card>
-                  <CardHeader>
-                    <SectionTitle
-                      title="Movement over time"
-                      subtitle="Recent pedestrian, bicycle, and vehicle counts from the live Telraam gate counter, with the latest split shown below."
-                    />
-                  </CardHeader>
+                    <CardHeader>
+                      <SectionTitle
+                        title="Movement over time"
+                        subtitle="Trend across the loaded Telraam period, with the current pedestrian, bicycle, and vehicle split shown below."
+                      />
+                    </CardHeader>
                   <CardContent className="space-y-4">
                     {telraamTrendChart.length ? (
                       <div className="h-[260px]">
@@ -1126,23 +1181,26 @@ export function OperationsDashboard() {
                 </Card>
               </div>
 
-              <div className="grid gap-5 xl:grid-cols-2">
+              <div className="grid gap-5">
                 <div id="crowd-history" style={ANCHOR_SCROLL_STYLE}>
-                  <TelraamStoredCard points={telraamHistory} error={telraamHistoryError} />
+                  <TelraamStoredCard points={telraamHistory} error={telraamHistoryError} anomalyThreshold={anomalyThreshold} />
                 </div>
 
                 <div id="crowd-baseline" style={ANCHOR_SCROLL_STYLE}>
                   <Card>
                     <CardHeader>
-                      <SectionTitle
-                        title="Movement vs normal pattern"
-                        subtitle="Current movement compared with the expected recent pattern from the Telraam hourly window."
-                      />
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <SectionTitle
+                          title="Movement vs normal pattern"
+                          subtitle="Current movement compared with the expected recent pattern from the Telraam hourly window."
+                        />
+                        {anomalyChart.length ? <Pill tone={anomalyStatus.tone}>{anomalyStatus.label}</Pill> : null}
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       {anomalyChart.length ? (
                         <>
-                          <div className="h-[240px]">
+                          <div className="h-[228px]">
                             <ResponsiveContainer width="100%" height="100%">
                               <ComposedChart data={anomalyChart}>
                                 <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
@@ -1154,40 +1212,58 @@ export function OperationsDashboard() {
                               </ComposedChart>
                             </ResponsiveContainer>
                           </div>
-                          <div className="grid gap-3 md:grid-cols-3">
-                            <div
-                              className="rounded-2xl border p-4"
-                              style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
-                            >
-                              <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
-                                Latest actual
-                              </p>
-                              <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                                {latestAnomaly?.actual ?? 0}
-                              </p>
-                            </div>
-                            <div
-                              className="rounded-2xl border p-4"
-                              style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
-                            >
-                              <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
-                                Expected baseline
-                              </p>
-                              <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                                {latestAnomaly?.expected ?? 0}
-                              </p>
-                            </div>
-                            <div
-                              className="rounded-2xl border p-4"
-                              style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
-                            >
-                              <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
-                                Deviation
-                              </p>
-                              <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                                {latestAnomaly ? `${latestAnomaly.deviationPct}%` : "0%"}
-                              </p>
-                            </div>
+                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            {[
+                              {
+                                label: "Latest actual",
+                                value: formatMetricNumber(latestAnomaly?.actual ?? 0),
+                                note: "Current total movements in the latest row",
+                              },
+                              {
+                                label: "Expected baseline",
+                                value: formatMetricNumber(latestAnomaly?.expected ?? 0, 1),
+                                note: "Rolling expectation from nearby rows",
+                              },
+                              {
+                                label: "Deviation",
+                                value: latestAnomaly ? formatSignedPercent(latestAnomaly.deviationPct) : "0%",
+                                note: "Difference between actual and expected flow",
+                              },
+                              {
+                                label: "Pattern status",
+                                value: anomalyStatus.label,
+                                note: anomalyStatus.detail,
+                              },
+                            ].map((item, index) => (
+                              <div
+                                key={item.label}
+                                className="rounded-2xl border p-4"
+                                style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+                              >
+                                <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
+                                  {item.label}
+                                </p>
+                                <p
+                                  className="mt-2 text-2xl font-semibold"
+                                  style={{
+                                    color: index === 3
+                                      ? anomalyStatus.tone === "rose"
+                                        ? "#b91c1c"
+                                        : anomalyStatus.tone === "amber"
+                                          ? "#b45309"
+                                          : anomalyStatus.tone === "sky"
+                                            ? "#2f6f92"
+                                            : "#166534"
+                                      : MAIN_COLORS.aColorBlack,
+                                  }}
+                                >
+                                  {item.value}
+                                </p>
+                                <p className="mt-1 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
+                                  {item.note}
+                                </p>
+                              </div>
+                            ))}
                           </div>
                         </>
                       ) : (

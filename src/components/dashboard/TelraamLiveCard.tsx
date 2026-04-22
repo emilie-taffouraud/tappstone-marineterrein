@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { MAIN_COLORS, TELRAAM_LIVE_CARD_THEME } from "../../styles/theme";
 import type { BreakdownChartPoint } from "./opsLiveViewModel";
@@ -37,6 +37,123 @@ type TelraamLiveCardProps = {
   chartPalette: string[];
 };
 
+type TravelTypeIconProps = {
+  iconSrc?: string;
+  color: string;
+  opacity?: number;
+};
+
+function hexToRgb(color: string) {
+  const normalized = color.trim().replace("#", "");
+  const hex = normalized.length === 3
+    ? normalized
+        .split("")
+        .map((char) => char + char)
+        .join("")
+    : normalized;
+
+  if (!/^[0-9a-f]{6}$/i.test(hex)) {
+    return { r: 1, g: 105, b: 145 };
+  }
+
+  return {
+    r: parseInt(hex.slice(0, 2), 16),
+    g: parseInt(hex.slice(2, 4), 16),
+    b: parseInt(hex.slice(4, 6), 16),
+  };
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function TravelTypeIcon({ iconSrc, color, opacity = 1 }: TravelTypeIconProps) {
+  const [symbolSrc, setSymbolSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!iconSrc) {
+      setSymbolSrc(null);
+      return;
+    }
+
+    let cancelled = false;
+    const image = new Image();
+
+    image.onload = () => {
+      if (cancelled) return;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+
+      context.drawImage(image, 0, 0);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      const pixels = imageData.data;
+      const { r: targetR, g: targetG, b: targetB } = hexToRgb(color);
+
+      for (let index = 0; index < pixels.length; index += 4) {
+        const alpha = pixels[index + 3];
+        if (alpha === 0) continue;
+
+        const red = pixels[index];
+        const green = pixels[index + 1];
+        const blue = pixels[index + 2];
+        const brightness = (red + green + blue) / 3;
+        const spread = Math.max(red, green, blue) - Math.min(red, green, blue);
+        const whiteness =
+          clamp((brightness - 178) / 70, 0, 1) *
+          clamp((82 - spread) / 82, 0, 1);
+
+        if (whiteness <= 0.05) {
+          pixels[index + 3] = 0;
+          continue;
+        }
+
+        pixels[index] = targetR;
+        pixels[index + 1] = targetG;
+        pixels[index + 2] = targetB;
+        pixels[index + 3] = Math.round(alpha * whiteness);
+      }
+
+      context.putImageData(imageData, 0, 0);
+      setSymbolSrc(canvas.toDataURL("image/png"));
+    };
+
+    image.src = iconSrc;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [iconSrc, color]);
+
+  if (!iconSrc) return null;
+
+  return symbolSrc ? (
+    <img
+      src={symbolSrc}
+      alt=""
+      aria-hidden="true"
+      className="shrink-0"
+      style={{
+        ...TELRAAM_LIVE_CARD_THEME.icon,
+        opacity,
+      }}
+    />
+  ) : (
+    <span
+      aria-hidden="true"
+      className="shrink-0"
+      style={{
+        width: TELRAAM_LIVE_CARD_THEME.icon.width,
+        height: TELRAAM_LIVE_CARD_THEME.icon.height,
+        opacity: 0,
+      }}
+    />
+  );
+}
+
 export default function TelraamLiveCard({
   data,
   chartPalette,
@@ -63,6 +180,11 @@ export default function TelraamLiveCard({
         label as keyof typeof TELRAAM_LIVE_CARD_THEME.travelTypeLabelColors
       ] || TELRAAM_LIVE_CARD_THEME.fallbackTravelTypeLabelColor
     );
+  }
+
+  function renderTravelTypeIcon(label: string, color: string, opacity = 1) {
+    const iconSrc = getTravelTypeIconSrc(label);
+    return <TravelTypeIcon iconSrc={iconSrc} color={color} opacity={opacity} />;
   }
 
   return (
@@ -96,15 +218,7 @@ export default function TelraamLiveCard({
               <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
                 Total flow
               </p>
-              {getTravelTypeIconSrc("Total flow") ? (
-                <img
-                  src={getTravelTypeIconSrc("Total flow")}
-                  alt=""
-                  aria-hidden="true"
-                  className="shrink-0"
-                  style={TELRAAM_LIVE_CARD_THEME.icon}
-                />
-              ) : null}
+              {renderTravelTypeIcon("Total flow", MAIN_COLORS.aColor1)}
             </div>
             <p className="mt-2 text-3xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
               {totalFlow}
@@ -166,15 +280,7 @@ export default function TelraamLiveCard({
                 <p className="text-sm" style={{ color: getTravelTypeLabelColor(item.label) }}>
                   {item.label}
                 </p>
-                {getTravelTypeIconSrc(item.label) ? (
-                  <img
-                    src={getTravelTypeIconSrc(item.label)}
-                    alt=""
-                    aria-hidden="true"
-                    className="shrink-0"
-                    style={TELRAAM_LIVE_CARD_THEME.icon}
-                  />
-                ) : null}
+                {renderTravelTypeIcon(item.label, getTravelTypeLabelColor(item.label))}
               </div>
               <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
                 {item.value}
@@ -202,19 +308,7 @@ export default function TelraamLiveCard({
                     <p className="text-sm" style={{ color: getTravelTypeLabelColor(item.label, true) }}>
                       {item.label}
                     </p>
-                    {getTravelTypeIconSrc(item.label) ? (
-                      <img
-                        src={getTravelTypeIconSrc(item.label)}
-                        alt=""
-                        aria-hidden="true"
-                        className="shrink-0"
-                        style={{
-                          ...TELRAAM_LIVE_CARD_THEME.icon,
-                          filter: "grayscale(100%) saturate(0%)",
-                          opacity: 0.55,
-                        }}
-                      />
-                    ) : null}
+                    {renderTravelTypeIcon(item.label, getTravelTypeLabelColor(item.label, true), 0.55)}
                   </div>
                   <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorGray }}>
                     {item.value}

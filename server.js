@@ -73,6 +73,14 @@ function firstFiniteNumber(...values) {
   return null;
 }
 
+function firstPositiveNumber(...values) {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+}
+
 function firstText(...values) {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
@@ -168,9 +176,11 @@ function extractHeatmapPayload(payload) {
     Number.isFinite(Number(payload.height))
   ) {
     return {
+      imageId: firstText(payload.imageId, payload.imageID, payload.image_id, payload.backgroundImageId),
       width: Number(payload.width),
       height: Number(payload.height),
       data: payload.data.map((value) => Number(value) || 0),
+      range: payload.range ?? null,
     };
   }
 
@@ -181,6 +191,116 @@ function extractHeatmapPayload(payload) {
   }
 
   return null;
+}
+
+function buildHusenseApiBaseUrl() {
+  return (process.env.HUSENSE_API_URL || "https://bff.husense.io").replace(/\/+$/, "");
+}
+
+function buildHusensePresenceApiBaseUrl() {
+  return (process.env.HUSENSE_REST_API_URL || "https://api.husense.io/api/v1").replace(/\/+$/, "");
+}
+
+function getHusenseBearerToken() {
+  return process.env.HUSENSE_JWT_TOKEN || process.env.HUSENSE_API_TOKEN || null;
+}
+
+function looksLikeUuid(value) {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function getHusenseHeatmapSpace() {
+  const fallbackSpace = HUSENSE_DEFAULT_SPACES[0];
+  const configuredId = process.env.HUSENSE_HEATMAP_SPACE_ID || fallbackSpace?.id;
+
+  if (!looksLikeUuid(configuredId)) {
+    throw new Error("HUSENSE_HEATMAP_SPACE_ID must be set to a valid Husense space UUID.");
+  }
+
+  return {
+    id: configuredId,
+    name: process.env.HUSENSE_HEATMAP_SPACE_NAME || fallbackSpace?.name || "Configured Husense space",
+  };
+}
+
+function resolveHusenseHeatmapWindow(rangeLabel) {
+  const now = new Date();
+  const normalizedLabel = typeof rangeLabel === "string" && rangeLabel.trim() ? rangeLabel.trim() : "Last 2 hrs";
+
+  if (normalizedLabel === "Last 30 min") {
+    return {
+      label: normalizedLabel,
+      startTimestamp: now.getTime() - 30 * 60 * 1000,
+      endTimestamp: now.getTime(),
+    };
+  }
+
+  if (normalizedLabel === "Today") {
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    return {
+      label: normalizedLabel,
+      startTimestamp: startOfDay.getTime(),
+      endTimestamp: now.getTime(),
+    };
+  }
+
+  return {
+    label: "Last 2 hrs",
+    startTimestamp: now.getTime() - 2 * 60 * 60 * 1000,
+    endTimestamp: now.getTime(),
+  };
+}
+
+function formatHusenseDateLabel(value) {
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(parsed);
+}
+
+function resolveHusenseHeatmapRequest(query) {
+  if (typeof query?.date === "string" && query.date.trim()) {
+    const dateValue = query.date.trim();
+    const dayStart = new Date(`${dateValue}T00:00:00`);
+
+    if (Number.isNaN(dayStart.getTime())) {
+      throw new Error("Invalid Husense heatmap date. Use YYYY-MM-DD.");
+    }
+
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    dayEnd.setMilliseconds(dayEnd.getMilliseconds() - 1);
+
+    return {
+      label: formatHusenseDateLabel(dateValue),
+      startTimestamp: dayStart.getTime(),
+      endTimestamp: dayEnd.getTime(),
+      date: dateValue,
+    };
+  }
+
+  return resolveHusenseHeatmapWindow(query?.range);
+}
+
+function extractHusenseImageMetadata(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+
+  const imageUrl = firstText(payload.url, payload.imageUrl, payload.uri, payload.href);
+  if (!imageUrl) return null;
+
+  return {
+    url: imageUrl,
+    width: firstFiniteNumber(payload.width, payload.imageWidth),
+    height: firstFiniteNumber(payload.height, payload.imageHeight),
+  };
 }
 
 async function fetchJsonOrThrow(url, headers) {
@@ -197,38 +317,69 @@ async function fetchJsonOrThrow(url, headers) {
   return response.json();
 }
 
-async function fetchHusensePresenceForSpace(space, headers) {
-  const candidateUrls = [
-    `https://bff.husense.io/space/${space.id}/presence`,
-    `https://bff.husense.io/space/${space.id}/occupancy`,
-    `https://bff.husense.io/space/${space.id}/live`,
-    `https://bff.husense.io/space/${space.id}`,
-  ];
+function summarizeHusensePresenceZones(payload) {
+  if (!isObject(payload)) {
+    const presence = extractPresencePayload(payload);
+    return {
+      presenceCount: presence?.presenceCount ?? 0,
+      observedAt: null,
+    };
+  }
 
-  let lastError = null;
+  const zoneEntries = Object.entries(payload).filter(([, value]) => isObject(value));
+  if (!zoneEntries.length) {
+    const presence = extractPresencePayload(payload);
+    return {
+      presenceCount: presence?.presenceCount ?? 0,
+      observedAt: null,
+    };
+  }
 
-  for (const url of candidateUrls) {
-    try {
-      const payload = await fetchJsonOrThrow(url, headers);
-      const presence = extractPresencePayload(payload);
-      if (presence) {
-        return {
-          id: space.id,
-          name: space.name,
-          capacity: presence.capacity ?? space.capacity,
-          presenceCount: presence.presenceCount ?? 0,
-        };
-      }
-    } catch (error) {
-      lastError = error;
+  let presenceCount = 0;
+  let latestTimestamp = null;
+
+  for (const [, value] of zoneEntries) {
+    const personCount = firstFiniteNumber(value.person, value.persons) ?? 0;
+    const runnerCount = firstFiniteNumber(value.runner) ?? 0;
+    const bicycleCount = firstFiniteNumber(value.bike) ?? 0;
+    const timestamp = firstFiniteNumber(value.time_stamp, value.timestamp);
+
+    presenceCount += personCount + runnerCount + bicycleCount;
+
+    if (timestamp !== null && (latestTimestamp === null || timestamp > latestTimestamp)) {
+      latestTimestamp = timestamp;
     }
   }
 
-  if (lastError) throw lastError;
+  return {
+    presenceCount,
+    observedAt: latestTimestamp === null ? null : new Date(latestTimestamp).toISOString(),
+  };
+}
+
+async function fetchHusensePresenceForSpace(space, headers) {
+  const apiBaseUrl = buildHusensePresenceApiBaseUrl();
+  const [spaceResult, presenceResult] = await Promise.allSettled([
+    fetchJsonOrThrow(`${apiBaseUrl}/Spaces/${space.id}`, headers),
+    fetchJsonOrThrow(`${apiBaseUrl}/Spaces/${space.id}/PresenceZones/_/LatestData`, headers),
+  ]);
+
+  if (spaceResult.status === "rejected" && presenceResult.status === "rejected") {
+    throw presenceResult.reason || spaceResult.reason;
+  }
+
+  const metadata = spaceResult.status === "fulfilled" && isObject(spaceResult.value) ? spaceResult.value : null;
+  const presenceSummary =
+    presenceResult.status === "fulfilled" ? summarizeHusensePresenceZones(presenceResult.value) : null;
 
   return {
-    ...space,
-    presenceCount: 0,
+    id: firstText(metadata?.identifier, metadata?.id, space.id) || space.id,
+    name: firstText(metadata?.name, space.name) || space.name,
+    capacity: firstPositiveNumber(metadata?.capacity, metadata?.maxCapacity, space.capacity) ?? space.capacity,
+    presenceCount: presenceSummary?.presenceCount ?? 0,
+    currentPresence: presenceSummary?.presenceCount ?? 0,
+    count: presenceSummary?.presenceCount ?? 0,
+    observedAt: presenceSummary?.observedAt ?? null,
   };
 }
 
@@ -461,14 +612,14 @@ app.get("/api/weather", async (req, res) => {
 // ---------- Husense API routes (Live Occupancy) ----------
 app.get("/api/husense/presence", async (req, res) => {
   try {
-    const bearerToken = process.env.HUSENSE_API_TOKEN || process.env.HUSENSE_JWT_TOKEN;
+    const bearerToken = getHusenseBearerToken();
     const headers = {
       Accept: "application/json",
       ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
     };
 
-    if (process.env.HUSENSE_API_URL) {
-      const payload = await fetchJsonOrThrow(process.env.HUSENSE_API_URL, headers);
+    if (process.env.HUSENSE_PRESENCE_API_URL) {
+      const payload = await fetchJsonOrThrow(process.env.HUSENSE_PRESENCE_API_URL, headers);
       return res.json(normalizePresenceZones(payload));
     }
 
@@ -506,15 +657,15 @@ app.get("/api/husense/presence", async (req, res) => {
 // ---------- Husense Historical Heatmap Route ----------
 app.get("/api/husense/historical", async (req, res) => {
   try {
-    const jwtToken = process.env.HUSENSE_JWT_TOKEN || process.env.HUSENSE_API_TOKEN;
+    const jwtToken = getHusenseBearerToken();
     if (!jwtToken) return res.status(500).json({ error: "Missing HUSENSE_JWT_TOKEN or HUSENSE_API_TOKEN" });
 
     const { spaceId, startTimestamp, endTimestamp } = req.query;
     if (!spaceId || !startTimestamp || !endTimestamp) {
       return res.status(400).json({ error: "spaceId, startTimestamp, and endTimestamp are required." });
     }
-    
-    const apiUrl = `https://bff.husense.io/space/${spaceId}/heatmap?startTimestamp=${startTimestamp}&endTimestamp=${endTimestamp}`;
+
+    const apiUrl = `${buildHusenseApiBaseUrl()}/space/${spaceId}/heatmap?startTimestamp=${startTimestamp}&endTimestamp=${endTimestamp}`;
 
     console.log(`[Husense] Requesting real heatmap: ${apiUrl}`);
 
@@ -532,6 +683,95 @@ app.get("/api/husense/historical", async (req, res) => {
 
   } catch (err) {
     console.error("Historical API error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/husense/heatmap", async (req, res) => {
+  try {
+    const jwtToken = getHusenseBearerToken();
+    if (!jwtToken) {
+      return res.status(500).json({ error: "Missing HUSENSE_JWT_TOKEN or HUSENSE_API_TOKEN" });
+    }
+
+    const heatmapSpace = getHusenseHeatmapSpace();
+    const window = resolveHusenseHeatmapRequest(req.query);
+    const apiUrl =
+      `${buildHusenseApiBaseUrl()}/space/${heatmapSpace.id}/heatmap` +
+      `?startTimestamp=${window.startTimestamp}&endTimestamp=${window.endTimestamp}`;
+
+    const payload = await fetchJsonOrThrow(apiUrl, {
+      Authorization: `Bearer ${jwtToken}`,
+      Accept: "application/json",
+    });
+
+    const data = extractHeatmapPayload(payload);
+
+    if (!data) {
+      return res.status(502).json({
+        error: "Husense heatmap response did not include the expected image and grid payload.",
+      });
+    }
+
+    let imageMetadata = null;
+    if (data.imageId) {
+      const imagePayload = await fetchJsonOrThrow(
+        `${buildHusenseApiBaseUrl()}/image/${encodeURIComponent(data.imageId)}`,
+        {
+          Authorization: `Bearer ${jwtToken}`,
+          Accept: "application/json",
+        },
+      );
+      imageMetadata = extractHusenseImageMetadata(imagePayload);
+    }
+
+    res.json({
+      spaceId: heatmapSpace.id,
+      spaceName: heatmapSpace.name,
+      timeRangeLabel: window.label,
+      imageId: data.imageId || null,
+      imageUrl: imageMetadata?.url || (data.imageId ? `/api/husense/image/${encodeURIComponent(data.imageId)}` : null),
+      imageWidth: imageMetadata?.width ?? null,
+      imageHeight: imageMetadata?.height ?? null,
+      width: data.width,
+      height: data.height,
+      data: data.data,
+      range: data.range,
+    });
+  } catch (err) {
+    console.error("Husense heatmap API error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/husense/image/:imageId", async (req, res) => {
+  try {
+    const jwtToken = getHusenseBearerToken();
+    if (!jwtToken) {
+      return res.status(500).json({ error: "Missing HUSENSE_JWT_TOKEN or HUSENSE_API_TOKEN" });
+    }
+
+    const { imageId } = req.params;
+    if (!imageId) {
+      return res.status(400).json({ error: "imageId is required." });
+    }
+
+    const imagePayload = await fetchJsonOrThrow(
+      `${buildHusenseApiBaseUrl()}/image/${encodeURIComponent(imageId)}`,
+      {
+        Authorization: `Bearer ${jwtToken}`,
+        Accept: "application/json",
+      },
+    );
+
+    const imageMetadata = extractHusenseImageMetadata(imagePayload);
+    if (!imageMetadata?.url) {
+      throw new Error("Husense image metadata did not include a usable image URL.");
+    }
+
+    res.redirect(imageMetadata.url);
+  } catch (err) {
+    console.error("Husense image proxy error:", err);
     res.status(500).json({ error: err.message });
   }
 });

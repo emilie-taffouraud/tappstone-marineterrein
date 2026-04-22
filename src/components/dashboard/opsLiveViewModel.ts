@@ -18,6 +18,7 @@ type WeatherWidgetModel = {
 };
 
 type Tone = WeatherWidgetModel["statusTone"];
+type PillTone = Tone | "sky";
 
 type SummaryModel = {
   title: string;
@@ -55,6 +56,60 @@ export type AnomalyChartPoint = {
   actual: number;
   expected: number;
   deviationPct: number;
+};
+
+export type TelraamTrendChartPoint = {
+  time: string;
+  pedestrians: number;
+  bicycles: number;
+  vehicles: number;
+};
+
+export type TelraamModeTotals = {
+  pedestrians: number;
+  bicycles: number;
+  vehicles: number;
+};
+
+export type TelraamModeLeader = {
+  label: string;
+  value: number;
+  sharePct: number;
+};
+
+export type TelraamComparisonOption = {
+  id: "expected-pattern" | "loaded-window-average";
+  label: string;
+  value: number;
+  delta: number;
+  deltaPct: number;
+  helper: string;
+};
+
+export type TelraamHistorySummary = {
+  storedRows: number;
+  segmentCount: number;
+  historySpanHours: number;
+  earliestRecordedAt: string | null;
+  latestRecordedAt: string | null;
+  latestFlow: number;
+  latestModeCounts: TelraamModeTotals;
+  latestModeSharePct: TelraamModeTotals;
+  currentDominantMode: TelraamModeLeader;
+  averageFlowPerRow: number;
+  latestBicycleSharePct: number;
+  peakFlow: number;
+  peakRecordedAt: string | null;
+  currentVsPeakPct: number;
+  windowDominantMode: TelraamModeLeader;
+  modeTotals: TelraamModeTotals;
+  combinedTotal: number;
+  expectedBaselineFlow: number | null;
+  expectedDeviationPct: number | null;
+  statusLabel: string;
+  statusTone: PillTone;
+  insight: string;
+  comparisonOptions: TelraamComparisonOption[];
 };
 
 export type AirQualityChartPoint = {
@@ -603,22 +658,260 @@ function formatChartTime(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function sortTelraamTrafficPoints(points: TelraamTrafficPoint[]) {
+  return [...points].sort(
+    (left, right) => new Date(left.recorded_at).getTime() - new Date(right.recorded_at).getTime(),
+  );
+}
+
+function sumTelraamFlow(point: TelraamTrafficPoint) {
+  return Number(point.pedestrian_count || 0) + Number(point.bicycle_count || 0) + Number(point.vehicle_count || 0);
+}
+
+function buildTelraamModeCounts(point: TelraamTrafficPoint | null): TelraamModeTotals {
+  return {
+    pedestrians: Number(point?.pedestrian_count || 0),
+    bicycles: Number(point?.bicycle_count || 0),
+    vehicles: Number(point?.vehicle_count || 0),
+  };
+}
+
+function buildTelraamModeShares(counts: TelraamModeTotals, total: number): TelraamModeTotals {
+  if (total <= 0) {
+    return { pedestrians: 0, bicycles: 0, vehicles: 0 };
+  }
+
+  return {
+    pedestrians: Number(((counts.pedestrians / total) * 100).toFixed(1)),
+    bicycles: Number(((counts.bicycles / total) * 100).toFixed(1)),
+    vehicles: Number(((counts.vehicles / total) * 100).toFixed(1)),
+  };
+}
+
+function pickDominantTelraamMode(counts: TelraamModeTotals, total: number): TelraamModeLeader {
+  if (total <= 0) {
+    return { label: "No dominant mode", value: 0, sharePct: 0 };
+  }
+
+  const winner = [
+    { label: "Pedestrians", value: counts.pedestrians },
+    { label: "Bicycles", value: counts.bicycles },
+    { label: "Vehicles", value: counts.vehicles },
+  ].sort((left, right) => right.value - left.value)[0];
+
+  return {
+    label: winner.label,
+    value: winner.value,
+    sharePct: Number(((winner.value / total) * 100).toFixed(1)),
+  };
+}
+
+function describeTelraamOperationalStatus(
+  comparisonDeltaPct: number | null,
+  threshold: number,
+): { label: string; tone: PillTone; lead: string } {
+  if (comparisonDeltaPct === null) {
+    return {
+      label: "Awaiting baseline",
+      tone: "slate",
+      lead: "Current flow is shown without a stable comparison baseline yet.",
+    };
+  }
+
+  if (comparisonDeltaPct >= threshold * 1.5) {
+    return {
+      label: "Unusually high",
+      tone: "rose",
+      lead: "Flow is unusually high right now.",
+    };
+  }
+
+  if (comparisonDeltaPct >= threshold) {
+    return {
+      label: "Elevated",
+      tone: "amber",
+      lead: "Flow is elevated right now.",
+    };
+  }
+
+  if (comparisonDeltaPct <= -threshold * 1.5) {
+    return {
+      label: "Unusually low",
+      tone: "sky",
+      lead: "Flow is well below the recent pattern right now.",
+    };
+  }
+
+  if (comparisonDeltaPct <= -threshold) {
+    return {
+      label: "Below normal",
+      tone: "sky",
+      lead: "Flow is below the recent pattern right now.",
+    };
+  }
+
+  return {
+    label: "Normal",
+    tone: "emerald",
+    lead: "Flow is within the recent expected range.",
+  };
+}
+
+function buildTelraamInsight({
+  latestFlow,
+  currentDominantMode,
+  expectedDeviationPct,
+  averageDeltaPct,
+  peakFlow,
+  peakRecordedAt,
+  statusLead,
+}: {
+  latestFlow: number;
+  currentDominantMode: TelraamModeLeader;
+  expectedDeviationPct: number | null;
+  averageDeltaPct: number | null;
+  peakFlow: number;
+  peakRecordedAt: string | null;
+  statusLead: string;
+}) {
+  const referenceDeltaPct = expectedDeviationPct ?? averageDeltaPct;
+  const comparisonPhrase = expectedDeviationPct !== null
+    ? `${Math.abs(expectedDeviationPct).toFixed(0)}% ${expectedDeviationPct >= 0 ? "above" : "below"} the expected pattern.`
+    : averageDeltaPct !== null
+      ? `${Math.abs(averageDeltaPct).toFixed(0)}% ${averageDeltaPct >= 0 ? "above" : "below"} the loaded-window average.`
+      : "No comparison baseline is available yet.";
+  const modePhrase = currentDominantMode.value > 0
+    ? `${currentDominantMode.label} lead the current mix at ${Math.round(currentDominantMode.sharePct)}%.`
+    : "No movement has been recorded in the latest reading.";
+  const peakPhrase = peakFlow <= 0
+    ? "Peak context is still forming from the loaded rows."
+    : latestFlow >= peakFlow
+      ? "This is the peak observed in the currently loaded window."
+      : `The loaded-window peak was ${Math.round(peakFlow)} at ${formatTimestamp(peakRecordedAt)}.`;
+
+  return `${statusLead} Latest flow is ${Math.round(latestFlow)} movements, ${comparisonPhrase} ${modePhrase} ${peakPhrase}`;
+}
+
+export function deriveTelraamTrendChart(points: TelraamTrafficPoint[]): TelraamTrendChartPoint[] {
+  return sortTelraamTrafficPoints(points).map((point) => ({
+    time: formatChartTime(point.recorded_at),
+    pedestrians: Number(point.pedestrian_count || 0),
+    bicycles: Number(point.bicycle_count || 0),
+    vehicles: Number(point.vehicle_count || 0),
+  }));
+}
+
+export function deriveTelraamHistorySummary(points: TelraamTrafficPoint[], anomalyThreshold = 20): TelraamHistorySummary {
+  const orderedPoints = sortTelraamTrafficPoints(points);
+  const latestPoint = orderedPoints.length ? orderedPoints[orderedPoints.length - 1] : null;
+  const earliestPoint = orderedPoints.length ? orderedPoints[0] : null;
+  const historySpanHours = earliestPoint && latestPoint
+    ? Math.max(
+        0,
+        (new Date(latestPoint.recorded_at).getTime() - new Date(earliestPoint.recorded_at).getTime()) / (1000 * 60 * 60),
+      )
+    : 0;
+  const modeTotals = points.reduce<TelraamModeTotals>(
+    (sum, point) => ({
+      pedestrians: sum.pedestrians + Number(point.pedestrian_count || 0),
+      bicycles: sum.bicycles + Number(point.bicycle_count || 0),
+      vehicles: sum.vehicles + Number(point.vehicle_count || 0),
+    }),
+    { pedestrians: 0, bicycles: 0, vehicles: 0 },
+  );
+  const combinedTotal = modeTotals.pedestrians + modeTotals.bicycles + modeTotals.vehicles;
+  const averageFlowPerRow = points.length ? Math.round(combinedTotal / points.length) : 0;
+  const latestFlow = latestPoint ? sumTelraamFlow(latestPoint) : 0;
+  const latestModeCounts = buildTelraamModeCounts(latestPoint);
+  const latestModeSharePct = buildTelraamModeShares(latestModeCounts, latestFlow);
+  const latestBicycleSharePct = latestPoint && latestFlow > 0
+    ? (Number(latestPoint.bicycle_count || 0) / latestFlow) * 100
+    : 0;
+  const peakPoint = orderedPoints.reduce<{ point: TelraamTrafficPoint | null; totalFlow: number }>(
+    (peak, point) => {
+      const totalFlow = sumTelraamFlow(point);
+      if (!peak.point || totalFlow > peak.totalFlow) {
+        return { point, totalFlow };
+      }
+      return peak;
+    },
+    { point: null, totalFlow: 0 },
+  );
+  const currentDominantMode = pickDominantTelraamMode(latestModeCounts, latestFlow);
+  const windowDominantMode = pickDominantTelraamMode(modeTotals, combinedTotal);
+  const latestAnomaly = points.length ? deriveAnomalyChart(points)[points.length - 1] : undefined;
+  const expectedBaselineFlow = latestAnomaly?.expected ?? null;
+  const expectedDeviationPct = latestAnomaly?.deviationPct ?? null;
+  const averageDeltaPct = averageFlowPerRow > 0 ? ((latestFlow - averageFlowPerRow) / averageFlowPerRow) * 100 : null;
+  const operationalStatus = describeTelraamOperationalStatus(expectedDeviationPct ?? averageDeltaPct, anomalyThreshold);
+  const comparisonOptions: TelraamComparisonOption[] = [];
+
+  if (expectedBaselineFlow !== null && Number.isFinite(expectedBaselineFlow) && points.length >= 2) {
+    comparisonOptions.push({
+      id: "expected-pattern",
+      label: "Expected pattern",
+      value: expectedBaselineFlow,
+      delta: latestFlow - expectedBaselineFlow,
+      deltaPct: expectedDeviationPct ?? 0,
+      helper: "Computed from nearby rows inside the currently loaded window.",
+    });
+  }
+
+  if (averageFlowPerRow > 0 && points.length >= 2) {
+    comparisonOptions.push({
+      id: "loaded-window-average",
+      label: "Loaded-window average",
+      value: averageFlowPerRow,
+      delta: latestFlow - averageFlowPerRow,
+      deltaPct: Number((averageDeltaPct ?? 0).toFixed(1)),
+      helper: `Average across the ${points.length} rows already loaded for this section.`,
+    });
+  }
+
+  return {
+    storedRows: points.length,
+    segmentCount: new Set(points.map((point) => String(point.segment_id))).size,
+    historySpanHours,
+    earliestRecordedAt: earliestPoint?.recorded_at ?? null,
+    latestRecordedAt: latestPoint?.recorded_at ?? null,
+    latestFlow,
+    latestModeCounts,
+    latestModeSharePct,
+    currentDominantMode,
+    averageFlowPerRow,
+    latestBicycleSharePct,
+    peakFlow: peakPoint.totalFlow,
+    peakRecordedAt: peakPoint.point?.recorded_at ?? null,
+    currentVsPeakPct: peakPoint.totalFlow > 0 ? Number(((latestFlow / peakPoint.totalFlow) * 100).toFixed(1)) : 0,
+    windowDominantMode,
+    modeTotals,
+    combinedTotal,
+    expectedBaselineFlow,
+    expectedDeviationPct,
+    statusLabel: operationalStatus.label,
+    statusTone: operationalStatus.tone,
+    insight: buildTelraamInsight({
+      latestFlow,
+      currentDominantMode,
+      expectedDeviationPct,
+      averageDeltaPct,
+      peakFlow: peakPoint.totalFlow,
+      peakRecordedAt: peakPoint.point?.recorded_at ?? null,
+      statusLead: operationalStatus.lead,
+    }),
+    comparisonOptions,
+  };
+}
+
 export function deriveAnomalyChart(points: TelraamTrafficPoint[]): AnomalyChartPoint[] {
-  const orderedPoints = [...points].reverse();
+  const orderedPoints = sortTelraamTrafficPoints(points);
 
   return orderedPoints.map((point, index, list) => {
-    const actual =
-      Number(point.pedestrian_count || 0) +
-      Number(point.bicycle_count || 0) +
-      Number(point.vehicle_count || 0);
+    const actual = sumTelraamFlow(point);
     const neighbors = list.slice(Math.max(0, index - 2), Math.min(list.length, index + 3));
     const expected =
       neighbors.reduce(
-        (sum, item) =>
-          sum +
-          Number(item.pedestrian_count || 0) +
-          Number(item.bicycle_count || 0) +
-          Number(item.vehicle_count || 0),
+        (sum, item) => sum + sumTelraamFlow(item),
         0,
       ) / Math.max(neighbors.length, 1);
     const deviationPct = expected > 0 ? ((actual - expected) / expected) * 100 : 0;
