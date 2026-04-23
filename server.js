@@ -812,6 +812,78 @@ app.get("/api/holidays", async (req, res) => {
 });
 
 
+// ---------- Public API routes ----------
+
+// Historical visitor trends with period + resolution support
+// ?period=7d&resolution=hourly (default) | ?period=30d&resolution=daily
+app.get("/api/public/trends", async (req, res) => {
+  try {
+    const segmentId = req.query.segment_id || 9000006266;
+    const period = req.query.period === "30d" ? "30d" : "7d";
+    const resolution = req.query.resolution === "daily" ? "daily" : "hourly";
+
+    const interval = period === "30d" ? "30 days" : "7 days";
+    const truncUnit = resolution === "daily" ? "day" : "hour";
+
+    const sql = `
+      SELECT
+        date_trunc('${truncUnit}', recorded_at) AS bucket,
+        COALESCE(SUM(pedestrian_count), 0)::int AS pedestrians,
+        COALESCE(SUM(bicycle_count), 0)::int    AS bicycles,
+        COALESCE(SUM(vehicle_count), 0)::int    AS vehicles
+      FROM traffic_observations
+      WHERE segment_id = $1
+        AND recorded_at >= NOW() - INTERVAL '${interval}'
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `;
+
+    const result = await pool.query(sql, [segmentId]);
+    res.json({
+      period,
+      resolution,
+      rows: result.rows,
+    });
+  } catch (err) {
+    console.error("Public trends error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Best upcoming hour to visit today (lowest avg foot traffic)
+app.get("/api/public/best-time", async (req, res) => {
+  try {
+    const segmentId = req.query.segment_id || 9000006266;
+    const currentHour = new Date().getHours();
+
+    const sql = `
+      SELECT
+        EXTRACT(HOUR FROM recorded_at)::int AS hour_of_day,
+        AVG(pedestrian_count + bicycle_count)::int AS avg_foot_traffic
+      FROM traffic_observations
+      WHERE segment_id = $1
+        AND recorded_at >= NOW() - INTERVAL '30 days'
+      GROUP BY hour_of_day
+      ORDER BY avg_foot_traffic ASC
+    `;
+
+    const result = await pool.query(sql, [segmentId]);
+
+    // Pick the quietest hour that is still upcoming today
+    const upcoming = result.rows.find((r) => r.hour_of_day > currentHour);
+    const best = upcoming || result.rows[0] || null;
+
+    res.json({
+      bestHour: best ? best.hour_of_day : null,
+      avgFootTraffic: best ? best.avg_foot_traffic : null,
+      allHours: result.rows,
+    });
+  } catch (err) {
+    console.error("Public best-time error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // fallback route
 app.get("/", (req, res) => {
   res.send("Telraam + KNMI + Calendar API running");

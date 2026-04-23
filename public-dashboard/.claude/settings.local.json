@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp -r \"/Users/roychen/Library/Mobile Documents/com~apple~CloudDocs/Uva/CSSi/Year 3/Final/tappstone-marineterrein-public/.\" \"/Users/roychen/Library/Mobile Documents/com~apple~CloudDocs/Uva/CSSi/Year 3/Final/tappstone-marineterrein/tappstone-marineterrein/public-dashboard/\" --exclude=node_modules)",
+      "Bash(rsync -av --exclude=node_modules --exclude=.env.local '/Users/roychen/Library/Mobile Documents/com~apple~CloudDocs/Uva/CSSi/Year 3/Final/tappstone-marineterrein-public/' '/Users/roychen/Library/Mobile Documents/com~apple~CloudDocs/Uva/CSSi/Year 3/Final/tappstone-marineterrein/tappstone-marineterrein/public-dashboard/')"
+    ]
+  }
+}

@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: "Manrope", "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f4f8fb;
+  color: #10233a;
+  background-image:
+    radial-gradient(circle at top, rgba(120, 169, 198, 0.12), transparent 26%),
+    linear-gradient(180deg, #f4f8fb 0%, #edf3f7 48%, #f6f9fb 100%);
+  min-height: 100vh;
+}
