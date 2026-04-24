@@ -814,6 +814,23 @@ app.get("/api/holidays", async (req, res) => {
 
 // ---------- Public API routes ----------
 
+// Flattened weather endpoint – returns { current: {...} } with standard WeatherAPI fields
+app.get("/api/public/weather", async (req, res) => {
+  try {
+    const weather = await getWeatherLiveData(getOpsEnv());
+    // adapter stores raw as { current: fullAPIResponse, weeklyRange }
+    // fullAPIResponse.current is the actual conditions object
+    const current = weather.raw?.current?.current;
+    if (!current) {
+      return res.status(503).json({ error: weather.error || "Weather unavailable" });
+    }
+    res.json({ current });
+  } catch (err) {
+    console.error("Public weather error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Historical visitor trends with period + resolution support
 // ?period=7d&resolution=hourly (default) | ?period=30d&resolution=daily
 app.get("/api/public/trends", async (req, res) => {
@@ -834,8 +851,8 @@ app.get("/api/public/trends", async (req, res) => {
       FROM traffic_observations
       WHERE segment_id = $1
         AND recorded_at >= NOW() - INTERVAL '${interval}'
-      GROUP BY bucket
-      ORDER BY bucket ASC
+      GROUP BY date_trunc('${truncUnit}', recorded_at)
+      ORDER BY 1 ASC
     `;
 
     const result = await pool.query(sql, [segmentId]);
@@ -863,7 +880,7 @@ app.get("/api/public/best-time", async (req, res) => {
       FROM traffic_observations
       WHERE segment_id = $1
         AND recorded_at >= NOW() - INTERVAL '30 days'
-      GROUP BY hour_of_day
+      GROUP BY EXTRACT(HOUR FROM recorded_at)
       ORDER BY avg_foot_traffic ASC
     `;
 
