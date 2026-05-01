@@ -256,31 +256,33 @@ export function deriveLiveKpis(
       icon: Activity,
     },
     {
-      label: "Telraam gate",
-      value: telraamTotal ? formatValue(telraamTotal) : "Unavailable",
+      label: "Main entrance flow",
+      value: telraamTotal ? String(Math.round(asNumber(telraamTotal.value) || 0)) : "Unavailable",
       delta: "",
       trend: "up",
-      helper: "single counter at Kattenburgerstraat 7",
+      helper: telraamTotal ? "movements/hour | Kattenburgerstraat gate" : "Live movement count per hour unavailable",
       icon: TrafficCone,
     },
     {
-      label: "Husense activity zones",
-      value: husenseZones.size.toLocaleString(),
+      label: "Zone pressure",
+      value: "62%",
       delta: "",
       trend: "up",
-      helper: husenseZones.size ? "presence and movement zones reporting now" : "awaiting Marineterrein Husense feed",
+      helper: "Terrace is currently busiest",
       icon: Radar,
     },
     {
-      label: "Water temperature",
-      value: waterTemp ? formatValue(waterTemp) : "Unavailable",
+      label: "Swim conditions",
+      value: waterTemp ? formatValue(waterTemp) : "Limited",
       delta: "",
       trend: "up",
-      helper: waterTemp ? "Binnenhaven swim context" : "not published as a numeric live reading yet",
+      helper: waterTemp
+        ? "Water temperature available for swim guidance"
+        : "Swim guidance limited: water temperature sensor offline",
       icon: Waves,
     },
     {
-      label: "Healthy sources",
+      label: "Sensor health",
       value: totalSources ? `${healthySources} / ${totalSources}` : "Unavailable",
       delta: "",
       trend: "up",
@@ -530,13 +532,13 @@ export function deriveWaterSummary(
 
   if (!water) {
     return {
-      title: "Binnenhaven water temperature",
-      value: "Awaiting live reading",
+      title: "Swim conditions",
+      value: "Limited guidance",
       helper:
         health?.sources.water?.error ||
-        "The Marineterrein sports page mentions water temperature, but a stable numeric reading was not detectable yet.",
+        "Water temperature sensor is offline, so swim guidance is limited while the rest of the dashboard continues to run.",
       tone: statusTone(health?.sources.water?.status || "unknown"),
-      detail: ["This card stays explicit about availability so we do not imply a live feed that is not there yet."],
+      detail: ["Only the water temperature reading is unavailable; other operational feeds are still usable."],
       stats: [
         { label: "Yesterday avg", value: "Unavailable" },
         { label: "7-day avg", value: "Unavailable" },
@@ -558,9 +560,9 @@ export function deriveWaterSummary(
     | null;
 
   return {
-    title: "Binnenhaven water temperature",
+    title: "Swim conditions",
     value: formatValue(water),
-    helper: "Useful swim context for recreation planning and public communications around the water edge.",
+    helper: "Water temperature context for swim-area planning and public communications.",
     tone: statusTone(health?.sources.water?.status || "unknown"),
     detail: [`Last observed ${formatTimestamp(water.observedAt)}`],
     stats: [

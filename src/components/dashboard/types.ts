@@ -60,6 +60,11 @@ export type DailyTrendPoint = {
   visitors: number;
   alerts: number;
   avgNoise: number;
+  terraceVisitors?: number;
+  boardwalkVisitors?: number;
+  picnicLawnVisitors?: number;
+  swimAreaVisitors?: number;
+  isToday?: boolean;
 };
 
 export type InfrastructureItem = {

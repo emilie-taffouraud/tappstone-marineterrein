@@ -25,6 +25,18 @@ const DEFAULT_VISIBILITY: LayerVisibility = {
   labels: true,
 };
 
+function getSensorFeedLabel(sourceName: string) {
+  const labels: Record<string, string> = {
+    telraam: "Main entrance counter",
+    husense: "Zone occupancy sensors",
+    weather: "Weather feed",
+    water: "Water temperature sensor",
+    knmi: "Weather warning feed",
+  };
+
+  return labels[sourceName] || sourceName;
+}
+
 export function LiveOperationsMapSection({
   sourceHealthId,
   inventoryId,
@@ -119,7 +131,7 @@ export function LiveOperationsMapSection({
                   }}
                 >
                   <DatabaseZap className="h-3.5 w-3.5" />
-                  <span className="capitalize">{sourceName}</span>
+                  <span>{getSensorFeedLabel(sourceName)}</span>
                   <Pill tone={getStatusTone(source.status)}>{source.status}</Pill>
                   <span>{source.recordCount} records</span>
                 </span>

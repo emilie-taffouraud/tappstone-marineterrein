@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Info } from "lucide-react";
 import HusenseHeatmapCard from "./HusenseHeatmapCard";
 import {
   Area,
   AreaChart,
+  Bar,
   CartesianGrid,
   ComposedChart,
+  Legend,
   Line,
   ResponsiveContainer,
   Tooltip,
@@ -37,6 +39,7 @@ import {
 } from "./opsLiveViewModel";
 import { Card, CardContent, CardHeader, Pill, SectionTitle, SelectLike } from "./ui";
 import type { AlertItem } from "./types";
+import { dailyTrend, operationalZoneOccupancy, temporaryTrafficComparisonBaseline } from "../../data/mockDashboardData";
 
 const locationOptions = ["All locations", "Portiersloge", "TAPP", "CODAM", "AHK MakerSpace", "Swim area"];
 const sensorCategories = [
@@ -86,6 +89,8 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
       { id: "crowd-traffic", label: "Movement over time" },
       { id: "crowd-history", label: "Movement summary" },
       { id: "crowd-baseline", label: "Vs normal" },
+      { id: "crowd-daily-visitors", label: "Daily visitors" },
+      { id: "crowd-expected-measured", label: "Expected vs measured" },
     ],
   },
   {
@@ -125,6 +130,19 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
 ];
 
 const HIDDEN_OCCUPANCY_ZONE_IDS = new Set(["5db05d88-7833-440a-9c3e-24c93fb08406"]);
+
+const DAILY_ZONE_STACK = [
+  { key: "terraceVisitors", label: "Terrace", color: MAIN_COLORS.aColor1 },
+  { key: "boardwalkVisitors", label: "Boardwalk", color: MAIN_COLORS.aColor2 },
+  { key: "picnicLawnVisitors", label: "Picnic lawn", color: "#0f766e" },
+  { key: "swimAreaVisitors", label: "Swim area", color: "#f59e0b" },
+] as const;
+
+type TrafficComparisonPoint = {
+  time: string;
+  measured: number;
+  expected: number;
+};
 
 function resolveActiveSection(activeId: string) {
   return DASHBOARD_NAV.find((section) => section.id === activeId || section.items.some((item) => item.id === activeId));
@@ -476,6 +494,23 @@ function ChartPlaceholder({ title, detail }: { title: string; detail: string }) 
   );
 }
 
+function InfoHint({ label }: { label: string }) {
+  return (
+    <span
+      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
+      title={label}
+      aria-label={label}
+      style={{
+        borderColor: `${MAIN_COLORS.aColorGray}33`,
+        backgroundColor: "rgba(255, 255, 255, 0.82)",
+        color: MAIN_COLORS.aColorGray,
+      }}
+    >
+      <Info className="h-3.5 w-3.5" />
+    </span>
+  );
+}
+
 function formatMetricNumber(value: number, maximumFractionDigits = 0) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits }).format(value);
 }
@@ -485,6 +520,38 @@ function formatSignedPercent(value: number) {
   if (value > 0) return `+${formatted}%`;
   if (value < 0) return `-${formatted}%`;
   return `${formatted}%`;
+}
+
+function getOccupancyStatus(density: number) {
+  if (density >= 75) return { label: "High", tone: "rose" as const };
+  if (density >= 45) return { label: "Medium", tone: "amber" as const };
+  return { label: "Low", tone: "emerald" as const };
+}
+
+function buildTrafficComparisonFromAnomaly(points: { time: string; actual: number; expected: number }[]): TrafficComparisonPoint[] {
+  return points.map((point) => ({
+    time: point.time,
+    measured: point.actual,
+    expected: point.expected,
+  }));
+}
+
+function buildTrafficInsight(points: TrafficComparisonPoint[]) {
+  if (!points.length) return "Measured activity will be compared with expected movement as soon as traffic rows are available.";
+
+  const largestGap = points.reduce(
+    (best, point) => {
+      const gap = point.measured - point.expected;
+      return gap > best.gap ? { point, gap } : best;
+    },
+    { point: points[0], gap: points[0].measured - points[0].expected },
+  );
+
+  if (largestGap.gap <= 0) {
+    return "Measured activity is currently at or below the expected movement pattern.";
+  }
+
+  return `Measured activity is above expected around ${largestGap.point.time}.`;
 }
 
 function describeAnomaly(
@@ -719,6 +786,15 @@ export function OperationsDashboard() {
   const telraamLiveModeSplitChart = useMemo(() => deriveTelraamLiveModeSplitChart(overview), [overview]);
   const anomalyChart = useMemo(() => deriveAnomalyChart(telraamHistory), [telraamHistory]);
   const telraamTrendChart = useMemo(() => deriveTelraamTrendChart(telraamHistory), [telraamHistory]);
+  const trafficComparisonChart = useMemo<TrafficComparisonPoint[]>(
+    () =>
+      anomalyChart.length
+        ? buildTrafficComparisonFromAnomaly(anomalyChart)
+        : temporaryTrafficComparisonBaseline.map((point) => ({ ...point })),
+    [anomalyChart],
+  );
+  const trafficComparisonUsesTemporaryBaseline = !anomalyChart.length;
+  const trafficComparisonInsight = useMemo(() => buildTrafficInsight(trafficComparisonChart), [trafficComparisonChart]);
   const visibleOccupancyData = useMemo(
     () => occupancyData.filter((zone) => !HIDDEN_OCCUPANCY_ZONE_IDS.has(String(zone?.id ?? ""))),
     [occupancyData],
@@ -893,21 +969,50 @@ export function OperationsDashboard() {
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                   {liveKpis.map((kpi) => {
                     const Icon = typeof kpi.icon === "string" ? null : kpi.icon;
+                    const definition =
+                      kpi.label === "Main entrance flow"
+                        ? "Live movement count per hour at the main Kattenburgerstraat gate."
+                        : kpi.label === "Zone pressure"
+                          ? "Share of estimated zone capacity currently in use."
+                          : kpi.label === "Swim conditions"
+                            ? "Swim recommendation is limited only when the water temperature sensor is offline."
+                            : undefined;
+                    const [primaryHelper, secondaryHelper] = kpi.helper.split(" | ");
 
                     return (
                       <Card key={kpi.label} className="h-full overflow-hidden">
                         <CardContent className="p-[1.1rem]">
                           <div className="flex items-start gap-3">
                             <div className="min-w-0 flex-1">
-                              <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
-                                {kpi.label}
-                              </p>
-                              <p className="mt-2 text-[1.75rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
-                                {kpi.value}
-                              </p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
+                                  {kpi.label}
+                                </p>
+                                {definition ? <InfoHint label={definition} /> : null}
+                              </div>
+                              {definition && kpi.label === "Zone pressure" ? (
+                                <p className="mt-1 text-[11px] leading-4" style={{ color: MAIN_COLORS.aColorGray }}>
+                                  % of estimated capacity in use
+                                </p>
+                              ) : null}
+                              <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                <p className="text-[1.75rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
+                                  {kpi.value}
+                                </p>
+                                {kpi.label === "Main entrance flow" ? (
+                                  <span className="text-xs font-medium" style={{ color: MAIN_COLORS.aColorGray }}>
+                                    movements/hour
+                                  </span>
+                                ) : null}
+                              </div>
                               <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                                {kpi.helper}
+                                {primaryHelper}
                               </p>
+                              {secondaryHelper ? (
+                                <p className="mt-0.5 text-[11px]" style={{ color: MAIN_COLORS.aColorGray }}>
+                                  {secondaryHelper}
+                                </p>
+                              ) : null}
                             </div>
 
                             {Icon ? (
@@ -986,7 +1091,7 @@ export function OperationsDashboard() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      <ThresholdField label="Flow threshold" value={flowThreshold} unit="moves/hr" onChange={setFlowThreshold} />
+                      <ThresholdField label="Flow threshold" value={flowThreshold} unit="movements/hour" onChange={setFlowThreshold} />
                       <ThresholdField label="Anomaly threshold" value={anomalyThreshold} unit="%" onChange={setAnomalyThreshold} />
                     </div>
 
@@ -1052,73 +1157,72 @@ export function OperationsDashboard() {
                 <Card>
                   <CardHeader>
                     <SectionTitle
-                      title="Live area occupancy"
-                      subtitle="Real-time presence data from Husense radar sensors across the active Marineterrein zones."
+                      title="Zone occupancy"
+                      subtitle="Live estimate compared with zone capacity. Percentages show current occupancy as % of estimated comfortable capacity."
                     />
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {husenseError ? (
-                      <div className="rounded-xl bg-red-50 p-4 text-sm text-red-500">Error loading Husense: {husenseError}</div>
-                    ) : visibleOccupancyData.length === 0 ? (
-                      <div className="animate-pulse p-4 text-sm" style={{ color: MAIN_COLORS.aColor1 }}>
-                        Loading live occupancy data...
+                      <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-700">
+                        Occupancy feed degraded: using the latest available zone pressure estimate.
                       </div>
-                    ) : (
-                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        {visibleOccupancyData.map((occupancyZone: any, index: number) => {
-                          const maxCapacity = occupancyZone.capacity ?? 100;
-                          const currentCount =
-                            occupancyZone.presenceCount ?? occupancyZone.currentPresence ?? occupancyZone.count ?? 0;
-                          const density = Math.min(100, Math.round((currentCount / maxCapacity) * 100));
+                    ) : null}
 
-                          return (
-                            <div
-                              key={occupancyZone.id || index}
-                              className="rounded-2xl border p-4"
-                              style={{
-                                borderColor: `${MAIN_COLORS.aColor1}26`,
-                                backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
-                              }}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="text-sm font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
-                                  {occupancyZone.name || `Zone ${index + 1}`}
-                                </p>
-                                <Pill tone={density >= 85 ? "rose" : density >= 60 ? "amber" : "emerald"}>
-                                  {density >= 85 ? "Busy" : density >= 60 ? "Watch" : "Stable"}
-                                </Pill>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      {operationalZoneOccupancy.map((occupancyZone) => {
+                        const density = occupancyZone.density;
+                        const status = getOccupancyStatus(density);
+
+                        return (
+                          <div
+                            key={occupancyZone.zone}
+                            className="rounded-2xl border p-4"
+                            style={{
+                              borderColor: `${MAIN_COLORS.aColor1}26`,
+                              backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
+                                {occupancyZone.zone}
+                              </p>
+                              <Pill tone={status.tone}>{status.label}</Pill>
+                            </div>
+
+                            <div className="mt-4">
+                              <div className="mb-1.5 flex items-end justify-between gap-3">
+                                <span className="text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                                  Capacity pressure
+                                </span>
+                                <span className="text-xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                                  {density}%
+                                </span>
                               </div>
-
-                              <p className="mt-3 text-3xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
-                                {currentCount}
-                              </p>
-                              <p className="text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                                live individuals
-                              </p>
-
-                              <div className="mt-4">
+                              <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
                                 <div
-                                  className="mb-1 flex items-center justify-between text-[10px] font-medium uppercase tracking-wider"
-                                  style={{ color: MAIN_COLORS.aColorGray }}
-                                >
-                                  <span>Occupancy</span>
-                                  <span>{density}%</span>
-                                </div>
-                                <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
-                                  <div
-                                    className="h-full rounded-full transition-all duration-1000"
-                                    style={{
-                                      width: `${density}%`,
-                                      backgroundColor: density >= 85 ? "#ef4444" : density >= 60 ? "#f59e0b" : MAIN_COLORS.aColor1,
-                                    }}
-                                  />
-                                </div>
+                                  className="h-full rounded-full transition-all duration-1000"
+                                  style={{
+                                    width: `${density}%`,
+                                    backgroundColor: density >= 75 ? "#ef4444" : density >= 45 ? "#f59e0b" : MAIN_COLORS.aColor1,
+                                  }}
+                                />
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div
+                      className="rounded-2xl border px-4 py-3 text-sm leading-6"
+                      style={{
+                        borderColor: `${MAIN_COLORS.aColor1}26`,
+                        backgroundColor: "rgba(120, 169, 198, 0.09)",
+                        color: MAIN_COLORS.aColorBlack,
+                      }}
+                    >
+                      Terrace is nearing capacity. Boardwalk still has room and can absorb overflow.
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -1275,6 +1379,145 @@ export function OperationsDashboard() {
                           }
                         />
                       )}
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div id="crowd-daily-visitors" style={ANCHOR_SCROLL_STYLE}>
+                  <Card>
+                    <CardHeader>
+                      <SectionTitle
+                        title="Daily visitors"
+                        subtitle="Stacked view of estimated visitors by zone. Each colored section shows one area of the site."
+                      />
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex flex-wrap items-center gap-3 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                        {DAILY_ZONE_STACK.map((zoneItem) => (
+                          <span key={zoneItem.key} className="inline-flex items-center gap-1.5">
+                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: zoneItem.color }} />
+                            {zoneItem.label}
+                          </span>
+                        ))}
+                        <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
+                          <span className="h-2.5 w-2.5 rounded-full border-2 border-slate-900 bg-white" />
+                          Today
+                        </span>
+                      </div>
+
+                      <div className="h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart data={dailyTrend} margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
+                            <XAxis dataKey="day" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                            <YAxis
+                              label={{ value: "Visitors", angle: -90, position: "insideLeft", fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                              tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                              axisLine={false}
+                              tickLine={false}
+                            />
+                            <Tooltip
+                              formatter={(value, name) => [
+                                `${formatMetricNumber(Number(value))} visitors`,
+                                DAILY_ZONE_STACK.find((item) => item.key === name)?.label || String(name),
+                              ]}
+                              labelFormatter={(label) => `${label}${dailyTrend.find((item) => item.day === label)?.isToday ? " - Today" : ""}`}
+                            />
+                            <Legend />
+                            {DAILY_ZONE_STACK.map((zoneItem) => (
+                              <Bar
+                                key={zoneItem.key}
+                                dataKey={zoneItem.key}
+                                name={zoneItem.label}
+                                stackId="visitors"
+                                fill={zoneItem.color}
+                                radius={zoneItem.key === "swimAreaVisitors" ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                              />
+                            ))}
+                            <Line
+                              type="monotone"
+                              dataKey={(point) => (point.isToday ? point.visitors : null)}
+                              name="Today"
+                              stroke="#111827"
+                              strokeWidth={0}
+                              dot={{ r: 5, fill: "#ffffff", stroke: "#111827", strokeWidth: 2 }}
+                              activeDot={{ r: 6, fill: "#ffffff", stroke: "#111827", strokeWidth: 2 }}
+                              connectNulls={false}
+                              legendType="none"
+                            />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div id="crowd-expected-measured" style={ANCHOR_SCROLL_STYLE}>
+                  <Card>
+                    <CardHeader>
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <SectionTitle
+                          title="Traffic compared with expected"
+                          subtitle="Compares live measured movement against the expected pattern for this time period."
+                        />
+                        <div className="flex items-center gap-2">
+                          <InfoHint label="Expected vs measured compares counted movement with the expected movement pattern for the selected time range." />
+                          <Pill tone={trafficComparisonUsesTemporaryBaseline ? "amber" : "sky"}>
+                            {trafficComparisonUsesTemporaryBaseline ? "temporary baseline" : "loaded traffic"}
+                          </Pill>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart data={trafficComparisonChart} margin={{ top: 8, right: 18, left: 0, bottom: 8 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
+                            <XAxis
+                              dataKey="time"
+                              label={{ value: "Time", position: "insideBottom", offset: -4, fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                              tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                              axisLine={false}
+                              tickLine={false}
+                            />
+                            <YAxis
+                              label={{ value: "Movement", angle: -90, position: "insideLeft", fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                              tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                              axisLine={false}
+                              tickLine={false}
+                            />
+                            <Tooltip
+                              formatter={(value, name) => [
+                                `${formatMetricNumber(Number(value))} movements/hour`,
+                                name === "measured" ? "Measured movement" : "Expected movement",
+                              ]}
+                            />
+                            <Legend
+                              formatter={(value) => (value === "measured" ? "Measured" : value === "expected" ? "Expected" : value)}
+                            />
+                            <Bar dataKey="measured" name="Measured" fill="#e8798d" radius={[6, 6, 0, 0]} />
+                            <Line
+                              type="monotone"
+                              dataKey="expected"
+                              name="Expected"
+                              stroke={MAIN_COLORS.aColor1}
+                              strokeWidth={3}
+                              dot={{ r: 3, fill: MAIN_COLORS.aColor1 }}
+                            />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      <div
+                        className="rounded-2xl border px-4 py-3 text-sm leading-6"
+                        style={{
+                          borderColor: `${MAIN_COLORS.aColor1}26`,
+                          backgroundColor: "rgba(120, 169, 198, 0.09)",
+                          color: MAIN_COLORS.aColorBlack,
+                        }}
+                      >
+                        {trafficComparisonInsight}
+                      </div>
                     </CardContent>
                   </Card>
                 </div>

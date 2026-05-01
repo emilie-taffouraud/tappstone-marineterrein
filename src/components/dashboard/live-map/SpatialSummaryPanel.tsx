@@ -29,6 +29,18 @@ function SummaryTile({
   );
 }
 
+function getSensorFeedLabel(sourceName: string) {
+  const labels: Record<string, string> = {
+    telraam: "Main entrance counter",
+    husense: "Zone occupancy sensors",
+    weather: "Weather feed",
+    water: "Water temperature sensor",
+    knmi: "Weather warning feed",
+  };
+
+  return labels[sourceName] || sourceName;
+}
+
 export function SpatialSummaryPanel({
   summary,
   health,
@@ -46,12 +58,12 @@ export function SpatialSummaryPanel({
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <SummaryTile
-          title="Telraam gate"
+          title="Main entrance flow"
           value={summary.gateFlowLabel}
           helper={
             summary.gateFlow !== null
-              ? `${summary.gateFlow} movements per hour from the Kattenburgerstraat 7 counter`
-              : "Waiting for the single Telraam counter to report"
+              ? `${summary.gateFlow} movements per hour from the Kattenburgerstraat gate`
+              : "Waiting for the main entrance counter to report"
           }
           icon={TrafficCone}
         />
@@ -92,8 +104,8 @@ export function SpatialSummaryPanel({
           >
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-slate-800">Source health</p>
-                <p className="mt-1 text-xs text-slate-500">Broken sources should degrade gracefully, not break the map.</p>
+                <p className="text-sm font-medium text-slate-800">Sensor health</p>
+                <p className="mt-1 text-xs text-slate-500">Shows which connected feeds are OK, degraded, or offline.</p>
               </div>
               <Pill tone={getStatusTone(health?.status || "error")}>{health?.status || "unknown"}</Pill>
             </div>
@@ -104,7 +116,7 @@ export function SpatialSummaryPanel({
                   <div key={sourceName} className="flex items-start justify-between gap-3 rounded-2xl bg-white p-3">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium capitalize text-slate-900">{sourceName}</span>
+                        <span className="text-sm font-medium text-slate-900">{getSensorFeedLabel(sourceName)}</span>
                         <Pill tone={getStatusTone(source.status)}>{source.status}</Pill>
                       </div>
                       <p className="text-xs text-slate-500">

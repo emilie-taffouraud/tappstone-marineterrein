@@ -336,14 +336,32 @@ export const sensorHealth: SensorHealthItem[] = [
 ];
 
 export const dailyTrend: DailyTrendPoint[] = [
-  { day: "Mon", visitors: 4200, alerts: 3, avgNoise: 61 },
-  { day: "Tue", visitors: 4460, alerts: 4, avgNoise: 62 },
-  { day: "Wed", visitors: 4330, alerts: 2, avgNoise: 60 },
-  { day: "Thu", visitors: 4720, alerts: 5, avgNoise: 64 },
-  { day: "Fri", visitors: 4890, alerts: 4, avgNoise: 65 },
-  { day: "Sat", visitors: 5380, alerts: 6, avgNoise: 69 },
-  { day: "Sun", visitors: 5010, alerts: 4, avgNoise: 66 },
+  { day: "Mon", visitors: 4200, alerts: 3, avgNoise: 61, terraceVisitors: 1260, boardwalkVisitors: 1090, picnicLawnVisitors: 1030, swimAreaVisitors: 820 },
+  { day: "Tue", visitors: 4460, alerts: 4, avgNoise: 62, terraceVisitors: 1390, boardwalkVisitors: 1140, picnicLawnVisitors: 1100, swimAreaVisitors: 830 },
+  { day: "Wed", visitors: 4330, alerts: 2, avgNoise: 60, terraceVisitors: 1300, boardwalkVisitors: 1120, picnicLawnVisitors: 1080, swimAreaVisitors: 830 },
+  { day: "Thu", visitors: 4720, alerts: 5, avgNoise: 64, terraceVisitors: 1510, boardwalkVisitors: 1180, picnicLawnVisitors: 1120, swimAreaVisitors: 910 },
+  { day: "Fri", visitors: 4890, alerts: 4, avgNoise: 65, terraceVisitors: 1570, boardwalkVisitors: 1210, picnicLawnVisitors: 1190, swimAreaVisitors: 920, isToday: true },
+  { day: "Sat", visitors: 5380, alerts: 6, avgNoise: 69, terraceVisitors: 1720, boardwalkVisitors: 1340, picnicLawnVisitors: 1320, swimAreaVisitors: 1000 },
+  { day: "Sun", visitors: 5010, alerts: 4, avgNoise: 66, terraceVisitors: 1610, boardwalkVisitors: 1260, picnicLawnVisitors: 1210, swimAreaVisitors: 930 },
 ];
+
+export const operationalZoneOccupancy = [
+  { zone: "Terrace", density: 62, status: "High" },
+  { zone: "Boardwalk", density: 38, status: "Low" },
+  { zone: "Picnic lawn", density: 47, status: "Medium" },
+  { zone: "Swim area", density: 29, status: "Low" },
+] as const;
+
+export const temporaryTrafficComparisonBaseline = [
+  { time: "09:00", measured: 84, expected: 78 },
+  { time: "10:00", measured: 116, expected: 104 },
+  { time: "11:00", measured: 132, expected: 126 },
+  { time: "12:00", measured: 168, expected: 150 },
+  { time: "13:00", measured: 182, expected: 166 },
+  { time: "14:00", measured: 210, expected: 178 },
+  { time: "15:00", measured: 228, expected: 184 },
+  { time: "16:00", measured: 194, expected: 172 },
+] as const;
 
 export const infrastructureStatus: InfrastructureItem[] = [
   {
