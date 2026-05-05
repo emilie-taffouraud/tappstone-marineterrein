@@ -1,6 +1,6 @@
 /**
- * Centralized theme and styling for dashboard components
- * Uses only the 7 core colors from MAIN_COLORS
+ * Centralized theme and styling for dashboard components.
+ * Marineterrein-inspired tokens keep brand accents consistent and restrained.
  */
 
 /* ============================================================================
@@ -8,14 +8,32 @@
    ============================================================================ */
 
 export const MAIN_COLORS = {
-  aColorBlack: "#10233a",
+  aColorBlack: "#152326",
   aColorWhite: "#ffffff",
-  aColorGray: "#64748b",
-  aColor1: "#1f5f86",      // Primary accent (harbor blue)
-  aColor2: "#78a9c6",      // Secondary accent (mist blue)
-  aColor3: "#f7fafc",      // Light background
-  aColor4: "#08192bd9",    // Dark blue overlay
-  aColor5: "#c98369",      // Additional accent color(coral)
+  aColorGray: "#60737a",
+  aColor1: "#00ADEF",      // Marineterrein cyan
+  aColor2: "#016991",      // Secondary blue
+  aColor3: "#f6f9fb",      // Page background
+  aColor4: "#1a4b58",      // Dark teal
+  aColor5: "#f37158",      // Coral
+} as const;
+
+export const MT_COLORS = {
+  cyan: "#00ADEF",
+  teal: "#0d927a",
+  darkTeal: "#1a4b58",
+  blue: "#016991",
+  green: "#93c148",
+  yellow: "#ffe328",
+  coral: "#f37158",
+  paleBlue: "#b0c1d1",
+  palePink: "#f6d4e5",
+  burgundy: "#6a0e3f",
+  page: "#f6f9fb",
+  card: "#ffffff",
+  border: "#d9e3ea",
+  text: "#152326",
+  muted: "#60737a",
 } as const;
 
 /* ============================================================================
@@ -24,16 +42,16 @@ export const MAIN_COLORS = {
 
 export const DASHBOARD_HEADER_THEME = {
   title: {
-    color: MAIN_COLORS.aColorWhite,
-    fontFamily: '"Manrope", "Segoe UI", sans-serif',
+    color: MT_COLORS.text,
+    fontFamily: '"Overpass", "Segoe UI", sans-serif',
     fontWeight: 700,
-    letterSpacing: "-0.025em",
+    letterSpacing: "0",
   },
   subtitle: {
-    color: "rgba(241, 245, 249, 0.88)",
-    fontFamily: '"Manrope", "Segoe UI", sans-serif',
+    color: MT_COLORS.muted,
+    fontFamily: '"Overpass", "Segoe UI", sans-serif',
     fontWeight: 400,
-    letterSpacing: "0.005em",
+    letterSpacing: "0",
   },
 } as const;
 
@@ -79,9 +97,9 @@ export const TELRAAM_LIVE_CARD_THEME = {
 
 const BADGE_STYLES = {
   base: {
-    border: `1px solid rgba(100, 116, 139, 0.22)`,
-    backgroundColor: "rgba(255, 255, 255, 0.86)",
-    color: MAIN_COLORS.aColorBlack,
+    border: `1px solid ${MT_COLORS.border}`,
+    backgroundColor: MT_COLORS.card,
+    color: MT_COLORS.text,
     padding: "0.25rem 0.75rem",
     borderRadius: "9999px",
     fontSize: "0.75rem",
@@ -89,34 +107,34 @@ const BADGE_STYLES = {
     display: "inline-block" as const,
   },
   info: {
-    border: `1px solid ${MAIN_COLORS.aColor2}66`,
-    backgroundColor: `${MAIN_COLORS.aColor2}14`,
-    color: "#2f6f92",
+    border: `1px solid ${MT_COLORS.paleBlue}`,
+    backgroundColor: "#eaf3f8",
+    color: MT_COLORS.blue,
   },
   warning: {
-    border: "1px solid rgba(245, 158, 11, 0.45)",
-    backgroundColor: "rgba(245, 158, 11, 0.12)",
-    color: "#b45309",
+    border: `1px solid ${MT_COLORS.yellow}`,
+    backgroundColor: "#fff8bf",
+    color: MT_COLORS.darkTeal,
   },
   critical: {
-    border: "1px solid rgba(220, 38, 38, 0.4)",
-    backgroundColor: "rgba(220, 38, 38, 0.12)",
-    color: "#b91c1c",
+    border: `1px solid ${MT_COLORS.coral}80`,
+    backgroundColor: "#fde6e1",
+    color: "#9f2f25",
   },
   healthy: {
-    border: `1px solid rgba(22, 163, 74, 0.28)`,
-    backgroundColor: "rgba(22, 163, 74, 0.08)",
-    color: "#166534",
+    border: `1px solid ${MT_COLORS.teal}55`,
+    backgroundColor: "#e4f5f1",
+    color: MT_COLORS.darkTeal,
   },
   degraded: {
-    border: `1px solid ${MAIN_COLORS.aColor1}4d`,
-    backgroundColor: `${MAIN_COLORS.aColor1}12`,
-    color: MAIN_COLORS.aColor1,
+    border: `1px solid ${MT_COLORS.yellow}`,
+    backgroundColor: "#fff8bf",
+    color: MT_COLORS.darkTeal,
   },
   offline: {
-    border: `1px solid ${MAIN_COLORS.aColorGray}33`,
-    backgroundColor: "rgba(248, 250, 252, 0.92)",
-    color: MAIN_COLORS.aColorGray,
+    border: `1px solid ${MT_COLORS.coral}66`,
+    backgroundColor: "#fde6e1",
+    color: "#9f2f25",
   },
 } as const;
 
@@ -126,8 +144,8 @@ const BADGE_STYLES = {
 
 export const LIVE_MAP_LEGEND_THEME = {
   panel: {
-    border: `1px solid ${MAIN_COLORS.aColorGray}33`,
-    backgroundColor: `${MAIN_COLORS.aColor3}d1`,
+    border: `1px solid ${MT_COLORS.border}`,
+    backgroundColor: "#f8fbfd",
   },
   text: {
     title: MAIN_COLORS.aColorBlack,
@@ -135,16 +153,16 @@ export const LIVE_MAP_LEGEND_THEME = {
   },
   layers: {
     zones: {
-      accent: "#16a34a",
+      accent: MT_COLORS.cyan,
     },
     sensors: {
-      accent: "#3a1575",
+      accent: MT_COLORS.darkTeal,
     },
     weather: {
-      accent: "#0284c7",
+      accent: MT_COLORS.green,
     },
     warnings: {
-      accent: "#dc2626",
+      accent: MT_COLORS.coral,
     },
   },
 } as const;
@@ -155,14 +173,15 @@ export const LIVE_MAP_LEGEND_THEME = {
 
 export const LAYER_TOGGLE_THEME = {
   active: {
-    border: `1px solid ${MAIN_COLORS.aColor2}88`,
-    backgroundColor: `${MAIN_COLORS.aColor2}14`,
-    color: MAIN_COLORS.aColor1,
+    border: `1px solid ${MT_COLORS.cyan}80`,
+    backgroundColor: "#ffffff",
+    color: MT_COLORS.darkTeal,
+    boxShadow: `inset 3px 0 0 ${MT_COLORS.cyan}`,
   },
   inactive: {
-    border: `1px solid ${MAIN_COLORS.aColorGray}44`,
-    backgroundColor: MAIN_COLORS.aColor3,
-    color: MAIN_COLORS.aColorGray,
+    border: `1px solid ${MT_COLORS.border}`,
+    backgroundColor: "#f8fbfd",
+    color: MT_COLORS.muted,
   },
 } as const;
 
@@ -178,4 +197,13 @@ export function getBadgeStyle(severity: "info" | "warning" | "critical" | "healt
     ...BADGE_STYLES.base,
     ...BADGE_STYLES[severity],
   };
+}
+
+export function getDisplayStatusLabel(status: string | null | undefined) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "ok" || normalized === "healthy" || normalized === "live") return "Live";
+  if (normalized === "warning" || normalized === "degraded") return "Partial data";
+  if (normalized === "critical" || normalized === "error" || normalized === "offline") return "No data";
+  if (normalized === "loading" || normalized === "pending" || normalized === "awaiting-data") return "Awaiting feed";
+  return status || "Awaiting feed";
 }

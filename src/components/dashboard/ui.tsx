@@ -1,5 +1,5 @@
 import React from "react";
-import { DASHBOARD_CARD_TITLE_THEME, MAIN_COLORS } from "../../styles/theme";
+import { DASHBOARD_CARD_TITLE_THEME, MAIN_COLORS, MT_COLORS, getDisplayStatusLabel } from "../../styles/theme";
 
 export function Card({
   className = "",
@@ -12,11 +12,11 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-[26px] backdrop-blur-sm ${className}`}
+      className={`rounded-[18px] bg-white ${className}`}
       style={{
-        border: `1px solid rgba(214, 224, 234, 0.96)`,
-        background: "linear-gradient(180deg, rgba(255, 255, 255, 0.985) 0%, rgba(247, 250, 253, 0.955) 100%)",
-        boxShadow: "0 18px 36px rgba(15, 23, 42, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.82)",
+        border: `1px solid ${MT_COLORS.border}`,
+        background: MT_COLORS.card,
+        boxShadow: "0 8px 24px rgba(26, 75, 88, 0.06)",
         ...style,
       }}
     >
@@ -71,29 +71,29 @@ export function Pill({
 }) {
   const tones: Record<string, React.CSSProperties> = {
     slate: {
-      borderColor: `${MAIN_COLORS.aColorGray}40`,
-      backgroundColor: "rgba(248, 250, 252, 0.88)",
-      color: "#475569",
+      borderColor: MT_COLORS.paleBlue,
+      backgroundColor: "#edf4f8",
+      color: MT_COLORS.blue,
     },
     sky: {
-      borderColor: `${MAIN_COLORS.aColor2}66`,
-      backgroundColor: `${MAIN_COLORS.aColor2}14`,
-      color: "#2f6f92",
+      borderColor: `${MT_COLORS.cyan}66`,
+      backgroundColor: "#e7f7fd",
+      color: MT_COLORS.blue,
     },
     emerald: {
-      borderColor: "rgba(22, 163, 74, 0.28)",
-      backgroundColor: "rgba(22, 163, 74, 0.08)",
-      color: "#166534",
+      borderColor: `${MT_COLORS.teal}55`,
+      backgroundColor: "#e4f5f1",
+      color: MT_COLORS.darkTeal,
     },
     amber: {
-      borderColor: "rgba(245, 158, 11, 0.34)",
-      backgroundColor: "rgba(245, 158, 11, 0.1)",
-      color: "#b45309",
+      borderColor: MT_COLORS.yellow,
+      backgroundColor: "#fff8bf",
+      color: MT_COLORS.darkTeal,
     },
     rose: {
-      borderColor: "rgba(220, 38, 38, 0.25)",
-      backgroundColor: "rgba(220, 38, 38, 0.08)",
-      color: "#b91c1c",
+      borderColor: `${MT_COLORS.coral}66`,
+      backgroundColor: "#fde6e1",
+      color: "#9f2f25",
     },
   };
 
@@ -102,7 +102,7 @@ export function Pill({
       className="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em]"
       style={tones[tone]}
     >
-      {children}
+      {typeof children === "string" ? getDisplayStatusLabel(children) : children}
     </span>
   );
 }
@@ -116,8 +116,13 @@ export function SectionTitle({
 }) {
   return (
     <div className="mb-3 flex items-end justify-between gap-3">
-      <div>
-        <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em]" style={{ color: DASHBOARD_CARD_TITLE_THEME.sectionTitleColor }}>
+      <div className="relative pl-3">
+        <span
+          aria-hidden="true"
+          className="absolute left-0 top-1 h-8 w-1 rounded-full"
+          style={{ backgroundColor: MT_COLORS.cyan }}
+        />
+        <h2 className="text-[1.15rem] font-semibold tracking-normal" style={{ color: DASHBOARD_CARD_TITLE_THEME.sectionTitleColor }}>
           {title}
         </h2>
         {subtitle ? (
@@ -147,7 +152,7 @@ export function SelectLike({
     <label className="flex min-w-[150px] flex-col gap-2">
       <span
         className="text-xs font-medium uppercase tracking-[0.14em]"
-        style={{ color: dark ? "#36546f" : MAIN_COLORS.aColorGray }}
+        style={{ color: dark ? MT_COLORS.darkTeal : MAIN_COLORS.aColorGray }}
       >
         {label}
       </span>
@@ -156,10 +161,10 @@ export function SelectLike({
         onChange={(e) => onChange(e.target.value)}
         className="rounded-[18px] border px-3 py-2.5 text-sm outline-none ring-0 transition"
         style={{
-          borderColor: dark ? "rgba(120, 169, 198, 0.45)" : `${MAIN_COLORS.aColorGray}33`,
+          borderColor: dark ? `${MT_COLORS.cyan}55` : `${MAIN_COLORS.aColorGray}33`,
           backgroundColor: "rgba(255, 255, 255, 0.9)",
           color: MAIN_COLORS.aColorBlack,
-          boxShadow: dark ? "0 8px 20px rgba(15, 23, 42, 0.06)" : "none",
+          boxShadow: dark ? "0 8px 20px rgba(26, 75, 88, 0.06)" : "none",
         }}
       >
         {options.map((opt) => (

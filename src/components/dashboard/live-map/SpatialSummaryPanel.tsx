@@ -1,7 +1,8 @@
-import type { ComponentType } from "react";
+import type { ComponentType, CSSProperties } from "react";
 import { Activity, CloudSun, Radar, RefreshCw, ShieldAlert, TrafficCone } from "lucide-react";
 import { Pill } from "../ui";
 import { formatTimestamp, getStatusTone } from "./opsMapTransforms";
+import { MT_COLORS, getDisplayStatusLabel } from "../../../styles/theme";
 import type { OpsHealthResponse, SpatialSummary } from "./types";
 import { MapLegend } from "./MapLegend";
 import type { SensorPoint } from "./sensorCatalog";
@@ -15,16 +16,16 @@ function SummaryTile({
   title: string;
   value: string;
   helper: string;
-  icon: ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string; style?: CSSProperties }>;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <div className="rounded-2xl border bg-white p-4" style={{ borderColor: MT_COLORS.border }}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-slate-800">{title}</p>
-        <Icon className="h-4 w-4 text-slate-500" />
+        <p className="text-sm font-medium" style={{ color: MT_COLORS.text }}>{title}</p>
+        <Icon className="h-4 w-4" style={{ color: MT_COLORS.blue }} />
       </div>
-      <p className="mt-3 text-xl font-semibold text-slate-950">{value}</p>
-      <p className="mt-1 text-xs text-slate-500">{helper}</p>
+      <p className="mt-3 text-xl font-semibold" style={{ color: MT_COLORS.text }}>{value}</p>
+      <p className="mt-1 text-xs" style={{ color: MT_COLORS.muted }}>{helper}</p>
     </div>
   );
 }
@@ -58,7 +59,7 @@ export function SpatialSummaryPanel({
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <SummaryTile
-          title="Main entrance flow"
+          title="Current visitors"
           value={summary.gateFlowLabel}
           helper={
             summary.gateFlow !== null
@@ -99,30 +100,30 @@ export function SpatialSummaryPanel({
 
           <div
             id={sourceHealthId}
-            className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-            style={sourceHealthId ? { scrollMarginTop: "2rem" } : undefined}
+            className="rounded-2xl border bg-[#f8fbfd] p-4"
+            style={{ borderColor: MT_COLORS.border, ...(sourceHealthId ? { scrollMarginTop: "2rem" } : {}) }}
           >
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-slate-800">Sensor health</p>
-                <p className="mt-1 text-xs text-slate-500">Shows which connected feeds are OK, degraded, or offline.</p>
+                <p className="text-sm font-medium" style={{ color: MT_COLORS.text }}>Sensor health</p>
+                <p className="mt-1 text-xs" style={{ color: MT_COLORS.muted }}>Live availability of connected sources. Broken sources should degrade gracefully, not break the map.</p>
               </div>
-              <Pill tone={getStatusTone(health?.status || "error")}>{health?.status || "unknown"}</Pill>
+              <Pill tone={getStatusTone(health?.status || "error")}>{getDisplayStatusLabel(health?.status || "unknown")}</Pill>
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-1">
               {health ? (
                 Object.entries(health.sources).map(([sourceName, source]) => (
-                  <div key={sourceName} className="flex items-start justify-between gap-3 rounded-2xl bg-white p-3">
+                  <div key={sourceName} className="flex items-start justify-between gap-3 rounded-2xl border bg-white p-3" style={{ borderColor: MT_COLORS.border }}>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-slate-900">{getSensorFeedLabel(sourceName)}</span>
-                        <Pill tone={getStatusTone(source.status)}>{source.status}</Pill>
+                        <Pill tone={getStatusTone(source.status)}>{getDisplayStatusLabel(source.status)}</Pill>
                       </div>
                       <p className="text-xs text-slate-500">
                         {source.recordCount} records, last success {formatTimestamp(source.lastSuccessAt)}
                       </p>
-                      {source.error ? <p className="text-xs text-rose-600">{source.error}</p> : null}
+                      {source.error ? <p className="text-xs" style={{ color: MT_COLORS.coral }}>{source.error}</p> : null}
                     </div>
                     <Activity className="mt-1 h-4 w-4 text-slate-400" />
                   </div>
@@ -136,20 +137,20 @@ export function SpatialSummaryPanel({
 
         <div
           id={inventoryId}
-          className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-          style={inventoryId ? { scrollMarginTop: "2rem" } : undefined}
+          className="rounded-2xl border bg-[#f8fbfd] p-4"
+          style={{ borderColor: MT_COLORS.border, ...(inventoryId ? { scrollMarginTop: "2rem" } : {}) }}
         >
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-slate-800">Sensor inventory</p>
-              <p className="mt-1 text-xs text-slate-500">Installed and planned locations from the Marineterrein sensor plan.</p>
+              <p className="text-sm font-medium" style={{ color: MT_COLORS.text }}>Sensor inventory</p>
+              <p className="mt-1 text-xs" style={{ color: MT_COLORS.muted }}>Installed and planned locations from the Marineterrein sensor plan.</p>
             </div>
             <Pill tone="sky">{sensorPoints.length} listed</Pill>
           </div>
 
           <div className="mt-4 grid gap-2 md:grid-cols-2">
             {sensorPoints.map((sensor) => (
-              <div key={sensor.id} className="rounded-2xl bg-white p-3">
+              <div key={sensor.id} className="rounded-2xl border bg-white p-3" style={{ borderColor: MT_COLORS.border }}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-medium text-slate-900">{sensor.name}</p>
@@ -157,7 +158,7 @@ export function SpatialSummaryPanel({
                     <p className="mt-1 text-xs text-slate-500">{sensor.availabilityLabel}</p>
                   </div>
                   <Pill tone={sensor.state === "live" ? "emerald" : sensor.state === "awaiting-data" ? "amber" : "slate"}>
-                    {sensor.stateLabel}
+                    {getDisplayStatusLabel(sensor.stateLabel)}
                   </Pill>
                 </div>
               </div>

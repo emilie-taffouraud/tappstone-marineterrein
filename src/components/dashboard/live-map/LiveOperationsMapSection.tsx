@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { DatabaseZap, LoaderCircle, Map, RefreshCw } from "lucide-react";
-import { MAIN_COLORS } from "../../../styles/theme";
+import { MAIN_COLORS, MT_COLORS, getDisplayStatusLabel } from "../../../styles/theme";
 import { useOpsLiveData } from "../../../hooks/useOpsLiveData";
 import { Card, CardContent, CardHeader, Pill, SectionTitle } from "../ui";
 import { LayerToggles } from "./LayerToggles";
@@ -93,8 +93,8 @@ export function LiveOperationsMapSection({
       <CardHeader className="pb-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <SectionTitle
-            title="Sensor network overview"
-            subtitle="Installed and planned sensor locations across Marineterrein, with live availability shown where this dashboard already has a connected feed."
+            title="Sensor locations across Marineterrein"
+            subtitle="Live source status across the terrain."
           />
 
           <div className="flex flex-wrap items-center gap-2">
@@ -132,7 +132,7 @@ export function LiveOperationsMapSection({
                 >
                   <DatabaseZap className="h-3.5 w-3.5" />
                   <span>{getSensorFeedLabel(sourceName)}</span>
-                  <Pill tone={getStatusTone(source.status)}>{source.status}</Pill>
+                  <Pill tone={getStatusTone(source.status)}>{getDisplayStatusLabel(source.status)}</Pill>
                   <span>{source.recordCount} records</span>
                 </span>
               ))}
@@ -142,9 +142,9 @@ export function LiveOperationsMapSection({
           <div
             className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm"
             style={{
-              border: `1px solid ${MAIN_COLORS.aColor1}55`,
-              backgroundColor: `${MAIN_COLORS.aColor1}11`,
-              color: MAIN_COLORS.aColor1,
+              border: `1px solid ${MT_COLORS.cyan}66`,
+              backgroundColor: "#e7f7fd",
+              color: MT_COLORS.blue,
             }}
           >
             <Map className="h-4 w-4" />
@@ -204,8 +204,8 @@ export function LiveOperationsMapSection({
               color: MAIN_COLORS.aColorGray,
             }}
           >
-            Live records are currently empty, so the map is showing Marineterrein zones and source health while upstream
-            feeds recover or new sensors come online.
+            No live records yet. The map is still showing Marineterrein zones and source health while upstream feeds recover
+            or new sensors come online.
           </div>
         ) : null}
 

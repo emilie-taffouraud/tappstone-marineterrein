@@ -1,21 +1,22 @@
 import { Fragment } from "react";
 import { CircleMarker, MapContainer, Polygon, Popup, TileLayer, Tooltip } from "react-leaflet";
+import { MT_COLORS } from "../../../styles/theme";
 import { MAP_CENTER, MAP_ZOOM } from "./mapConfig";
 import type { LayerVisibility, WarningPoint, WeatherPoint, ZoneFeature } from "./types";
 import type { SensorPoint } from "./sensorCatalog";
 
 function sensorColor(state: SensorPoint["state"]) {
-  if (state === "live") return "#059669";
-  if (state === "awaiting-data") return "#d97706";
-  if (state === "installed") return "#2563eb";
-  return "#94a3b8";
+  if (state === "live") return MT_COLORS.teal;
+  if (state === "awaiting-data") return MT_COLORS.yellow;
+  if (state === "installed") return MT_COLORS.blue;
+  return MT_COLORS.paleBlue;
 }
 
 function zoneColor(status: ZoneFeature["status"]) {
-  if (status === "critical") return "#e11d48";
-  if (status === "warning") return "#d97706";
-  if (status === "ok") return "#0f766e";
-  return "#94a3b8";
+  if (status === "critical") return MT_COLORS.coral;
+  if (status === "warning") return MT_COLORS.yellow;
+  if (status === "ok") return MT_COLORS.teal;
+  return MT_COLORS.paleBlue;
 }
 
 export function OperationsMapCanvas({
@@ -32,7 +33,7 @@ export function OperationsMapCanvas({
   warningPoints: WarningPoint[];
 }) {
   return (
-    <div className="overflow-hidden rounded-[28px] border border-emerald-100 bg-[linear-gradient(180deg,#eff7f2_0%,#edf4ef_100%)] shadow-[0_18px_40px_rgba(21,128,61,0.08)]">
+    <div className="overflow-hidden rounded-[20px] border bg-[linear-gradient(180deg,#f8fbfd_0%,#edf6f8_100%)] shadow-[0_8px_24px_rgba(26,75,88,0.06)]" style={{ borderColor: MT_COLORS.border }}>
       <MapContainer
         center={MAP_CENTER}
         zoom={MAP_ZOOM}
@@ -149,8 +150,8 @@ export function OperationsMapCanvas({
               center={point.center}
               radius={6}
               pathOptions={{
-                color: point.status === "warning" ? "#0284c7" : "#0ea5e9",
-                fillColor: point.status === "warning" ? "#0284c7" : "#38bdf8",
+                color: point.status === "warning" ? MT_COLORS.green : MT_COLORS.teal,
+                fillColor: point.status === "warning" ? MT_COLORS.green : MT_COLORS.cyan,
                 fillOpacity: 0.9,
                 weight: 1.5,
               }}
@@ -173,8 +174,8 @@ export function OperationsMapCanvas({
               center={point.center}
               radius={9}
               pathOptions={{
-                color: point.status === "critical" ? "#be123c" : "#ea580c",
-                fillColor: point.status === "critical" ? "#f43f5e" : "#fb923c",
+                color: point.status === "critical" ? MT_COLORS.coral : MT_COLORS.darkTeal,
+                fillColor: point.status === "critical" ? MT_COLORS.coral : MT_COLORS.yellow,
                 fillOpacity: 0.92,
                 weight: 2,
               }}

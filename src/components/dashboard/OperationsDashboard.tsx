@@ -16,9 +16,8 @@ import {
 } from "recharts";
 import { useOpsLiveData } from "../../hooks/useOpsLiveData";
 import { useTelraamTraffic } from "../../hooks/useTelraamTraffic";
-import { DASHBOARD_HEADER_THEME, MAIN_COLORS, getBadgeStyle } from "../../styles/theme";
+import { DASHBOARD_HEADER_THEME, MAIN_COLORS, MT_COLORS, getBadgeStyle } from "../../styles/theme";
 import mt_down from "../../assets/mt_down.jpg";
-import mt_up from "../../assets/mt_up.jpg";
 import TelraamStoredCard from "./TelraamStoredCard";
 import UpcomingAgendaCard from "./UpcomingAgendaCard";
 import TelraamLiveCard from "./TelraamLiveCard";
@@ -132,11 +131,20 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
 const HIDDEN_OCCUPANCY_ZONE_IDS = new Set(["5db05d88-7833-440a-9c3e-24c93fb08406"]);
 
 const DAILY_ZONE_STACK = [
-  { key: "terraceVisitors", label: "Terrace", color: MAIN_COLORS.aColor1 },
-  { key: "boardwalkVisitors", label: "Boardwalk", color: MAIN_COLORS.aColor2 },
-  { key: "picnicLawnVisitors", label: "Picnic lawn", color: "#0f766e" },
-  { key: "swimAreaVisitors", label: "Swim area", color: "#f59e0b" },
+  { key: "terraceVisitors", label: "Terrace", color: MT_COLORS.cyan },
+  { key: "boardwalkVisitors", label: "Boardwalk", color: MT_COLORS.blue },
+  { key: "picnicLawnVisitors", label: "Picnic lawn", color: MT_COLORS.green },
+  { key: "swimAreaVisitors", label: "Swim area", color: MT_COLORS.teal },
 ] as const;
+
+const NAV_ACCENTS: Record<string, string> = {
+  overview: MT_COLORS.darkTeal,
+  crowd: MT_COLORS.cyan,
+  water: MT_COLORS.teal,
+  events: MT_COLORS.burgundy,
+  weather: MT_COLORS.green,
+  sensors: MT_COLORS.darkTeal,
+};
 
 type TrafficComparisonPoint = {
   time: string;
@@ -157,7 +165,11 @@ function CategoryHeader({
 }) {
   return (
     <div className="px-1">
-      <h2 className="text-[2.02rem] font-semibold tracking-[-0.045em]" style={{ color: MAIN_COLORS.aColorBlack }}>
+      <div className="mb-3 h-1 w-12 rounded-full" style={{ backgroundColor: MT_COLORS.cyan }} />
+      <h2
+        className="text-[2rem] font-semibold tracking-normal"
+        style={{ color: MAIN_COLORS.aColorBlack, fontFamily: '"Vesper Libre", "Overpass", sans-serif' }}
+      >
         {title}
       </h2>
       <p className="mt-1.5 w-full max-w-none text-[0.94rem] leading-6 xl:whitespace-nowrap" style={{ color: "#617389" }}>
@@ -208,7 +220,7 @@ function DashboardNavigation({ activeId }: { activeId: string }) {
           ? current
           : nextMetrics,
       );
-      setDesktopRailPinned(window.scrollY >= startY - 24);
+      setDesktopRailPinned(true);
     };
 
     const syncDesktopRail = () => {
@@ -246,9 +258,10 @@ function DashboardNavigation({ activeId }: { activeId: string }) {
                       href={`#${section.id}`}
                       className="rounded-full px-3 py-2 text-sm font-medium transition"
                       style={{
-                        border: `1px solid ${isActive ? "rgba(120, 169, 198, 0.75)" : "rgba(148, 163, 184, 0.24)"}`,
-                        backgroundColor: isActive ? "rgba(120, 169, 198, 0.14)" : "rgba(255, 255, 255, 0.82)",
-                        color: isActive ? MAIN_COLORS.aColor1 : MAIN_COLORS.aColorGray,
+                        border: `1px solid ${isActive ? `${NAV_ACCENTS[section.id]}66` : MT_COLORS.border}`,
+                        backgroundColor: isActive ? "#ffffff" : "rgba(255, 255, 255, 0.78)",
+                        color: isActive ? MT_COLORS.darkTeal : MAIN_COLORS.aColorGray,
+                        boxShadow: isActive ? `inset 0 -3px 0 ${NAV_ACCENTS[section.id]}` : "none",
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -284,7 +297,7 @@ function DashboardNavigation({ activeId }: { activeId: string }) {
       </div>
 
       <aside className="hidden xl:block xl:self-start">
-        <div ref={desktopRailSlotRef} className="w-[220px]">
+        <div ref={desktopRailSlotRef} className="flex min-h-[calc(100vh-2rem)] w-[220px] items-center">
           <div
             className={desktopRailPinned ? "fixed z-20" : "relative"}
             style={
@@ -301,9 +314,9 @@ function DashboardNavigation({ activeId }: { activeId: string }) {
             <Card
               className="rounded-[22px]"
               style={{
-                border: "1px solid rgba(214, 224, 234, 0.78)",
-                background: "linear-gradient(180deg, rgba(252, 253, 255, 0.86) 0%, rgba(247, 250, 253, 0.8) 100%)",
-                boxShadow: "0 14px 28px rgba(15, 23, 42, 0.055), inset 0 1px 0 rgba(255, 255, 255, 0.78)",
+                border: `1px solid ${MT_COLORS.border}`,
+                background: "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(246,249,251,0.92) 100%)",
+                boxShadow: "0 8px 24px rgba(26, 75, 88, 0.06)",
               }}
             >
               <CardContent className="p-2.5">
@@ -312,19 +325,24 @@ function DashboardNavigation({ activeId }: { activeId: string }) {
                     const isSectionActive = section.id === activeSection.id;
 
                     return (
-                      <div key={section.id} className="space-y-0.5">
+                      <div key={section.id} className="space-y-1.5">
                         <a
                           href={`#${section.id}`}
-                          className="block rounded-lg px-2 py-0.5 text-[13px] font-semibold whitespace-nowrap transition"
+                          className="block rounded-lg px-2 py-1 text-[13px] font-semibold whitespace-nowrap transition"
                           style={{
-                            backgroundColor: isSectionActive ? "rgba(31, 95, 134, 0.12)" : "transparent",
+                            borderLeft: `3px solid ${isSectionActive ? NAV_ACCENTS[section.id] : "transparent"}`,
+                            backgroundColor: isSectionActive ? "#ffffff" : "transparent",
                             color: isSectionActive ? MAIN_COLORS.aColorBlack : "#3f5870",
                           }}
                         >
+                          <span
+                            className="mr-2 inline-block h-2 w-2 rounded-full align-middle"
+                            style={{ backgroundColor: NAV_ACCENTS[section.id] }}
+                          />
                           {section.label}
                         </a>
 
-                        <div className="space-y-0.5 pl-2.5">
+                        <div className="space-y-0.5 pl-4">
                           {section.items.map((item) => {
                             const isActive = item.id === activeId;
 
@@ -332,10 +350,10 @@ function DashboardNavigation({ activeId }: { activeId: string }) {
                               <a
                                 key={item.id}
                                 href={`#${item.id}`}
-                                className="block rounded-md px-1.5 py-px text-[12px] leading-4 whitespace-nowrap transition"
+                                className="block rounded-md px-1.5 py-0.5 text-[12px] leading-4 whitespace-nowrap transition"
                                 style={{
                                   backgroundColor: isActive ? "rgba(31, 95, 134, 0.11)" : "transparent",
-                                  color: isActive ? MAIN_COLORS.aColorBlack : "#6a7b8f",
+                                  color: isActive ? MT_COLORS.darkTeal : "#6a7b8f",
                                   fontWeight: isActive ? 600 : 500,
                                 }}
                               >
@@ -375,11 +393,17 @@ function SignalCard({
   className?: string;
 }) {
   return (
-    <Card className={className}>
+    <Card
+      className={className}
+      style={{
+        boxShadow: tone === "amber" ? "0 8px 24px rgba(13, 146, 122, 0.08)" : undefined,
+        borderColor: tone === "rose" ? `${MT_COLORS.coral}66` : tone === "amber" ? `${MT_COLORS.teal}55` : MT_COLORS.border,
+      }}
+    >
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-3">
           <SectionTitle title={title} subtitle={helper} />
-          <Pill tone={tone}>{tone === "slate" ? "pending" : tone}</Pill>
+          <Pill tone={tone}>{title === "Swim-area decision" && tone !== "emerald" ? "Incomplete data" : tone === "slate" ? "Awaiting feed" : tone}</Pill>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -801,16 +825,16 @@ export function OperationsDashboard() {
   );
 
   const chartPalette = [
-    MAIN_COLORS.aColor1,
-    MAIN_COLORS.aColor2,
-    "#0f766e",
-    "#f59e0b",
-    "#94a3b8",
-    "#ef4444",
-    "#22c55e",
-    "#f97316",
-    "#14b8a6",
-    "#64748b",
+    MT_COLORS.cyan,
+    MT_COLORS.blue,
+    MT_COLORS.teal,
+    MT_COLORS.yellow,
+    MT_COLORS.paleBlue,
+    MT_COLORS.coral,
+    MT_COLORS.green,
+    MT_COLORS.burgundy,
+    MT_COLORS.darkTeal,
+    MT_COLORS.muted,
   ];
   const latestAnomaly = anomalyChart.length ? anomalyChart[anomalyChart.length - 1] : undefined;
   const anomalyStatus = latestAnomaly
@@ -893,51 +917,52 @@ export function OperationsDashboard() {
       style={{
         color: MAIN_COLORS.aColorBlack,
         backgroundImage:
-          "radial-gradient(circle at top, rgba(120, 169, 198, 0.18), transparent 28%), linear-gradient(180deg, #edf4f8 0%, #e5eef4 48%, #eef5f9 100%)",
+          "radial-gradient(circle at top left, rgba(0, 173, 239, 0.09), transparent 26%), linear-gradient(180deg, #f6f9fb 0%, #eef5f8 100%)",
       }}
     >
-      <div className="mx-auto max-w-[1480px] space-y-6">
-        <div
-          className="rounded-[28px] px-6 py-5 backdrop-blur-sm md:px-8 md:py-[1.35rem]"
-          style={{
-            border: "1px solid rgba(148, 163, 184, 0.18)",
-            backgroundColor: MAIN_COLORS.aColorBlack,
-            backgroundImage:
-              `linear-gradient(135deg, rgba(8, 25, 43, 0.94) 0%, rgba(14, 37, 60, 0.92) 56%, rgba(16, 35, 58, 0.88) 100%), url(${mt_up})`,
-            backgroundPosition: "center",
-            backgroundSize: "cover",
-            boxShadow: "0 20px 42px rgba(8, 15, 27, 0.18)",
-          }}
-        >
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-4xl">
-              <h1 className="text-3xl font-semibold tracking-[-0.04em] md:text-[2.03rem]" style={DASHBOARD_HEADER_THEME.title}>
-                Tapp Marineterrein Operations Dashboard
-              </h1>
-              <p className="mt-2.5 max-w-4xl text-sm leading-7" style={DASHBOARD_HEADER_THEME.subtitle}>
-                Live overview of gate activity, weather, occupancy, and swim-area conditions across the public space.
-              </p>
-            </div>
-
+      <div className="mx-auto max-w-[1480px] space-y-5">
+        <div className="grid gap-9 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start">
+          <div className="hidden xl:block" aria-hidden="true" />
+          <div className="min-w-0 xl:mx-auto xl:w-full xl:max-w-[1080px]">
             <div
-              className="rounded-[1.1rem] px-4 py-2.5 text-sm"
+              className="mt-header-pattern rounded-[16px] px-7 py-5 md:px-10 md:py-5"
               style={{
-                border: "1px solid rgba(191, 219, 254, 0.18)",
-                backgroundColor: "rgba(248, 250, 252, 0.12)",
-                color: MAIN_COLORS.aColorWhite,
-                boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.08)",
+                border: `1px solid ${MT_COLORS.border}`,
+                backgroundColor: "#ffffff",
+                boxShadow: "0 8px 24px rgba(26, 75, 88, 0.06)",
               }}
             >
-              <div className="flex items-center gap-2">
-                <Pill tone={liveMetaSummary.statusTone}>{health?.status || "unknown"}</Pill>
-                <span>{liveMetaSummary.totalRecords} live records</span>
+              <div className="grid min-h-[72px] w-full grid-cols-1 items-center gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-8">
+                <div className="min-w-0 max-w-[760px]">
+                  <h1 className="text-[2rem] font-bold leading-[1.1] tracking-[-0.02em] md:text-[2.25rem]" style={DASHBOARD_HEADER_THEME.title}>
+                    Marineterrein Operations
+                  </h1>
+                  <p className="mt-2 text-[0.98rem] leading-6 md:text-base" style={DASHBOARD_HEADER_THEME.subtitle}>
+                    Live view of movement, water, weather and sensor health.
+                  </p>
+                </div>
+
+                <div
+                  className="w-full justify-self-start rounded-[1.1rem] px-4 py-2.5 text-sm sm:max-w-[440px] lg:w-[400px] lg:justify-self-end"
+                  style={{
+                    border: `1px solid ${MT_COLORS.border}`,
+                    backgroundColor: "#f8fbfd",
+                    color: MAIN_COLORS.aColorBlack,
+                    boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.82)",
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Pill tone={liveMetaSummary.statusTone}>{health?.status || "unknown"}</Pill>
+                    <span>{liveMetaSummary.totalRecords} live records</span>
+                  </div>
+                  <p className="mt-2 text-xs" style={{ color: MT_COLORS.muted }}>
+                    {liveWeatherWidget.condition} | {liveWeatherWidget.temperature} | {liveWeatherWidget.location}
+                  </p>
+                  <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                    Last refresh {liveMetaSummary.generatedAt} | partial sources {liveMetaSummary.degradedCount}
+                  </p>
+                </div>
               </div>
-              <p className="mt-2 text-xs" style={{ color: "rgba(226, 232, 240, 0.78)" }}>
-                {liveWeatherWidget.condition} | {liveWeatherWidget.temperature} | {liveWeatherWidget.location}
-              </p>
-              <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                Last ops refresh {liveMetaSummary.generatedAt} | degraded sources {liveMetaSummary.degradedCount}
-              </p>
             </div>
           </div>
         </div>
@@ -961,7 +986,8 @@ export function OperationsDashboard() {
                     color: MAIN_COLORS.aColorBlack,
                   }}
                 >
-                  {opsError}
+                  <p className="font-semibold">Live data temporarily unavailable</p>
+                  <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>{opsError}</p>
                 </div>
               ) : null}
 
@@ -970,12 +996,14 @@ export function OperationsDashboard() {
                   {liveKpis.map((kpi) => {
                     const Icon = typeof kpi.icon === "string" ? null : kpi.icon;
                     const definition =
-                      kpi.label === "Main entrance flow"
-                        ? "Live movement count per hour at the main Kattenburgerstraat gate."
-                        : kpi.label === "Zone pressure"
-                          ? "Share of estimated zone capacity currently in use."
-                          : kpi.label === "Swim conditions"
-                            ? "Swim recommendation is limited only when the water temperature sensor is offline."
+                      kpi.label === "Current visitors"
+                        ? "Live count at the Kattenburgerstraat gate."
+                        : kpi.label === "Crowd density"
+                          ? "Crowd level shown as share of comfortable capacity."
+                            : kpi.label === "Swim conditions"
+                              ? "Swim recommendation is limited only when the water temperature sensor is offline."
+                              : kpi.label === "Air quality"
+                                ? "Environmental context for operators; detailed air readings appear when available."
                             : undefined;
                     const [primaryHelper, secondaryHelper] = kpi.helper.split(" | ");
 
@@ -990,16 +1018,16 @@ export function OperationsDashboard() {
                                 </p>
                                 {definition ? <InfoHint label={definition} /> : null}
                               </div>
-                              {definition && kpi.label === "Zone pressure" ? (
+                              {definition && kpi.label === "Crowd density" ? (
                                 <p className="mt-1 text-[11px] leading-4" style={{ color: MAIN_COLORS.aColorGray }}>
-                                  % of estimated capacity in use
+                                  capacity-based density estimate
                                 </p>
                               ) : null}
                               <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                                 <p className="text-[1.75rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
                                   {kpi.value}
                                 </p>
-                                {kpi.label === "Main entrance flow" ? (
+                                {kpi.label === "Current visitors" ? (
                                   <span className="text-xs font-medium" style={{ color: MAIN_COLORS.aColorGray }}>
                                     movements/hour
                                   </span>
@@ -1157,14 +1185,14 @@ export function OperationsDashboard() {
                 <Card>
                   <CardHeader>
                     <SectionTitle
-                      title="Zone occupancy"
-                      subtitle="Live estimate compared with zone capacity. Percentages show current occupancy as % of estimated comfortable capacity."
+                      title="Crowd density"
+                      subtitle="Live zone estimate compared with comfortable capacity. Shown as a capacity-based density score rather than exact people per square meter."
                     />
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {husenseError ? (
                       <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-700">
-                        Occupancy feed degraded: using the latest available zone pressure estimate.
+                        Crowd density feed degraded: using the latest available zone estimate.
                       </div>
                     ) : null}
 
@@ -1192,7 +1220,7 @@ export function OperationsDashboard() {
                             <div className="mt-4">
                               <div className="mb-1.5 flex items-end justify-between gap-3">
                                 <span className="text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                                  Capacity pressure
+                                  Density score
                                 </span>
                                 <span className="text-xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
                                   {density}%
@@ -1203,7 +1231,7 @@ export function OperationsDashboard() {
                                   className="h-full rounded-full transition-all duration-1000"
                                   style={{
                                     width: `${density}%`,
-                                    backgroundColor: density >= 75 ? "#ef4444" : density >= 45 ? "#f59e0b" : MAIN_COLORS.aColor1,
+                                    backgroundColor: density >= 75 ? MT_COLORS.coral : density >= 45 ? MT_COLORS.yellow : MT_COLORS.cyan,
                                   }}
                                 />
                               </div>
@@ -1221,7 +1249,7 @@ export function OperationsDashboard() {
                         color: MAIN_COLORS.aColorBlack,
                       }}
                     >
-                      Terrace is nearing capacity. Boardwalk still has room and can absorb overflow.
+                      Terrace is currently busiest. Boardwalk still has room and can absorb overflow.
                     </div>
                   </CardContent>
                 </Card>
@@ -1252,15 +1280,15 @@ export function OperationsDashboard() {
                             <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
                             <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
                             <Tooltip />
-                            <Area type="monotone" dataKey="pedestrians" stackId="1" stroke={MAIN_COLORS.aColor1} fill={MAIN_COLORS.aColor1} fillOpacity={0.85} />
-                            <Area type="monotone" dataKey="bicycles" stackId="1" stroke={MAIN_COLORS.aColor2} fill={MAIN_COLORS.aColor2} fillOpacity={0.8} />
-                            <Area type="monotone" dataKey="vehicles" stackId="1" stroke="#0f766e" fill="#0f766e" fillOpacity={0.75} />
+                            <Area type="monotone" dataKey="pedestrians" stackId="1" stroke={MT_COLORS.cyan} fill={MT_COLORS.cyan} fillOpacity={0.85} />
+                            <Area type="monotone" dataKey="bicycles" stackId="1" stroke={MT_COLORS.blue} fill={MT_COLORS.blue} fillOpacity={0.78} />
+                            <Area type="monotone" dataKey="vehicles" stackId="1" stroke={MT_COLORS.teal} fill={MT_COLORS.teal} fillOpacity={0.75} />
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
                     ) : (
                       <ChartPlaceholder
-                        title="Movement trend unavailable"
+                        title="Movement trend not available yet"
                         detail={telraamHistoryError || "Recent movement history is not available yet."}
                       />
                     )}
@@ -1311,8 +1339,8 @@ export function OperationsDashboard() {
                                 <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
                                 <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
                                 <Tooltip />
-                                <Area type="monotone" dataKey="expected" stroke={MAIN_COLORS.aColor2} fill={MAIN_COLORS.aColor2} fillOpacity={0.18} />
-                                <Line type="monotone" dataKey="actual" stroke={MAIN_COLORS.aColor1} strokeWidth={3} dot={false} />
+                                <Area type="monotone" dataKey="expected" stroke={MT_COLORS.cyan} fill={MT_COLORS.cyan} fillOpacity={0.16} />
+                                <Line type="monotone" dataKey="actual" stroke={MT_COLORS.coral} strokeWidth={3} dot={false} />
                               </ComposedChart>
                             </ResponsiveContainer>
                           </div>
@@ -1352,12 +1380,12 @@ export function OperationsDashboard() {
                                   style={{
                                     color: index === 3
                                       ? anomalyStatus.tone === "rose"
-                                        ? "#b91c1c"
+                                      ? MT_COLORS.coral
                                         : anomalyStatus.tone === "amber"
-                                          ? "#b45309"
+                                          ? MT_COLORS.darkTeal
                                           : anomalyStatus.tone === "sky"
-                                            ? "#2f6f92"
-                                            : "#166534"
+                                            ? MT_COLORS.blue
+                                            : MT_COLORS.teal
                                       : MAIN_COLORS.aColorBlack,
                                   }}
                                 >
@@ -1372,7 +1400,7 @@ export function OperationsDashboard() {
                         </>
                       ) : (
                         <ChartPlaceholder
-                          title="No movement pattern yet"
+                          title="No normal pattern available yet"
                           detail={
                             telraamHistoryError ||
                             "Recent movement history is needed before normal-pattern tracking can be calculated."
@@ -1495,14 +1523,14 @@ export function OperationsDashboard() {
                             <Legend
                               formatter={(value) => (value === "measured" ? "Measured" : value === "expected" ? "Expected" : value)}
                             />
-                            <Bar dataKey="measured" name="Measured" fill="#e8798d" radius={[6, 6, 0, 0]} />
+                            <Bar dataKey="measured" name="Measured" fill={MT_COLORS.coral} radius={[6, 6, 0, 0]} />
                             <Line
                               type="monotone"
                               dataKey="expected"
                               name="Expected"
-                              stroke={MAIN_COLORS.aColor1}
+                              stroke={MT_COLORS.cyan}
                               strokeWidth={3}
-                              dot={{ r: 3, fill: MAIN_COLORS.aColor1 }}
+                              dot={{ r: 3, fill: MT_COLORS.cyan }}
                             />
                           </ComposedChart>
                         </ResponsiveContainer>
@@ -1527,7 +1555,7 @@ export function OperationsDashboard() {
             <section id="water" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
               <CategoryHeader
                 title="Water"
-                description="Swim-area conditions grouped into one clear recreation context block so water-edge decisions do not get buried inside the movement feed."
+                description="Swim-area context for recreation and public communication."
               />
 
               <div id="water-summary" style={ANCHOR_SCROLL_STYLE}>
@@ -1555,7 +1583,7 @@ export function OperationsDashboard() {
             <section id="weather" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
               <CategoryHeader
                 title="Weather"
-                description="Fuller weather context"
+                description="Live weather context for site operations."
               />
 
               <div id="weather-conditions" style={ANCHOR_SCROLL_STYLE}>
@@ -1575,7 +1603,7 @@ export function OperationsDashboard() {
             <section id="sensors" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
               <CategoryHeader
                 title="Sensors"
-                description="network overview, source-health detail, and installed or planned sensor inventory."
+                description="Network health and live source availability across Marineterrein."
               />
 
               <div id="sensors-network" style={ANCHOR_SCROLL_STYLE}>

@@ -1,4 +1,4 @@
-import { Activity, CloudSun, Radar, ShieldCheck, TrafficCone, Waves } from "lucide-react";
+import { Activity, CloudSun, Radar, TrafficCone, Waves } from "lucide-react";
 import type { AlertItem, Kpi, SensorHealthItem } from "./types";
 import type {
   OpsHealthResponse,
@@ -256,15 +256,15 @@ export function deriveLiveKpis(
       icon: Activity,
     },
     {
-      label: "Main entrance flow",
+      label: "Current visitors",
       value: telraamTotal ? String(Math.round(asNumber(telraamTotal.value) || 0)) : "Unavailable",
       delta: "",
       trend: "up",
-      helper: telraamTotal ? "movements/hour | Kattenburgerstraat gate" : "Live movement count per hour unavailable",
+      helper: telraamTotal ? "Kattenburgerstraat gate" : "Live movement count per hour unavailable",
       icon: TrafficCone,
     },
     {
-      label: "Zone pressure",
+      label: "Crowd density",
       value: "62%",
       delta: "",
       trend: "up",
@@ -282,12 +282,14 @@ export function deriveLiveKpis(
       icon: Waves,
     },
     {
-      label: "Sensor health",
-      value: totalSources ? `${healthySources} / ${totalSources}` : "Unavailable",
+      label: "Air quality",
+      value: health?.sources.weather?.status === "ok" ? "Good" : "Limited",
       delta: "",
       trend: "up",
-      helper: health ? `overall state: ${health.status}` : "health endpoint unavailable",
-      icon: ShieldCheck,
+      helper: totalSources
+        ? `${healthySources} / ${totalSources} live sources; detailed air readings appear when connected`
+        : "Environmental feed awaiting source data",
+      icon: CloudSun,
     },
   ];
 }
@@ -532,13 +534,13 @@ export function deriveWaterSummary(
 
   if (!water) {
     return {
-      title: "Swim conditions",
-      value: "Limited guidance",
+      title: "Swim-area decision",
+      value: "Incomplete data",
       helper:
         health?.sources.water?.error ||
-        "Water temperature sensor is offline, so swim guidance is limited while the rest of the dashboard continues to run.",
+        "Recommendation paused until water temperature data returns.",
       tone: statusTone(health?.sources.water?.status || "unknown"),
-      detail: ["Only the water temperature reading is unavailable; other operational feeds are still usable."],
+      detail: ["Water temperature sensor offline", "Crowd: moderate", "Air: good", "Weather: sunny"],
       stats: [
         { label: "Yesterday avg", value: "Unavailable" },
         { label: "7-day avg", value: "Unavailable" },
@@ -560,7 +562,7 @@ export function deriveWaterSummary(
     | null;
 
   return {
-    title: "Swim conditions",
+    title: "Swim-area decision",
     value: formatValue(water),
     helper: "Water temperature context for swim-area planning and public communications.",
     tone: statusTone(health?.sources.water?.status || "unknown"),
