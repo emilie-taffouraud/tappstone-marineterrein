@@ -12,6 +12,27 @@ Then, in a seperate terminal:
 
 The Vite dev server proxies `/api/*` requests to `http://localhost:3000`.
 
+## Deploy on Vercel
+
+This project deploys as a Vite frontend plus a Vercel Node function for the existing
+Express API routes.
+
+1. Set the Vercel project build command to `npm run build`.
+2. Set the Vercel output directory to `dist`.
+3. Add the same runtime variables from `.env.example` in Vercel Project Settings -> Environment Variables.
+4. Redeploy after changing environment variables.
+
+The deployed frontend keeps calling relative `/api/*` paths. `vercel.json` rewrites
+those requests to `api/index.js`, which reuses the Express app from `server.js`.
+
+At minimum, live data needs the relevant API keys and database connection:
+
+- `DATABASE_URL`
+- `KNMI_OPEN_DATA_API_KEY`
+- `WEATHER_API_KEY`
+- `TELRAAM_API_KEY`
+- `HUSENSE_JWT_TOKEN` or `HUSENSE_API_TOKEN`
+
 ## Unified live ops data layer
 
 This repo now includes a lightweight local/dev-friendly live data backend for:
