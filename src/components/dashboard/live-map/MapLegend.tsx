@@ -1,5 +1,5 @@
 import { Radar } from "lucide-react";
-import { LIVE_MAP_LEGEND_THEME, MT_COLORS } from "../../../styles/theme";
+import { LIVE_MAP_LEGEND_THEME } from "../../../styles/theme";
 
 const legendItems = [
   {
@@ -46,9 +46,6 @@ export function MapLegend() {
           );
         })}
       </div>
-      <p className="mt-4 text-xs leading-5" style={{ color: MT_COLORS.muted }}>
-        Zone, weather, and warning layers can still be toggled above the map.
-      </p>
     </div>
   );
 }
