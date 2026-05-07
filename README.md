@@ -2,10 +2,13 @@
 
 ## Run locally
 
-1. Install dependencies with `npm install`
-2. Copy `.env.example` to `.env` and add the required API keys
-3. Start the backend with `npm run server`
-4. Start the frontend with `npm run dev`
+1.Start the sever locally 'node server.js'
+
+Then, in a seperate terminal:
+2. Install dependencies with `npm install`
+3. Copy `.env.example` to `.env` and add the required API keys
+4. Start the backend with `npm run server`
+5. Start the frontend with `npm run dev`
 
 The Vite dev server proxies `/api/*` requests to `http://localhost:3000`.
 
