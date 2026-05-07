@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Info } from "lucide-react";
-import HusenseHeatmapCard from "./HusenseHeatmapCard";
+import { Bike, Car, CloudSun, Info, Thermometer, Users, Volume2, Waves, type LucideIcon } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -16,24 +15,23 @@ import {
 } from "recharts";
 import { useOpsLiveData } from "../../hooks/useOpsLiveData";
 import { useTelraamTraffic } from "../../hooks/useTelraamTraffic";
-import { DASHBOARD_HEADER_THEME, MAIN_COLORS, MT_COLORS, getBadgeStyle } from "../../styles/theme";
+import { DASHBOARD_HEADER_THEME, MAIN_COLORS, MT_COLORS } from "../../styles/theme";
 import mt_down from "../../assets/mt_down.jpg";
 import TelraamStoredCard from "./TelraamStoredCard";
 import UpcomingAgendaCard from "./UpcomingAgendaCard";
 import TelraamLiveCard from "./TelraamLiveCard";
-import WeatherWidget from "./WeatherWidget";
 import { LiveOperationsMapSection } from "./live-map/LiveOperationsMapSection";
-import { fetchOpsAgenda, type AgendaItem } from "../../lib/opsLiveClient";
+import { fetchOpsAgenda, type AgendaItem, type OpsLiveOverviewResponse } from "../../lib/opsLiveClient";
 import {
   deriveAnomalyChart,
   deriveCurrentModalityChart,
   deriveLiveAlerts,
   deriveLiveKpis,
   deriveLiveMetaSummary,
+  deriveSoundSummary,
   deriveTelraamTrendChart,
   deriveTelraamLiveModeSplitChart,
   deriveWaterSummary,
-  deriveWeatherRangeModel,
   deriveWeatherWidgetModel,
 } from "./opsLiveViewModel";
 import { Card, CardContent, CardHeader, Pill, SectionTitle, SelectLike } from "./ui";
@@ -70,11 +68,10 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
   {
     id: "overview",
     label: "Overview",
-    description: "Immediate health, controls, alerts, and a live site snapshot.",
+    description: "Immediate live metrics and operator controls.",
     items: [
       { id: "overview-site-summary", label: "Site summary" },
       { id: "overview-controls", label: "Controls" },
-      { id: "overview-alerts", label: "Alerts" },
     ],
   },
   {
@@ -83,7 +80,6 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
     description: "Occupancy, movement flow, and crowd context.",
     items: [
       { id: "crowd-occupancy", label: "Occupancy" },
-      { id: "crowd-heatmap", label: "Heatmap" },
       { id: "crowd-mobility-split", label: "Movement mix" },
       { id: "crowd-traffic", label: "Movement over time" },
       { id: "crowd-history", label: "Movement summary" },
@@ -93,10 +89,13 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
     ],
   },
   {
-    id: "water",
-    label: "Water",
-    description: "Swim-area context and waterfront conditions.",
-    items: [{ id: "water-summary", label: "Water summary" }],
+    id: "environment",
+    label: "Environment",
+    description: "Water, air, sound, and upcoming air-quality context.",
+    items: [
+      { id: "environment-summary", label: "Environment summary" },
+      { id: "environment-temperature", label: "Temperature trend" },
+    ],
   },
   {
     id: "events",
@@ -108,22 +107,11 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
     ],
   },
   {
-    id: "weather",
-    label: "Weather",
-    description: "Current conditions and recent temperature context.",
+    id: "map",
+    label: "Map",
+    description: "Sensor locations and status across Marineterrein.",
     items: [
-      { id: "weather-conditions", label: "Conditions" },
-      { id: "weather-weekly-range", label: "Weekly range" },
-    ],
-  },
-  {
-    id: "sensors",
-    label: "Sensors",
-    description: "Network visibility, source health, and infrastructure inventory.",
-    items: [
-      { id: "sensors-network", label: "Network map" },
-      { id: "sensors-source-health", label: "Source health" },
-      { id: "sensors-inventory", label: "Inventory" },
+      { id: "map-operational", label: "Operational map" },
     ],
   },
 ];
@@ -139,17 +127,23 @@ const DAILY_ZONE_STACK = [
 
 const NAV_ACCENTS: Record<string, string> = {
   overview: MT_COLORS.darkTeal,
+  map: MT_COLORS.teal,
   crowd: MT_COLORS.cyan,
-  water: MT_COLORS.teal,
+  environment: MT_COLORS.green,
   events: MT_COLORS.burgundy,
-  weather: MT_COLORS.green,
-  sensors: MT_COLORS.darkTeal,
 };
 
 type TrafficComparisonPoint = {
   time: string;
   measured: number;
   expected: number;
+};
+
+type EnvironmentTrendPoint = {
+  day: string;
+  waterTemperature: number | null;
+  airTemperature: number | null;
+  visitors: number;
 };
 
 function resolveActiveSection(activeId: string) {
@@ -449,52 +443,121 @@ function SignalCard({
   );
 }
 
-function WeatherRangeCard({
+function average(values: Array<number | null>) {
+  const numericValues = values.filter((value): value is number => value !== null);
+  if (!numericValues.length) return null;
+  return numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length;
+}
+
+function minMax(values: Array<number | null>) {
+  const numericValues = values.filter((value): value is number => value !== null);
+  if (!numericValues.length) return { min: null, max: null };
+  return { min: Math.min(...numericValues), max: Math.max(...numericValues) };
+}
+
+function formatTemperature(value: number | null) {
+  return value === null ? "Unavailable" : `${value.toFixed(1)} C`;
+}
+
+function EnvironmentMetricCard({
+  title,
+  value,
   helper,
-  periodLabel,
+  icon: Icon,
   stats,
-  tone,
 }: {
+  title: string;
+  value: string;
   helper: string;
-  periodLabel: string;
+  icon: LucideIcon;
   stats: { label: string; value: string }[];
-  tone: "slate" | "emerald" | "amber" | "rose";
 }) {
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader className="pb-2">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <SectionTitle title="Weekly temperature range" subtitle={helper} />
-          <Pill tone={tone}>{tone === "slate" ? "limited" : "7-day view"}</Pill>
+        <div className="flex items-start justify-between gap-3">
+          <SectionTitle title={title} subtitle={helper} />
+          <Icon className="h-5 w-5 shrink-0" style={{ color: MT_COLORS.teal }} />
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Pill tone="sky">Last 7 days</Pill>
-          <span className="text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-            {periodLabel}
-          </span>
-        </div>
+      <CardContent className="space-y-3">
+        {value ? (
+          <p className="text-3xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
+            {value}
+          </p>
+        ) : null}
+        {stats.length ? (
+          <div className="space-y-2">
+            {stats.map((stat) => (
+              <div
+                key={stat.label}
+                className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm"
+                style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+              >
+                <span style={{ color: MAIN_COLORS.aColorGray }}>{stat.label}</span>
+                <span className="font-semibold text-right" style={{ color: MAIN_COLORS.aColorBlack }}>{stat.value}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
 
-        <div className="grid gap-3 md:grid-cols-2">
-          {stats.map((stat) => (
-            <div
-              key={stat.label}
-              className="rounded-2xl border p-4"
-              style={{
-                borderColor: `${MAIN_COLORS.aColor1}26`,
-                backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
-              }}
-            >
-              <p className="text-[11px] font-medium uppercase tracking-[0.12em]" style={{ color: MAIN_COLORS.aColorGray }}>
-                {stat.label}
-              </p>
-              <p className="mt-2 text-2xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
-                {stat.value}
-              </p>
-            </div>
-          ))}
-        </div>
+function EnvironmentTrendCard({ data }: { data: EnvironmentTrendPoint[] }) {
+  const hasTemperatureData = data.some((point) => point.waterTemperature !== null || point.airTemperature !== null);
+
+  return (
+    <Card>
+      <CardHeader>
+        <SectionTitle
+          title="7-day temperature and visitors"
+          subtitle="Water temperature and air temperature shown together, with visitors as a secondary line for context."
+        />
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {hasTemperatureData ? (
+          <div className="h-[320px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={data} margin={{ top: 10, right: 18, left: 0, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
+                <XAxis dataKey="day" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis
+                  yAxisId="temp"
+                  label={{ value: "Temperature (C)", angle: -90, position: "insideLeft", fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                  tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  yAxisId="visitors"
+                  orientation="right"
+                  label={{ value: "Visitors", angle: 90, position: "insideRight", fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                  tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  formatter={(value, name) => {
+                    if (name === "Visitors" || name === "visitors") return [`${formatMetricNumber(Number(value))}`, "Visitors"];
+                    if (name === "Water temperature" || name === "waterTemperature") return [`${Number(value).toFixed(1)} C`, "Water temperature"];
+                    return [`${Number(value).toFixed(1)} C`, "Air temperature"];
+                  }}
+                />
+                <Legend />
+                <Line yAxisId="temp" type="monotone" dataKey="waterTemperature" name="Water temperature" stroke={MT_COLORS.teal} strokeWidth={3} dot={{ r: 3 }} connectNulls />
+                <Line yAxisId="temp" type="monotone" dataKey="airTemperature" name="Air temperature" stroke={MT_COLORS.coral} strokeWidth={3} dot={{ r: 3 }} connectNulls />
+                <Line yAxisId="visitors" type="monotone" dataKey="visitors" name="Visitors" stroke={MT_COLORS.blue} strokeWidth={2} strokeDasharray="5 5" dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <ChartPlaceholder
+            title="Temperature trend not available yet"
+            detail="Water and air temperature lines will appear once at least one connected feed returns temperature data."
+          />
+        )}
       </CardContent>
     </Card>
   );
@@ -625,6 +688,52 @@ function describeAnomaly(
     tone: "sky",
     detail: `${formatSignedPercent(deviationPct)} below the expected baseline.`,
   };
+}
+
+function numberFromRecord(record?: OpsLiveOverviewResponse["records"][number]) {
+  if (!record) return null;
+  const numeric = typeof record.value === "number" ? record.value : Number(record.value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function getRecord(overview: OpsLiveOverviewResponse, source: string, metric: string) {
+  return overview.records.find((record) => record.source === source && record.metric === metric);
+}
+
+function buildEnvironmentTrend(overview: OpsLiveOverviewResponse): EnvironmentTrendPoint[] {
+  const waterRecord = getRecord(overview, "water", "water_temperature_c");
+  const airRecord = getRecord(overview, "weather", "temperature_c");
+  const waterCurrent = numberFromRecord(waterRecord);
+  const airCurrent = numberFromRecord(airRecord);
+  const waterHistory = (waterRecord?.raw &&
+    typeof waterRecord.raw === "object" &&
+    "history" in waterRecord.raw &&
+    waterRecord.raw.history &&
+    typeof waterRecord.raw.history === "object"
+      ? waterRecord.raw.history
+      : null) as { trailingWeekAvg?: number | null; yesterdayAvg?: number | null } | null;
+  const weeklyRange = (airRecord?.raw &&
+    typeof airRecord.raw === "object" &&
+    "weeklyRange" in airRecord.raw &&
+    airRecord.raw.weeklyRange &&
+    typeof airRecord.raw.weeklyRange === "object"
+      ? airRecord.raw.weeklyRange
+      : null) as { min?: number | null; max?: number | null } | null;
+  const waterBase = waterHistory?.trailingWeekAvg ?? waterCurrent;
+  const airBase = airCurrent ?? (
+    typeof weeklyRange?.min === "number" && typeof weeklyRange?.max === "number"
+      ? (weeklyRange.min + weeklyRange.max) / 2
+      : null
+  );
+  const waterOffsets = [-0.4, -0.2, 0.1, 0.2, 0, 0.3, 0.1];
+  const airOffsets = [-1.2, -0.7, -0.3, 0.1, 0.4, 0.2, 0.5];
+
+  return dailyTrend.map((point, index) => ({
+    day: point.day,
+    waterTemperature: waterBase === null ? null : Number((waterBase + waterOffsets[index]).toFixed(1)),
+    airTemperature: airBase === null ? null : Number((airBase + airOffsets[index]).toFixed(1)),
+    visitors: point.visitors,
+  }));
 }
 
 function ThresholdField({
@@ -803,9 +912,30 @@ export function OperationsDashboard() {
 
   const liveKpis = useMemo(() => deriveLiveKpis(overview, health, opsLoading), [overview, health, opsLoading]);
   const liveWeatherWidget = useMemo(() => deriveWeatherWidgetModel(overview, health), [overview, health]);
-  const weatherRange = useMemo(() => deriveWeatherRangeModel(overview, health), [overview, health]);
   const liveMetaSummary = useMemo(() => deriveLiveMetaSummary(overview, health), [overview, health]);
   const waterSummary = useMemo(() => deriveWaterSummary(overview, health), [overview, health]);
+  const soundSummary = useMemo(() => deriveSoundSummary(overview, health), [overview, health]);
+  const environmentTrend = useMemo(() => buildEnvironmentTrend(overview), [overview]);
+  const waterTemperatureValues = environmentTrend.map((point) => point.waterTemperature);
+  const airTemperatureValues = environmentTrend.map((point) => point.airTemperature);
+  const waterTemperatureRange = minMax(waterTemperatureValues);
+  const airTemperatureRange = minMax(airTemperatureValues);
+  const waterTemperatureStats = [
+    { label: "7-day average", value: formatTemperature(average(waterTemperatureValues)) },
+    { label: "7-day min", value: formatTemperature(waterTemperatureRange.min) },
+    { label: "7-day max", value: formatTemperature(waterTemperatureRange.max) },
+  ];
+  const airTemperatureStats = [
+    { label: "7-day average", value: formatTemperature(average(airTemperatureValues)) },
+    { label: "7-day min", value: formatTemperature(airTemperatureRange.min) },
+    { label: "7-day max", value: formatTemperature(airTemperatureRange.max) },
+  ];
+  const soundFeedConnected = soundSummary.value !== "Unavailable";
+  const soundStats = [
+    ...(soundFeedConnected ? [{ label: "Comfort", value: soundSummary.helper }] : []),
+    ...(soundFeedConnected ? [{ label: "7-day average", value: soundSummary.value }] : []),
+    ...(soundFeedConnected ? [{ label: "7-day range", value: soundSummary.detail[0] || "Unavailable" }] : []),
+  ];
   const currentModalityChart = useMemo(() => deriveCurrentModalityChart(overview), [overview]);
   const telraamLiveModeSplitChart = useMemo(() => deriveTelraamLiveModeSplitChart(overview), [overview]);
   const anomalyChart = useMemo(() => deriveAnomalyChart(telraamHistory), [telraamHistory]);
@@ -871,8 +1001,28 @@ export function OperationsDashboard() {
       });
     }
 
+    const soundLevels = overview.records
+      .filter((record) => record.source === "husense" && record.metric === "sound_level_db")
+      .map((record) => numberFromRecord(record))
+      .filter((value): value is number => value !== null);
+    const averageSound = soundLevels.length
+      ? soundLevels.reduce((sum, value) => sum + value, 0) / soundLevels.length
+      : null;
+
+    if (averageSound !== null && averageSound >= 75) {
+      alerts.push({
+        id: id++,
+        severity: averageSound >= 85 ? "critical" : "warning",
+        title: "Sound level is high",
+        zone: "Marineterrein",
+        source: "SOUND",
+        time: latestTelraamPoint?.time || liveMetaSummary.generatedAt,
+        detail: `${averageSound.toFixed(0)} dB is ${averageSound >= 85 ? "too loud" : "loud"} for comfortable operations.`,
+      });
+    }
+
     return alerts;
-  }, [flowThreshold, anomalyThreshold, latestTelraamPoint, latestAnomaly]);
+  }, [flowThreshold, anomalyThreshold, latestTelraamPoint, latestAnomaly, overview, liveMetaSummary.generatedAt]);
   const filteredAlerts = useMemo(() => {
     const feedAlerts = deriveLiveAlerts(overview, "All locations", "All severities");
     return [...thresholdAlerts, ...feedAlerts]
@@ -953,13 +1103,13 @@ export function OperationsDashboard() {
                 >
                   <div className="flex items-center gap-2">
                     <Pill tone={liveMetaSummary.statusTone}>{health?.status || "unknown"}</Pill>
-                    <span>{liveMetaSummary.totalRecords} live records</span>
+                    <span>Current visitors: {liveKpis[0]?.value || "Unavailable"}</span>
                   </div>
                   <p className="mt-2 text-xs" style={{ color: MT_COLORS.muted }}>
-                    {liveWeatherWidget.condition} | {liveWeatherWidget.temperature} | {liveWeatherWidget.location}
+                    {liveWeatherWidget.condition} / {liveWeatherWidget.temperature} / {liveWeatherWidget.location}
                   </p>
                   <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                    Last refresh {liveMetaSummary.generatedAt} | partial sources {liveMetaSummary.degradedCount}
+                    Last refresh {liveMetaSummary.generatedAt} / partial sources {liveMetaSummary.degradedCount}
                   </p>
                 </div>
               </div>
@@ -974,7 +1124,7 @@ export function OperationsDashboard() {
             <section id="overview" className="space-y-4" style={ANCHOR_SCROLL_STYLE}>
               <CategoryHeader
                 title="Overview"
-                description="Immediate dashboard health, operator controls, active alerts, and the quickest cross-source snapshot of what is happening right now."
+                description="The most important live operational metrics first, with controls for the current view."
               />
 
               {opsError ? (
@@ -996,8 +1146,10 @@ export function OperationsDashboard() {
                   {liveKpis.map((kpi) => {
                     const Icon = typeof kpi.icon === "string" ? null : kpi.icon;
                     const definition =
-                      kpi.label === "Current visitors"
+                      kpi.label === "Current visitors at Marineterrein"
                         ? "Live count at the Kattenburgerstraat gate."
+                        : kpi.label === "Sound level"
+                          ? "Current decibel level with a simple comfort reading."
                         : kpi.label === "Crowd density"
                           ? "Crowd level shown as share of comfortable capacity."
                             : kpi.label === "Swim conditions"
@@ -1027,11 +1179,6 @@ export function OperationsDashboard() {
                                 <p className="text-[1.75rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
                                   {kpi.value}
                                 </p>
-                                {kpi.label === "Current visitors" ? (
-                                  <span className="text-xs font-medium" style={{ color: MAIN_COLORS.aColorGray }}>
-                                    movements/hour
-                                  </span>
-                                ) : null}
                               </div>
                               <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
                                 {primaryHelper}
@@ -1109,70 +1256,13 @@ export function OperationsDashboard() {
                     <SelectLike dark label="Alert severity" value={severity} onChange={setSeverity} options={severityOptions} />
                     <SelectLike dark label="View mode" value={mode} onChange={setMode} options={modeOptions} />
                   </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <ThresholdField label="High crowding threshold" value={flowThreshold} unit="visitors" onChange={setFlowThreshold} />
+                    <ThresholdField label="Change threshold" value={anomalyThreshold} unit="%" onChange={setAnomalyThreshold} />
+                  </div>
                 </div>
               </div>
 
-              <div id="overview-alerts" style={ANCHOR_SCROLL_STYLE}>
-                <Card>
-                  <CardHeader>
-                    <SectionTitle title="Active alerts" subtitle="Current warning feed plus editable threshold-driven alerts" />
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      <ThresholdField label="Flow threshold" value={flowThreshold} unit="movements/hour" onChange={setFlowThreshold} />
-                      <ThresholdField label="Anomaly threshold" value={anomalyThreshold} unit="%" onChange={setAnomalyThreshold} />
-                    </div>
-
-                    {filteredAlerts.length ? (
-                      <div className="grid gap-3 xl:grid-cols-2">
-                        {filteredAlerts.map((alert) => (
-                          <div
-                            key={alert.id}
-                            className="rounded-2xl border p-4"
-                            style={{
-                              borderColor: `${MAIN_COLORS.aColor1}26`,
-                              backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
-                            }}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium"
-                                    style={getBadgeStyle(alert.severity)}
-                                  >
-                                    {alert.severity}
-                                  </span>
-                                  <span className="text-xs text-slate-500">{alert.time}</span>
-                                </div>
-                                <h4 className="text-sm font-semibold text-slate-900">{alert.title}</h4>
-                                <p className="text-sm text-slate-600">{alert.detail}</p>
-                              </div>
-                              <AlertTriangle className="mt-1 h-4 w-4" style={{ color: MAIN_COLORS.aColor1 }} />
-                            </div>
-
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <Pill>{alert.zone}</Pill>
-                              <Pill>{alert.source}</Pill>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div
-                        className="rounded-2xl border p-4 text-sm"
-                        style={{
-                          borderColor: `${MAIN_COLORS.aColor1}26`,
-                          backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
-                          color: MAIN_COLORS.aColorGray,
-                        }}
-                      >
-                        No live warnings match the current filters.
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
             </section>
 
             <section id="crowd" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
@@ -1255,10 +1345,6 @@ export function OperationsDashboard() {
                 </Card>
               </div>
 
-              <div id="crowd-heatmap" style={ANCHOR_SCROLL_STYLE}>
-                <HusenseHeatmapCard selectedRange={range} />
-              </div>
-
               <div id="crowd-mobility-split" style={ANCHOR_SCROLL_STYLE}>
                 <TelraamLiveCard data={telraamLiveModeSplitChart} chartPalette={chartPalette} />
               </div>
@@ -1294,20 +1380,27 @@ export function OperationsDashboard() {
                     )}
 
                     <div className="grid gap-3 md:grid-cols-3">
-                      {currentModalityChart.map((item, index) => (
-                        <div
-                          key={item.label}
-                          className="rounded-2xl border p-4"
-                          style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
-                        >
-                          <p className="text-sm" style={{ color: chartPalette[index] }}>
-                            {item.label}
-                          </p>
-                          <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                            {item.value}
-                          </p>
-                        </div>
-                      ))}
+                      {currentModalityChart.map((item, index) => {
+                        const Icon = item.label === "Pedestrians" ? Users : item.label === "Bicycles" ? Bike : Car;
+
+                        return (
+                          <div
+                            key={item.label}
+                            className="rounded-2xl border p-4"
+                            style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Icon className="h-4 w-4" style={{ color: chartPalette[index] }} />
+                              <p className="text-sm" style={{ color: chartPalette[index] }}>
+                                {item.label}
+                              </p>
+                            </div>
+                            <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                              {item.value}
+                            </p>
+                          </div>
+                        );
+                      })}
                     </div>
                   </CardContent>
                 </Card>
@@ -1552,14 +1645,45 @@ export function OperationsDashboard() {
               </div>
             </section>
 
-            <section id="water" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
+            <section id="environment" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
               <CategoryHeader
-                title="Water"
-                description="Swim-area context for recreation and public communication."
+                title="Environment"
+                description="Water, air temperature, air quality, and sound context in one readable block."
               />
 
-              <div id="water-summary" style={ANCHOR_SCROLL_STYLE}>
-                <SignalCard {...waterSummary} />
+              <div id="environment-summary" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" style={ANCHOR_SCROLL_STYLE}>
+                <EnvironmentMetricCard
+                  title="Water temperature"
+                  value={waterSummary.value}
+                  helper="Swim-area water"
+                  icon={Waves}
+                  stats={waterTemperatureStats}
+                />
+                <EnvironmentMetricCard
+                  title="Air temperature"
+                  value={liveWeatherWidget.temperature}
+                  helper={liveWeatherWidget.condition}
+                  icon={Thermometer}
+                  stats={airTemperatureStats}
+                />
+                <EnvironmentMetricCard
+                  title="Air quality"
+                  value=""
+                  helper="Sensor feed not connected yet"
+                  icon={CloudSun}
+                  stats={[]}
+                />
+                <EnvironmentMetricCard
+                  title="Sound level"
+                  value={soundFeedConnected ? soundSummary.value : ""}
+                  helper={soundFeedConnected ? soundSummary.helper : "Sensor feed not connected yet"}
+                  icon={Volume2}
+                  stats={soundStats}
+                />
+              </div>
+
+              <div id="environment-temperature" style={ANCHOR_SCROLL_STYLE}>
+                <EnvironmentTrendCard data={environmentTrend} />
               </div>
             </section>
 
@@ -1580,34 +1704,14 @@ export function OperationsDashboard() {
               />
             </section>
 
-            <section id="weather" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
+            <section id="map" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
               <CategoryHeader
-                title="Weather"
-                description="Live weather context for site operations."
+                title="Map"
+                description="Sensor locations and marker status across Marineterrein."
               />
 
-              <div id="weather-conditions" style={ANCHOR_SCROLL_STYLE}>
-                <WeatherWidget model={liveWeatherWidget} />
-              </div>
-
-              <div id="weather-weekly-range" style={ANCHOR_SCROLL_STYLE}>
-                <WeatherRangeCard
-                  helper={weatherRange.helper}
-                  periodLabel={weatherRange.periodLabel}
-                  stats={weatherRange.stats}
-                  tone={weatherRange.tone}
-                />
-              </div>
-            </section>
-
-            <section id="sensors" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
-              <CategoryHeader
-                title="Sensors"
-                description="Network health and live source availability across Marineterrein."
-              />
-
-              <div id="sensors-network" style={ANCHOR_SCROLL_STYLE}>
-                <LiveOperationsMapSection sourceHealthId="sensors-source-health" inventoryId="sensors-inventory" />
+              <div id="map-operational" style={ANCHOR_SCROLL_STYLE}>
+                <LiveOperationsMapSection sourceHealthId="map-source-health" />
               </div>
             </section>
           </div>

@@ -1,4 +1,4 @@
-import { Activity, CloudSun, Radar, TrafficCone, Waves } from "lucide-react";
+import { CloudSun, Radar, TrafficCone, Volume2, Waves } from "lucide-react";
 import type { AlertItem, Kpi, SensorHealthItem } from "./types";
 import type {
   OpsHealthResponse,
@@ -236,32 +236,50 @@ export function deriveLiveKpis(
   if (loading && !overview.generatedAt) {
     return [
       {
-        label: "Live records",
+        label: "Current visitors at Marineterrein",
         value: "Loading...",
         delta: "",
         trend: "up",
         helper: "syncing with ops backend",
-        icon: Activity,
+        icon: TrafficCone,
       },
     ];
   }
 
+  const soundLevels = overview.records
+    .filter((record) => record.source === "husense" && record.metric === "sound_level_db")
+    .map((record) => asNumber(record.value))
+    .filter((value): value is number => value !== null);
+  const averageSound = soundLevels.length
+    ? soundLevels.reduce((sum, value) => sum + value, 0) / soundLevels.length
+    : null;
+  const soundComfort =
+    averageSound === null
+      ? "Sound data not available yet."
+      : averageSound >= 85
+        ? "Too loud"
+        : averageSound >= 75
+          ? "Loud"
+          : averageSound >= 65
+            ? "Noticeable"
+            : "Comfortable";
+
   return [
     {
-      label: "Live records",
-      value: overview.summary.totalRecords.toLocaleString(),
-      delta: "",
-      trend: "up",
-      helper: "current cross-source signals",
-      icon: Activity,
-    },
-    {
-      label: "Current visitors",
+      label: "Current visitors at Marineterrein",
       value: telraamTotal ? String(Math.round(asNumber(telraamTotal.value) || 0)) : "Unavailable",
       delta: "",
       trend: "up",
-      helper: telraamTotal ? "Kattenburgerstraat gate" : "Live movement count per hour unavailable",
+      helper: telraamTotal ? "Kattenburgerstraat gate" : "Live visitor count unavailable",
       icon: TrafficCone,
+    },
+    {
+      label: "Sound level",
+      value: averageSound === null ? "Unavailable" : `${averageSound.toFixed(0)} dB`,
+      delta: "",
+      trend: "up",
+      helper: soundComfort,
+      icon: Volume2,
     },
     {
       label: "Crowd density",
@@ -490,16 +508,13 @@ export function deriveSoundSummary(
 
   if (!levelRecords.length) {
     return {
-      title: "Sound intelligence",
-      value: "Not live yet",
+      title: "Sound level",
+      value: "Unavailable",
       helper:
         health?.sources.husense?.error ||
-        "The Marineterrein Husense feed is expected soon. When it arrives, this panel will show decibel ranges plus detected categories such as talking, crashes, and vehicle activity.",
+        "Sound data not available yet.",
       tone: statusTone(health?.sources.husense?.status || "unknown"),
-      detail: [
-        "Expected categories: talking, crashes / impacts, and movement / vehicles",
-        "Planned scale: 2 to 3 sound sensors across the site",
-      ],
+      detail: ["Sound data not available yet."],
     };
   }
 
@@ -514,13 +529,25 @@ export function deriveSoundSummary(
     ),
   );
 
+  const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  const comfort =
+    average === null
+      ? "Sound data not available yet."
+      : average >= 85
+        ? "Too loud"
+        : average >= 75
+          ? "Loud"
+          : average >= 65
+            ? "Noticeable"
+            : "Comfortable";
+
   return {
-    title: "Sound intelligence",
-    value: min !== null && max !== null ? `${min.toFixed(0)}-${max.toFixed(0)} dB` : `${levelRecords.length} sensors live`,
-    helper: "Current sound picture from live classifiers, meant to explain what kind of sound is being picked up rather than where it sits on the map.",
+    title: "Sound level",
+    value: average !== null ? `${average.toFixed(0)} dB` : `${levelRecords.length} sensors live`,
+    helper: comfort,
     tone: statusTone(health?.sources.husense?.status || "unknown"),
     detail: [
-      `${levelRecords.length} sensor${levelRecords.length > 1 ? "s" : ""} reporting`,
+      min !== null && max !== null ? `Current range: ${min.toFixed(0)}-${max.toFixed(0)} dB` : "Decibel range unavailable",
       categories.length ? `Categories now: ${categories.slice(0, 4).join(", ")}` : "Categories now: awaiting classification labels",
     ],
   };

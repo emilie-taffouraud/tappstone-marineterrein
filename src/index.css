@@ -59,6 +59,11 @@ body {
     sans-serif;
 }
 
+.ops-map-muted-tiles {
+  filter: grayscale(1) saturate(0.12) contrast(0.86) brightness(1.08);
+  opacity: 0.74;
+}
+
 h1,
 h2,
 h3,

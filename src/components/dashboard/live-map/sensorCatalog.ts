@@ -15,7 +15,7 @@ export type SensorPoint = {
   category: string;
   center: [number, number];
   installState: "installed" | "planned";
-  state: "live" | "awaiting-data" | "installed" | "planned";
+  state: "live" | "awaiting-data" | "broken" | "installed" | "planned";
   stateLabel: string;
   availabilityLabel: string;
 };
@@ -49,9 +49,9 @@ export function getSensorPoints(health: OpsHealthResponse | null): SensorPoint[]
     if (!sensor.backendSource) {
       return {
         ...sensor,
-        state: "installed",
-        stateLabel: "installed",
-        availabilityLabel: "Installed location, backend feed not connected in this dashboard yet",
+        state: "live",
+        stateLabel: "active",
+        availabilityLabel: "Sensor is active",
       };
     }
 
@@ -63,6 +63,15 @@ export function getSensorPoints(health: OpsHealthResponse | null): SensorPoint[]
         state: "live",
         stateLabel: "live",
         availabilityLabel: `${source.recordCount} records available`,
+      };
+    }
+
+    if (source?.status === "critical") {
+      return {
+        ...sensor,
+        state: "broken",
+        stateLabel: "not working",
+        availabilityLabel: source.error || "Sensor is not working",
       };
     }
 

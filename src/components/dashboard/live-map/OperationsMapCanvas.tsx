@@ -6,10 +6,15 @@ import type { LayerVisibility, WarningPoint, WeatherPoint, ZoneFeature } from ".
 import type { SensorPoint } from "./sensorCatalog";
 
 function sensorColor(state: SensorPoint["state"]) {
-  if (state === "live") return MT_COLORS.teal;
-  if (state === "awaiting-data") return MT_COLORS.yellow;
-  if (state === "installed") return MT_COLORS.blue;
-  return MT_COLORS.paleBlue;
+  if (state === "live") return "#2f9e44";
+  if (state === "broken") return "#dc2626";
+  return "#f59e0b";
+}
+
+function sensorPopupMessage(point: SensorPoint) {
+  if (point.state === "live") return point.availabilityLabel;
+  if (point.state === "broken") return "This sensor is not working.";
+  return point.availabilityLabel || "Data not available.";
 }
 
 function zoneColor(status: ZoneFeature["status"]) {
@@ -33,7 +38,7 @@ export function OperationsMapCanvas({
   warningPoints: WarningPoint[];
 }) {
   return (
-    <div className="overflow-hidden rounded-[20px] border bg-[linear-gradient(180deg,#f8fbfd_0%,#edf6f8_100%)] shadow-[0_8px_24px_rgba(26,75,88,0.06)]" style={{ borderColor: MT_COLORS.border }}>
+    <div className="overflow-hidden rounded-[20px] border bg-[#eef2f4] shadow-[0_8px_24px_rgba(26,75,88,0.06)]" style={{ borderColor: MT_COLORS.border }}>
       <MapContainer
         center={MAP_CENTER}
         zoom={MAP_ZOOM}
@@ -43,6 +48,7 @@ export function OperationsMapCanvas({
         className="h-[560px] w-full"
       >
         <TileLayer
+          className="ops-map-muted-tiles"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
@@ -65,7 +71,7 @@ export function OperationsMapCanvas({
                     <div className="space-y-2">
                       <p className="text-sm font-semibold text-slate-900">{zone.displayName}</p>
                       <p className="text-xs text-slate-600">
-                        {zone.recordCount} live records, {zone.activeWarnings} warnings, gate flow score {zone.mobilityScore || 0}
+                        {zone.recordCount} data points, {zone.activeWarnings} warnings, gate flow score {zone.mobilityScore || 0}
                       </p>
                       <p className="text-xs text-slate-600">Context: {zone.weatherSummary || "No mapped weather note yet"}</p>
                     </div>
@@ -87,7 +93,7 @@ export function OperationsMapCanvas({
                     <div className="space-y-2">
                       <p className="text-sm font-semibold text-slate-900">{zone.displayName}</p>
                       <p className="text-xs text-slate-600">
-                        {zone.recordCount} live records, {zone.activeWarnings} warnings, gate flow score {zone.mobilityScore || 0}
+                        {zone.recordCount} data points, {zone.activeWarnings} warnings, gate flow score {zone.mobilityScore || 0}
                       </p>
                       <p className="text-xs text-slate-600">Context: {zone.weatherSummary || "No mapped weather note yet"}</p>
                     </div>
@@ -119,12 +125,12 @@ export function OperationsMapCanvas({
             <CircleMarker
               key={point.id}
               center={point.center}
-              radius={point.installState === "planned" ? 6 : 8}
+              radius={point.installState === "planned" ? 6 : 9}
               pathOptions={{
-                color: sensorColor(point.state),
+                color: "#ffffff",
                 fillColor: sensorColor(point.state),
-                fillOpacity: 0.8,
-                weight: 2,
+                fillOpacity: 0.94,
+                weight: 3,
               }}
             >
               {visibility.labels ? (
@@ -137,7 +143,10 @@ export function OperationsMapCanvas({
                   <p className="text-sm font-semibold text-slate-900">{point.name}</p>
                   <p className="text-xs text-slate-600">{point.category}</p>
                   <p className="text-xs text-slate-600">State: {point.stateLabel}</p>
-                  <p className="text-xs text-slate-600">{point.availabilityLabel}</p>
+                  <p className="text-xs text-slate-600">
+                    {point.state === "live" ? "Data available" : point.state === "broken" ? "Data not available" : "Data not found"}
+                  </p>
+                  <p className="text-xs text-slate-600">{sensorPopupMessage(point)}</p>
                 </div>
               </Popup>
             </CircleMarker>

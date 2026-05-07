@@ -214,11 +214,11 @@ export default function TelraamLiveCard({
             className="rounded-2xl border p-4 md:self-start"
             style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
           >
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {renderTravelTypeIcon("Total flow", MAIN_COLORS.aColor1)}
               <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
                 Total flow
               </p>
-              {renderTravelTypeIcon("Total flow", MAIN_COLORS.aColor1)}
             </div>
             <p className="mt-2 text-3xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
               {totalFlow}
@@ -276,11 +276,11 @@ export default function TelraamLiveCard({
               className="rounded-2xl border p-4"
               style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                {renderTravelTypeIcon(item.label, getTravelTypeLabelColor(item.label))}
                 <p className="text-sm" style={{ color: getTravelTypeLabelColor(item.label) }}>
                   {item.label}
                 </p>
-                {renderTravelTypeIcon(item.label, getTravelTypeLabelColor(item.label))}
               </div>
               <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
                 {item.value}
@@ -304,11 +304,11 @@ export default function TelraamLiveCard({
                     backgroundColor: `${MAIN_COLORS.aColorWhite}8f`,
                   }}
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    {renderTravelTypeIcon(item.label, getTravelTypeLabelColor(item.label, true), 0.55)}
                     <p className="text-sm" style={{ color: getTravelTypeLabelColor(item.label, true) }}>
                       {item.label}
                     </p>
-                    {renderTravelTypeIcon(item.label, getTravelTypeLabelColor(item.label, true), 0.55)}
                   </div>
                   <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorGray }}>
                     {item.value}

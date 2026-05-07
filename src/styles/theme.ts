@@ -71,8 +71,8 @@ export const DASHBOARD_CARD_TITLE_THEME = {
 
 export const TELRAAM_LIVE_CARD_THEME = {
   icon: {
-    width: "3.25rem",
-    height: "3.25rem",
+    width: "2.15rem",
+    height: "2.15rem",
     objectFit: "contain" as const,
   },
   travelTypeLabelColors: {
@@ -156,7 +156,7 @@ export const LIVE_MAP_LEGEND_THEME = {
       accent: MT_COLORS.cyan,
     },
     sensors: {
-      accent: MT_COLORS.darkTeal,
+      accent: MT_COLORS.teal,
     },
     weather: {
       accent: MT_COLORS.green,

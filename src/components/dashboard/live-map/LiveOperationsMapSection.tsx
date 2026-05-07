@@ -39,10 +39,8 @@ function getSensorFeedLabel(sourceName: string) {
 
 export function LiveOperationsMapSection({
   sourceHealthId,
-  inventoryId,
 }: {
   sourceHealthId?: string;
-  inventoryId?: string;
 }) {
   const [visibility, setVisibility] = useState<LayerVisibility>(DEFAULT_VISIBILITY);
   const { overview, health, loading, error } = useOpsLiveData();
@@ -93,15 +91,12 @@ export function LiveOperationsMapSection({
       <CardHeader className="pb-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <SectionTitle
-            title="Sensor locations across Marineterrein"
-            subtitle="Live source status across the terrain."
+            title="Operational map"
+            subtitle="Sensor locations and current data status across Marineterrein."
           />
 
           <div className="flex flex-wrap items-center gap-2">
             <Pill tone={getStatusTone(health?.status || "error")}>{health?.status || "loading"}</Pill>
-            <Pill tone={hasLiveData ? "emerald" : "slate"}>
-              {hasLiveData ? `${overview.records.length} live records` : "No live records yet"}
-            </Pill>
             <span
               className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs"
               style={{
@@ -204,7 +199,7 @@ export function LiveOperationsMapSection({
               color: MAIN_COLORS.aColorGray,
             }}
           >
-            No live records yet. The map is still showing Marineterrein zones and source health while upstream feeds recover
+            No live data yet. The map is still showing Marineterrein zones and source health while upstream feeds recover
             or new sensors come online.
           </div>
         ) : null}
@@ -214,7 +209,6 @@ export function LiveOperationsMapSection({
           health={health}
           sensorPoints={sensorPoints}
           sourceHealthId={sourceHealthId}
-          inventoryId={inventoryId}
         />
       </CardContent>
     </Card>
