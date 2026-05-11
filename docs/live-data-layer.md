@@ -24,7 +24,7 @@
 - Uses in-memory cache only
 - Uses per-request timeouts
 - Returns partial results when one source fails
-- Keeps existing mock UI data separate from the new live backend layer
+- Keeps dashboard UI data sourced from backend live-data endpoints, with empty/degraded states when a source is unavailable
 
 ## Local testing
 

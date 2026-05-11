@@ -77,4 +77,4 @@ type UnifiedLiveRecord = {
 
 - The new live layer uses simple in-memory caching and request timeouts only.
 - Source failures are isolated, so one broken upstream should not break the whole `/api/ops/live/*` response.
-- Existing mock dashboard data remains in [src/data/mockDashboardData.ts](C:\Users\Admin\OneDrive\Desktop\UVA\yr3_sem6\ops-dashboard\ops-dashboard2\src\data\mockDashboardData.ts) and is still separate from the new backend live-data contract.
+- Dashboard views now rely on backend live-data endpoints and show empty/degraded states when a live source is unavailable.

@@ -21,7 +21,7 @@ import TelraamStoredCard from "./TelraamStoredCard";
 import UpcomingAgendaCard from "./UpcomingAgendaCard";
 import TelraamLiveCard from "./TelraamLiveCard";
 import { LiveOperationsMapSection } from "./live-map/LiveOperationsMapSection";
-import { fetchOpsAgenda, type AgendaItem, type OpsLiveOverviewResponse } from "../../lib/opsLiveClient";
+import { fetchOpsAgenda, type AgendaItem, type OpsLiveOverviewResponse, type TelraamTrafficPoint } from "../../lib/opsLiveClient";
 import {
   deriveAnomalyChart,
   deriveCurrentModalityChart,
@@ -36,7 +36,6 @@ import {
 } from "./opsLiveViewModel";
 import { Card, CardContent, CardHeader, Pill, SectionTitle, SelectLike } from "./ui";
 import type { AlertItem } from "./types";
-import { dailyTrend, operationalZoneOccupancy, temporaryTrafficComparisonBaseline } from "../../data/mockDashboardData";
 
 const locationOptions = ["All locations", "Portiersloge", "TAPP", "CODAM", "AHK MakerSpace", "Swim area"];
 const sensorCategories = [
@@ -118,11 +117,10 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
 
 const HIDDEN_OCCUPANCY_ZONE_IDS = new Set(["5db05d88-7833-440a-9c3e-24c93fb08406"]);
 
-const DAILY_ZONE_STACK = [
-  { key: "terraceVisitors", label: "Terrace", color: MT_COLORS.cyan },
-  { key: "boardwalkVisitors", label: "Boardwalk", color: MT_COLORS.blue },
-  { key: "picnicLawnVisitors", label: "Picnic lawn", color: MT_COLORS.green },
-  { key: "swimAreaVisitors", label: "Swim area", color: MT_COLORS.teal },
+const DAILY_MOVEMENT_STACK = [
+  { key: "pedestrianVisitors", label: "Pedestrians", color: MT_COLORS.cyan },
+  { key: "bicycleVisitors", label: "Bicycles", color: MT_COLORS.blue },
+  { key: "vehicleVisitors", label: "Vehicles", color: MT_COLORS.teal },
 ] as const;
 
 const NAV_ACCENTS: Record<string, string> = {
@@ -144,6 +142,37 @@ type EnvironmentTrendPoint = {
   waterTemperature: number | null;
   airTemperature: number | null;
   visitors: number;
+};
+
+type PresenceZone = {
+  id?: string | number;
+  name?: string;
+  zone?: string;
+  label?: string;
+  capacity?: number | string | null;
+  presenceCount?: number | string | null;
+  currentPresence?: number | string | null;
+  currentOccupancy?: number | string | null;
+  occupancyCount?: number | string | null;
+  peopleCount?: number | string | null;
+  count?: number | string | null;
+};
+
+type OccupancyCardModel = {
+  id: string;
+  zone: string;
+  visitors: number;
+  capacity: number | null;
+  density: number;
+};
+
+type DailyMovementPoint = {
+  day: string;
+  visitors: number;
+  pedestrianVisitors: number;
+  bicycleVisitors: number;
+  vehicleVisitors: number;
+  isToday?: boolean;
 };
 
 function resolveActiveSection(activeId: string) {
@@ -700,7 +729,92 @@ function getRecord(overview: OpsLiveOverviewResponse, source: string, metric: st
   return overview.records.find((record) => record.source === source && record.metric === metric);
 }
 
-function buildEnvironmentTrend(overview: OpsLiveOverviewResponse): EnvironmentTrendPoint[] {
+function parseOptionalNumber(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function readPresenceCount(zone: PresenceZone) {
+  return (
+    parseOptionalNumber(zone.presenceCount) ??
+    parseOptionalNumber(zone.currentPresence) ??
+    parseOptionalNumber(zone.currentOccupancy) ??
+    parseOptionalNumber(zone.occupancyCount) ??
+    parseOptionalNumber(zone.peopleCount) ??
+    parseOptionalNumber(zone.count) ??
+    0
+  );
+}
+
+function buildOccupancyCards(zones: PresenceZone[]): OccupancyCardModel[] {
+  return zones.map((zone, index) => {
+    const visitors = readPresenceCount(zone);
+    const capacity = parseOptionalNumber(zone.capacity);
+    const density = capacity && capacity > 0 ? Math.min(100, Math.round((visitors / capacity) * 100)) : 0;
+    const id = String(zone.id ?? zone.name ?? zone.zone ?? `zone-${index + 1}`);
+
+    return {
+      id,
+      zone: zone.name || zone.zone || zone.label || `Zone ${index + 1}`,
+      visitors,
+      capacity,
+      density,
+    };
+  });
+}
+
+function buildOccupancyInsight(zones: OccupancyCardModel[], error: string | null) {
+  if (!zones.length) {
+    return error
+      ? "Crowd density is unavailable because the Husense backend feed could not be loaded."
+      : "Crowd density will appear when the Husense backend returns live zone readings.";
+  }
+
+  const busiest = [...zones].sort((left, right) => right.density - left.density || right.visitors - left.visitors)[0];
+  const hasCapacity = busiest.capacity !== null;
+  const comparison = hasCapacity
+    ? `${busiest.density}% of the configured comfortable capacity`
+    : `${formatMetricNumber(busiest.visitors)} people currently detected`;
+
+  return `${busiest.zone} is currently the busiest live Husense zone at ${comparison}.`;
+}
+
+function buildDailyMovementTrend(points: TelraamTrafficPoint[]): DailyMovementPoint[] {
+  const grouped = new Map<string, DailyMovementPoint>();
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  for (const point of points) {
+    const recordedAt = new Date(point.recorded_at);
+    if (Number.isNaN(recordedAt.getTime())) continue;
+
+    const dayKey = recordedAt.toISOString().slice(0, 10);
+    const existing =
+      grouped.get(dayKey) || {
+        day: recordedAt.toLocaleDateString([], { month: "short", day: "numeric" }),
+        visitors: 0,
+        pedestrianVisitors: 0,
+        bicycleVisitors: 0,
+        vehicleVisitors: 0,
+        isToday: dayKey === todayKey,
+      };
+
+    existing.pedestrianVisitors += Number(point.pedestrian_count || 0);
+    existing.bicycleVisitors += Number(point.bicycle_count || 0);
+    existing.vehicleVisitors += Number(point.vehicle_count || 0);
+    existing.visitors = existing.pedestrianVisitors + existing.bicycleVisitors + existing.vehicleVisitors;
+    grouped.set(dayKey, existing);
+  }
+
+  return [...grouped.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .slice(-7)
+    .map(([, point]) => point);
+}
+
+function buildEnvironmentTrend(
+  overview: OpsLiveOverviewResponse,
+  dailyMovementTrend: DailyMovementPoint[],
+): EnvironmentTrendPoint[] {
   const waterRecord = getRecord(overview, "water", "water_temperature_c");
   const airRecord = getRecord(overview, "weather", "temperature_c");
   const waterCurrent = numberFromRecord(waterRecord);
@@ -719,21 +833,37 @@ function buildEnvironmentTrend(overview: OpsLiveOverviewResponse): EnvironmentTr
     typeof airRecord.raw.weeklyRange === "object"
       ? airRecord.raw.weeklyRange
       : null) as { min?: number | null; max?: number | null } | null;
-  const waterBase = waterHistory?.trailingWeekAvg ?? waterCurrent;
-  const airBase = airCurrent ?? (
-    typeof weeklyRange?.min === "number" && typeof weeklyRange?.max === "number"
-      ? (weeklyRange.min + weeklyRange.max) / 2
-      : null
-  );
-  const waterOffsets = [-0.4, -0.2, 0.1, 0.2, 0, 0.3, 0.1];
-  const airOffsets = [-1.2, -0.7, -0.3, 0.1, 0.4, 0.2, 0.5];
+  const latestVisitors = dailyMovementTrend.length ? dailyMovementTrend[dailyMovementTrend.length - 1].visitors : 0;
+  const trend: EnvironmentTrendPoint[] = [];
 
-  return dailyTrend.map((point, index) => ({
-    day: point.day,
-    waterTemperature: waterBase === null ? null : Number((waterBase + waterOffsets[index]).toFixed(1)),
-    airTemperature: airBase === null ? null : Number((airBase + airOffsets[index]).toFixed(1)),
-    visitors: point.visitors,
-  }));
+  if (typeof waterHistory?.trailingWeekAvg === "number" || typeof weeklyRange?.min === "number") {
+    trend.push({
+      day: "7d low",
+      waterTemperature: waterHistory?.trailingWeekAvg ?? null,
+      airTemperature: weeklyRange?.min ?? null,
+      visitors: 0,
+    });
+  }
+
+  if (typeof waterHistory?.yesterdayAvg === "number" || typeof weeklyRange?.max === "number") {
+    trend.push({
+      day: "7d high",
+      waterTemperature: waterHistory?.yesterdayAvg ?? null,
+      airTemperature: weeklyRange?.max ?? null,
+      visitors: 0,
+    });
+  }
+
+  if (waterCurrent !== null || airCurrent !== null || latestVisitors > 0) {
+    trend.push({
+      day: "Now",
+      waterTemperature: waterCurrent,
+      airTemperature: airCurrent,
+      visitors: latestVisitors,
+    });
+  }
+
+  return trend;
 }
 
 function ThresholdField({
@@ -807,7 +937,7 @@ export function OperationsDashboard() {
   const [agendaLoading, setAgendaLoading] = useState(true);
   const [agendaError, setAgendaError] = useState<string | null>(null);
   const [activeNavId, setActiveNavId] = useState(DASHBOARD_NAV[0].id);
-  const [occupancyData, setOccupancyData] = useState<any[]>([]);
+  const [occupancyData, setOccupancyData] = useState<PresenceZone[]>([]);
   const [husenseError, setHusenseError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -819,8 +949,6 @@ export function OperationsDashboard() {
         if (!response.ok) throw new Error("Husense Network Error");
         const data = await response.json();
 
-        console.log("Husense Data fetched successfully:", data);
-
         // Handle the live endpoint defensively because the upstream payload shape can vary.
         const zones = Array.isArray(data) ? data : (data?.value || data?.zones || data?.data || [data]);
 
@@ -830,7 +958,10 @@ export function OperationsDashboard() {
         }
       } catch (err: any) {
         console.error("Failed to fetch Husense:", err);
-        if (!cancelled) setHusenseError(err.message);
+        if (!cancelled) {
+          setHusenseError(err.message);
+          setOccupancyData([]);
+        }
       }
     };
 
@@ -915,7 +1046,8 @@ export function OperationsDashboard() {
   const liveMetaSummary = useMemo(() => deriveLiveMetaSummary(overview, health), [overview, health]);
   const waterSummary = useMemo(() => deriveWaterSummary(overview, health), [overview, health]);
   const soundSummary = useMemo(() => deriveSoundSummary(overview, health), [overview, health]);
-  const environmentTrend = useMemo(() => buildEnvironmentTrend(overview), [overview]);
+  const dailyMovementTrend = useMemo(() => buildDailyMovementTrend(telraamHistory), [telraamHistory]);
+  const environmentTrend = useMemo(() => buildEnvironmentTrend(overview, dailyMovementTrend), [overview, dailyMovementTrend]);
   const waterTemperatureValues = environmentTrend.map((point) => point.waterTemperature);
   const airTemperatureValues = environmentTrend.map((point) => point.airTemperature);
   const waterTemperatureRange = minMax(waterTemperatureValues);
@@ -941,18 +1073,16 @@ export function OperationsDashboard() {
   const anomalyChart = useMemo(() => deriveAnomalyChart(telraamHistory), [telraamHistory]);
   const telraamTrendChart = useMemo(() => deriveTelraamTrendChart(telraamHistory), [telraamHistory]);
   const trafficComparisonChart = useMemo<TrafficComparisonPoint[]>(
-    () =>
-      anomalyChart.length
-        ? buildTrafficComparisonFromAnomaly(anomalyChart)
-        : temporaryTrafficComparisonBaseline.map((point) => ({ ...point })),
+    () => (anomalyChart.length ? buildTrafficComparisonFromAnomaly(anomalyChart) : []),
     [anomalyChart],
   );
-  const trafficComparisonUsesTemporaryBaseline = !anomalyChart.length;
   const trafficComparisonInsight = useMemo(() => buildTrafficInsight(trafficComparisonChart), [trafficComparisonChart]);
-  const visibleOccupancyData = useMemo(
+  const visibleOccupancyZones = useMemo(
     () => occupancyData.filter((zone) => !HIDDEN_OCCUPANCY_ZONE_IDS.has(String(zone?.id ?? ""))),
     [occupancyData],
   );
+  const occupancyCards = useMemo(() => buildOccupancyCards(visibleOccupancyZones), [visibleOccupancyZones]);
+  const occupancyInsight = useMemo(() => buildOccupancyInsight(occupancyCards, husenseError), [occupancyCards, husenseError]);
 
   const chartPalette = [
     MT_COLORS.cyan,
@@ -1286,14 +1416,15 @@ export function OperationsDashboard() {
                       </div>
                     ) : null}
 
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      {operationalZoneOccupancy.map((occupancyZone) => {
+                    {occupancyCards.length ? (
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        {occupancyCards.map((occupancyZone) => {
                         const density = occupancyZone.density;
                         const status = getOccupancyStatus(density);
 
                         return (
                           <div
-                            key={occupancyZone.zone}
+                            key={occupancyZone.id}
                             className="rounded-2xl border p-4"
                             style={{
                               borderColor: `${MAIN_COLORS.aColor1}26`,
@@ -1306,6 +1437,11 @@ export function OperationsDashboard() {
                               </p>
                               <Pill tone={status.tone}>{status.label}</Pill>
                             </div>
+
+                            <p className="mt-2 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                              {formatMetricNumber(occupancyZone.visitors)} detected
+                              {occupancyZone.capacity ? ` / ${formatMetricNumber(occupancyZone.capacity)} capacity` : ""}
+                            </p>
 
                             <div className="mt-4">
                               <div className="mb-1.5 flex items-end justify-between gap-3">
@@ -1328,8 +1464,14 @@ export function OperationsDashboard() {
                             </div>
                           </div>
                         );
-                      })}
-                    </div>
+                        })}
+                      </div>
+                    ) : (
+                      <ChartPlaceholder
+                        title="Crowd density not available yet"
+                        detail={husenseError || "The Husense backend has not returned live zone readings yet."}
+                      />
+                    )}
 
                     <div
                       className="rounded-2xl border px-4 py-3 text-sm leading-6"
@@ -1339,7 +1481,7 @@ export function OperationsDashboard() {
                         color: MAIN_COLORS.aColorBlack,
                       }}
                     >
-                      Terrace is currently busiest. Boardwalk still has room and can absorb overflow.
+                      {occupancyInsight}
                     </div>
                   </CardContent>
                 </Card>
@@ -1508,13 +1650,13 @@ export function OperationsDashboard() {
                   <Card>
                     <CardHeader>
                       <SectionTitle
-                        title="Daily visitors"
-                        subtitle="Stacked view of estimated visitors by zone. Each colored section shows one area of the site."
+                        title="Daily movement"
+                        subtitle="Stacked view of stored Telraam movement rows from the backend, grouped by day and travel mode."
                       />
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="flex flex-wrap items-center gap-3 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                        {DAILY_ZONE_STACK.map((zoneItem) => (
+                        {DAILY_MOVEMENT_STACK.map((zoneItem) => (
                           <span key={zoneItem.key} className="inline-flex items-center gap-1.5">
                             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: zoneItem.color }} />
                             {zoneItem.label}
@@ -1526,49 +1668,56 @@ export function OperationsDashboard() {
                         </span>
                       </div>
 
-                      <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <ComposedChart data={dailyTrend} margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
-                            <XAxis dataKey="day" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                            <YAxis
-                              label={{ value: "Visitors", angle: -90, position: "insideLeft", fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
-                              tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
-                              axisLine={false}
-                              tickLine={false}
-                            />
-                            <Tooltip
-                              formatter={(value, name) => [
-                                `${formatMetricNumber(Number(value))} visitors`,
-                                DAILY_ZONE_STACK.find((item) => item.key === name)?.label || String(name),
-                              ]}
-                              labelFormatter={(label) => `${label}${dailyTrend.find((item) => item.day === label)?.isToday ? " - Today" : ""}`}
-                            />
-                            <Legend />
-                            {DAILY_ZONE_STACK.map((zoneItem) => (
-                              <Bar
-                                key={zoneItem.key}
-                                dataKey={zoneItem.key}
-                                name={zoneItem.label}
-                                stackId="visitors"
-                                fill={zoneItem.color}
-                                radius={zoneItem.key === "swimAreaVisitors" ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                      {dailyMovementTrend.length ? (
+                        <div className="h-[300px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={dailyMovementTrend} margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
+                              <XAxis dataKey="day" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                              <YAxis
+                                label={{ value: "Movement", angle: -90, position: "insideLeft", fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                                tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                                axisLine={false}
+                                tickLine={false}
                               />
-                            ))}
-                            <Line
-                              type="monotone"
-                              dataKey={(point) => (point.isToday ? point.visitors : null)}
-                              name="Today"
-                              stroke="#111827"
-                              strokeWidth={0}
-                              dot={{ r: 5, fill: "#ffffff", stroke: "#111827", strokeWidth: 2 }}
-                              activeDot={{ r: 6, fill: "#ffffff", stroke: "#111827", strokeWidth: 2 }}
-                              connectNulls={false}
-                              legendType="none"
-                            />
-                          </ComposedChart>
-                        </ResponsiveContainer>
-                      </div>
+                              <Tooltip
+                                formatter={(value, name) => [
+                                  `${formatMetricNumber(Number(value))} movements`,
+                                  DAILY_MOVEMENT_STACK.find((item) => item.key === name)?.label || String(name),
+                                ]}
+                                labelFormatter={(label) => `${label}${dailyMovementTrend.find((item) => item.day === label)?.isToday ? " - Today" : ""}`}
+                              />
+                              <Legend />
+                              {DAILY_MOVEMENT_STACK.map((zoneItem) => (
+                                <Bar
+                                  key={zoneItem.key}
+                                  dataKey={zoneItem.key}
+                                  name={zoneItem.label}
+                                  stackId="visitors"
+                                  fill={zoneItem.color}
+                                  radius={zoneItem.key === "vehicleVisitors" ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                                />
+                              ))}
+                              <Line
+                                type="monotone"
+                                dataKey={(point) => (point.isToday ? point.visitors : null)}
+                                name="Today"
+                                stroke="#111827"
+                                strokeWidth={0}
+                                dot={{ r: 5, fill: "#ffffff", stroke: "#111827", strokeWidth: 2 }}
+                                activeDot={{ r: 6, fill: "#ffffff", stroke: "#111827", strokeWidth: 2 }}
+                                connectNulls={false}
+                                legendType="none"
+                              />
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ) : (
+                        <ChartPlaceholder
+                          title="Daily movement not available yet"
+                          detail={telraamHistoryError || "Stored Telraam movement rows are needed before this chart can be drawn."}
+                        />
+                      )}
                     </CardContent>
                   </Card>
                 </div>
@@ -1583,51 +1732,56 @@ export function OperationsDashboard() {
                         />
                         <div className="flex items-center gap-2">
                           <InfoHint label="Expected vs measured compares counted movement with the expected movement pattern for the selected time range." />
-                          <Pill tone={trafficComparisonUsesTemporaryBaseline ? "amber" : "sky"}>
-                            {trafficComparisonUsesTemporaryBaseline ? "temporary baseline" : "loaded traffic"}
-                          </Pill>
+                          {trafficComparisonChart.length ? <Pill tone="sky">loaded traffic</Pill> : null}
                         </div>
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <ComposedChart data={trafficComparisonChart} margin={{ top: 8, right: 18, left: 0, bottom: 8 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
-                            <XAxis
-                              dataKey="time"
-                              label={{ value: "Time", position: "insideBottom", offset: -4, fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
-                              tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
-                              axisLine={false}
-                              tickLine={false}
-                            />
-                            <YAxis
-                              label={{ value: "Movement", angle: -90, position: "insideLeft", fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
-                              tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
-                              axisLine={false}
-                              tickLine={false}
-                            />
-                            <Tooltip
-                              formatter={(value, name) => [
-                                `${formatMetricNumber(Number(value))} movements/hour`,
-                                name === "measured" ? "Measured movement" : "Expected movement",
-                              ]}
-                            />
-                            <Legend
-                              formatter={(value) => (value === "measured" ? "Measured" : value === "expected" ? "Expected" : value)}
-                            />
-                            <Bar dataKey="measured" name="Measured" fill={MT_COLORS.coral} radius={[6, 6, 0, 0]} />
-                            <Line
-                              type="monotone"
-                              dataKey="expected"
-                              name="Expected"
-                              stroke={MT_COLORS.cyan}
-                              strokeWidth={3}
-                              dot={{ r: 3, fill: MT_COLORS.cyan }}
-                            />
-                          </ComposedChart>
-                        </ResponsiveContainer>
-                      </div>
+                      {trafficComparisonChart.length ? (
+                        <div className="h-[300px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={trafficComparisonChart} margin={{ top: 8, right: 18, left: 0, bottom: 8 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
+                              <XAxis
+                                dataKey="time"
+                                label={{ value: "Time", position: "insideBottom", offset: -4, fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                                tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                                axisLine={false}
+                                tickLine={false}
+                              />
+                              <YAxis
+                                label={{ value: "Movement", angle: -90, position: "insideLeft", fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                                tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                                axisLine={false}
+                                tickLine={false}
+                              />
+                              <Tooltip
+                                formatter={(value, name) => [
+                                  `${formatMetricNumber(Number(value))} movements/hour`,
+                                  name === "measured" ? "Measured movement" : "Expected movement",
+                                ]}
+                              />
+                              <Legend
+                                formatter={(value) => (value === "measured" ? "Measured" : value === "expected" ? "Expected" : value)}
+                              />
+                              <Bar dataKey="measured" name="Measured" fill={MT_COLORS.coral} radius={[6, 6, 0, 0]} />
+                              <Line
+                                type="monotone"
+                                dataKey="expected"
+                                name="Expected"
+                                stroke={MT_COLORS.cyan}
+                                strokeWidth={3}
+                                dot={{ r: 3, fill: MT_COLORS.cyan }}
+                              />
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ) : (
+                        <ChartPlaceholder
+                          title="Expected comparison not available yet"
+                          detail={telraamHistoryError || "The backend needs stored Telraam rows before expected movement can be computed."}
+                        />
+                      )}
 
                       <div
                         className="rounded-2xl border px-4 py-3 text-sm leading-6"
