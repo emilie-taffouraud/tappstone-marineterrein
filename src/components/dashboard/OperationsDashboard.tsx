@@ -866,6 +866,23 @@ function buildEnvironmentTrend(
   return trend;
 }
 
+function getWaterHistoryStats(overview: OpsLiveOverviewResponse) {
+  const waterRecord = getRecord(overview, "water", "water_temperature_c");
+  return (waterRecord?.raw &&
+    typeof waterRecord.raw === "object" &&
+    "history" in waterRecord.raw &&
+    waterRecord.raw.history &&
+    typeof waterRecord.raw.history === "object"
+      ? waterRecord.raw.history
+      : null) as
+    | {
+        trailingWeekAvg?: number | null;
+        trailingWeekMin?: number | null;
+        trailingWeekMax?: number | null;
+      }
+    | null;
+}
+
 function ThresholdField({
   label,
   value,
@@ -1048,14 +1065,15 @@ export function OperationsDashboard() {
   const soundSummary = useMemo(() => deriveSoundSummary(overview, health), [overview, health]);
   const dailyMovementTrend = useMemo(() => buildDailyMovementTrend(telraamHistory), [telraamHistory]);
   const environmentTrend = useMemo(() => buildEnvironmentTrend(overview, dailyMovementTrend), [overview, dailyMovementTrend]);
+  const waterHistoryStats = useMemo(() => getWaterHistoryStats(overview), [overview]);
   const waterTemperatureValues = environmentTrend.map((point) => point.waterTemperature);
   const airTemperatureValues = environmentTrend.map((point) => point.airTemperature);
   const waterTemperatureRange = minMax(waterTemperatureValues);
   const airTemperatureRange = minMax(airTemperatureValues);
   const waterTemperatureStats = [
-    { label: "7-day average", value: formatTemperature(average(waterTemperatureValues)) },
-    { label: "7-day min", value: formatTemperature(waterTemperatureRange.min) },
-    { label: "7-day max", value: formatTemperature(waterTemperatureRange.max) },
+    { label: "7-day average", value: formatTemperature(waterHistoryStats?.trailingWeekAvg ?? average(waterTemperatureValues)) },
+    { label: "7-day min", value: formatTemperature(waterHistoryStats?.trailingWeekMin ?? waterTemperatureRange.min) },
+    { label: "7-day max", value: formatTemperature(waterHistoryStats?.trailingWeekMax ?? waterTemperatureRange.max) },
   ];
   const airTemperatureStats = [
     { label: "7-day average", value: formatTemperature(average(airTemperatureValues)) },

@@ -32,6 +32,11 @@ At minimum, live data needs the relevant API keys and database connection:
 - `WEATHER_API_KEY`
 - `TELRAAM_API_KEY`
 - `HUSENSE_JWT_TOKEN` or `HUSENSE_API_TOKEN`
+- `WATER_DATABASE_URL` or the separate `WATER_DB_HOST`, `WATER_DB_PORT`, `WATER_DB_NAME`, `WATER_DB_USER`, `WATER_DB_PASSWORD` values
+
+Water temperature is read only from the configured PostgreSQL `temperature_readings`
+table. The dashboard does not fetch this metric from the Marineterrein website or
+sensor API URL.
 
 ## Unified live ops data layer
 
