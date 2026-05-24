@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bike, Car, CloudSun, Info, Thermometer, Users, Volume2, Waves, type LucideIcon } from "lucide-react";
+import { Bike, Car, CloudSun, Info, Moon, Thermometer, Users, Volume2, Waves, type LucideIcon } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -121,6 +121,7 @@ const DAILY_MOVEMENT_STACK = [
   { key: "pedestrianVisitors", label: "Pedestrians", color: MT_COLORS.cyan },
   { key: "bicycleVisitors", label: "Bicycles", color: MT_COLORS.blue },
   { key: "vehicleVisitors", label: "Vehicles", color: MT_COLORS.teal },
+  { key: "nightVisitors", label: "Night mode", color: MT_COLORS.burgundy },
 ] as const;
 
 const NAV_ACCENTS: Record<string, string> = {
@@ -172,6 +173,7 @@ type DailyMovementPoint = {
   pedestrianVisitors: number;
   bicycleVisitors: number;
   vehicleVisitors: number;
+  nightVisitors: number;
   isToday?: boolean;
 };
 
@@ -611,18 +613,46 @@ function ChartPlaceholder({ title, detail }: { title: string; detail: string }) 
 }
 
 function InfoHint({ label }: { label: string }) {
+  const [open, setOpen] = useState(false);
+
   return (
     <span
-      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
-      title={label}
-      aria-label={label}
-      style={{
-        borderColor: `${MAIN_COLORS.aColorGray}33`,
-        backgroundColor: "rgba(255, 255, 255, 0.82)",
-        color: MAIN_COLORS.aColorGray,
-      }}
+      className="relative inline-flex shrink-0"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
     >
-      <Info className="h-3.5 w-3.5" />
+      <button
+        type="button"
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full border outline-none transition focus-visible:ring-2"
+        aria-label={label}
+        aria-expanded={open}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        style={{
+          borderColor: `${MAIN_COLORS.aColorGray}33`,
+          backgroundColor: "rgba(255, 255, 255, 0.82)",
+          color: MAIN_COLORS.aColorGray,
+        }}
+      >
+        <Info className="h-3.5 w-3.5" />
+      </button>
+      {open ? (
+        <span
+          role="tooltip"
+          className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 w-64 -translate-x-1/2 rounded-lg border px-3 py-2 text-xs leading-5 shadow-lg"
+          style={{
+            borderColor: `${MAIN_COLORS.aColor1}33`,
+            backgroundColor: MAIN_COLORS.aColorWhite,
+            color: MAIN_COLORS.aColorBlack,
+          }}
+        >
+          {label}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -795,13 +825,16 @@ function buildDailyMovementTrend(points: TelraamTrafficPoint[]): DailyMovementPo
         pedestrianVisitors: 0,
         bicycleVisitors: 0,
         vehicleVisitors: 0,
+        nightVisitors: 0,
         isToday: dayKey === todayKey,
       };
 
     existing.pedestrianVisitors += Number(point.pedestrian_count || 0);
     existing.bicycleVisitors += Number(point.bicycle_count || 0);
     existing.vehicleVisitors += Number(point.vehicle_count || 0);
-    existing.visitors = existing.pedestrianVisitors + existing.bicycleVisitors + existing.vehicleVisitors;
+    existing.nightVisitors += Number(point.night_count || 0);
+    existing.visitors =
+      existing.pedestrianVisitors + existing.bicycleVisitors + existing.vehicleVisitors + existing.nightVisitors;
     grouped.set(dayKey, existing);
   }
 
@@ -1124,7 +1157,10 @@ export function OperationsDashboard() {
     let id = 1000;
 
     const currentFlow =
-      (latestTelraamPoint?.pedestrians ?? 0) + (latestTelraamPoint?.bicycles ?? 0) + (latestTelraamPoint?.vehicles ?? 0);
+      (latestTelraamPoint?.pedestrians ?? 0) +
+      (latestTelraamPoint?.bicycles ?? 0) +
+      (latestTelraamPoint?.vehicles ?? 0) +
+      (latestTelraamPoint?.night ?? 0);
     if (latestTelraamPoint && currentFlow >= flowThreshold) {
       alerts.push({
         id: id++,
@@ -1308,7 +1344,7 @@ export function OperationsDashboard() {
                     const [primaryHelper, secondaryHelper] = kpi.helper.split(" | ");
 
                     return (
-                      <Card key={kpi.label} className="h-full overflow-hidden">
+                      <Card key={kpi.label} className="h-full overflow-visible">
                         <CardContent className="p-[1.1rem]">
                           <div className="flex items-start gap-3">
                             <div className="min-w-0 flex-1">
@@ -1514,7 +1550,7 @@ export function OperationsDashboard() {
                     <CardHeader>
                       <SectionTitle
                         title="Movement over time"
-                        subtitle="Trend across the loaded Telraam period, with the current pedestrian, bicycle, and vehicle split shown below."
+                        subtitle="Trend across the loaded Telraam period, with the current pedestrian, bicycle, vehicle, and night-mode split shown below."
                       />
                     </CardHeader>
                   <CardContent className="space-y-4">
@@ -1529,6 +1565,7 @@ export function OperationsDashboard() {
                             <Area type="monotone" dataKey="pedestrians" stackId="1" stroke={MT_COLORS.cyan} fill={MT_COLORS.cyan} fillOpacity={0.85} />
                             <Area type="monotone" dataKey="bicycles" stackId="1" stroke={MT_COLORS.blue} fill={MT_COLORS.blue} fillOpacity={0.78} />
                             <Area type="monotone" dataKey="vehicles" stackId="1" stroke={MT_COLORS.teal} fill={MT_COLORS.teal} fillOpacity={0.75} />
+                            <Area type="monotone" dataKey="night" stackId="1" stroke={MT_COLORS.burgundy} fill={MT_COLORS.burgundy} fillOpacity={0.68} />
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
@@ -1539,9 +1576,10 @@ export function OperationsDashboard() {
                       />
                     )}
 
-                    <div className="grid gap-3 md:grid-cols-3">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                       {currentModalityChart.map((item, index) => {
-                        const Icon = item.label === "Pedestrians" ? Users : item.label === "Bicycles" ? Bike : Car;
+                        const Icon =
+                          item.label === "Pedestrians" ? Users : item.label === "Bicycles" ? Bike : item.label === "Night mode" ? Moon : Car;
 
                         return (
                           <div
@@ -1713,7 +1751,7 @@ export function OperationsDashboard() {
                                   name={zoneItem.label}
                                   stackId="visitors"
                                   fill={zoneItem.color}
-                                  radius={zoneItem.key === "vehicleVisitors" ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                                  radius={zoneItem.key === "nightVisitors" ? [6, 6, 0, 0] : [0, 0, 0, 0]}
                                 />
                               ))}
                               <Line

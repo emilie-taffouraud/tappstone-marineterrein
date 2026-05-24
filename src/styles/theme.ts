@@ -86,6 +86,7 @@ export const TELRAAM_LIVE_CARD_THEME = {
     Trailers: "#f97316",
     Tractors: "#14b8a6",
     Strollers: "#64748b",
+    "Night mode": "#6a0e3f",
   },
   fallbackTravelTypeLabelColor: MAIN_COLORS.aColor1,
   inactiveTravelTypeLabelColor: MAIN_COLORS.aColorGray,

@@ -392,6 +392,7 @@ CREATE TABLE public.traffic_observations (
     pedestrian_count integer DEFAULT 0,
     bicycle_count integer DEFAULT 0,
     vehicle_count integer DEFAULT 0,
+    night_count integer DEFAULT 0,
     vehicle_type_breakdown jsonb,
     source_name character varying(100),
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
@@ -636,6 +637,7 @@ COPY public.metrics (metric_id, metric_name, display_name, unit, category, descr
 10	bicycle_count	Bicycle Count	bicycles	traffic	Number of bicycles detected
 11	vehicle_count	Vehicle Count	vehicles	traffic	Number of vehicles detected
 12	bird_detection_count	Bird Detection Count	detections	biodiversity	Detected bird activity count
+13	night_count	Night Mode Count	counts	traffic	Telraam night-mode detections when travel mode cannot be classified
 \.
 
 
@@ -1116,4 +1118,3 @@ ALTER TABLE ONLY public.water_quality_observations
 --
 
 \unrestrict hUSDvReWhU4jZ82v5chgvaqXTITitS4u2GNlgGDvonROGeqYaVM6bPf6ccig0vt
-

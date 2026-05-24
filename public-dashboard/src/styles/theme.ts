@@ -51,6 +51,7 @@ export const TREND_COLORS = {
   pedestrians: "#016991",
   bicycles: "#00ADEF",
   vehicles: "#0f766e",
+  night: "#6a0e3f",
 } as const;
 
 export const LAYER_TOGGLE_THEME = {
