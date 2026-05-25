@@ -47,6 +47,12 @@ const TELRAAM_MODE_DEFINITIONS = [
     fallbackFields: ["stroller", "stroller_count"],
   },
   {
+    metric: "night_count",
+    label: "Night mode",
+    directionalFields: ["mode_night_lft", "mode_night_rgt"],
+    fallbackFields: ["night", "night_count"],
+  },
+  {
     metric: "tractor_count",
     label: "Tractors",
     directionalFields: ["mode_tractor_lft", "mode_tractor_rgt"],

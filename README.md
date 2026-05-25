@@ -54,6 +54,25 @@ The backend modules live under [server/ops](C:\Users\Admin\OneDrive\Desktop\UVA\
 - `GET /api/ops/live/raw`
 - `GET /api/ops/health`
 
+### Telraam night-mode storage
+
+The Telraam advanced traffic request includes `mode_night_lft` and `mode_night_rgt`.
+The dashboard stores their sum as `night_count` so dark-hour traffic does not drop
+to zero when Telraam cannot classify movement into pedestrian, bicycle, or vehicle
+types.
+
+Run the migration once on the PostgreSQL database:
+
+```sh
+psql "$DATABASE_URL" -f server/ops/migrations/2026-05-24-add-telraam-night-count.sql
+```
+
+Then sync recent Telraam rows into `traffic_observations`:
+
+```sh
+TELRAAM_SYNC_LOOKBACK_HOURS=168 npm run sync:telraam
+```
+
 ### Unified schema
 
 The unified records are normalized into this internal shape:

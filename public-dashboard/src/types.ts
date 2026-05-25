@@ -46,6 +46,7 @@ export interface TrendRow {
   pedestrians: number;
   bicycles: number;
   vehicles: number;
+  night: number;
 }
 
 export interface TrendsData {

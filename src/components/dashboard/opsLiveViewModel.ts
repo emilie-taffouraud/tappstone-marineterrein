@@ -63,12 +63,14 @@ export type TelraamTrendChartPoint = {
   pedestrians: number;
   bicycles: number;
   vehicles: number;
+  night: number;
 };
 
 export type TelraamModeTotals = {
   pedestrians: number;
   bicycles: number;
   vehicles: number;
+  night: number;
 };
 
 export type TelraamModeLeader = {
@@ -474,12 +476,14 @@ export function deriveMobilitySnapshot(overview: OpsLiveOverviewResponse) {
   const pedestrians = asNumber(findRecord(overview, "telraam", "pedestrian_count")?.value ?? null) || 0;
   const bicycles = asNumber(findRecord(overview, "telraam", "bicycle_count")?.value ?? null) || 0;
   const vehicles = asNumber(findRecord(overview, "telraam", "vehicle_count")?.value ?? null) || 0;
+  const night = asNumber(findRecord(overview, "telraam", "night_count")?.value ?? null) || 0;
 
   return {
     pedestrians,
     bicycles,
     vehicles,
-    total: pedestrians + bicycles + vehicles,
+    night,
+    total: pedestrians + bicycles + vehicles + night,
   };
 }
 
@@ -490,6 +494,7 @@ export function deriveTelraamSummary(
   const pedestrians = findRecord(overview, "telraam", "pedestrian_count");
   const bicycles = findRecord(overview, "telraam", "bicycle_count");
   const vehicles = findRecord(overview, "telraam", "vehicle_count");
+  const night = findRecord(overview, "telraam", "night_count");
   const total = findRecord(overview, "telraam", "total_flow");
 
   return {
@@ -501,6 +506,7 @@ export function deriveTelraamSummary(
       `Pedestrians: ${pedestrians ? formatValue(pedestrians) : "Unavailable"}`,
       `Bicycles: ${bicycles ? formatValue(bicycles) : "Unavailable"}`,
       `Vehicles: ${vehicles ? formatValue(vehicles) : "Unavailable"}`,
+      `Night mode: ${night ? formatValue(night) : "Unavailable"}`,
     ],
   };
 }
@@ -667,11 +673,13 @@ export function deriveCurrentModalityChart(overview: OpsLiveOverviewResponse): B
   const pedestrians = asNumber(findRecord(overview, "telraam", "pedestrian_count")?.value ?? null) || 0;
   const bicycles = asNumber(findRecord(overview, "telraam", "bicycle_count")?.value ?? null) || 0;
   const vehicles = asNumber(findRecord(overview, "telraam", "vehicle_count")?.value ?? null) || 0;
+  const night = asNumber(findRecord(overview, "telraam", "night_count")?.value ?? null) || 0;
 
   return [
     { label: "Pedestrians", value: pedestrians },
     { label: "Bicycles", value: bicycles },
     { label: "Vehicles", value: vehicles },
+    { label: "Night mode", value: night },
   ];
 }
 
@@ -686,6 +694,7 @@ const TELRAAM_LIVE_MODE_METRICS: Array<{ metric: string; label: string }> = [
   { metric: "trailer_count", label: "Trailers" },
   { metric: "tractor_count", label: "Tractors" },
   { metric: "stroller_count", label: "Strollers" },
+  { metric: "night_count", label: "Night mode" },
 ];
 
 export function deriveTelraamLiveModeSplitChart(overview: OpsLiveOverviewResponse): BreakdownChartPoint[] {
@@ -706,7 +715,12 @@ function sortTelraamTrafficPoints(points: TelraamTrafficPoint[]) {
 }
 
 function sumTelraamFlow(point: TelraamTrafficPoint) {
-  return Number(point.pedestrian_count || 0) + Number(point.bicycle_count || 0) + Number(point.vehicle_count || 0);
+  return (
+    Number(point.pedestrian_count || 0) +
+    Number(point.bicycle_count || 0) +
+    Number(point.vehicle_count || 0) +
+    Number(point.night_count || 0)
+  );
 }
 
 function buildTelraamModeCounts(point: TelraamTrafficPoint | null): TelraamModeTotals {
@@ -714,18 +728,20 @@ function buildTelraamModeCounts(point: TelraamTrafficPoint | null): TelraamModeT
     pedestrians: Number(point?.pedestrian_count || 0),
     bicycles: Number(point?.bicycle_count || 0),
     vehicles: Number(point?.vehicle_count || 0),
+    night: Number(point?.night_count || 0),
   };
 }
 
 function buildTelraamModeShares(counts: TelraamModeTotals, total: number): TelraamModeTotals {
   if (total <= 0) {
-    return { pedestrians: 0, bicycles: 0, vehicles: 0 };
+    return { pedestrians: 0, bicycles: 0, vehicles: 0, night: 0 };
   }
 
   return {
     pedestrians: Number(((counts.pedestrians / total) * 100).toFixed(1)),
     bicycles: Number(((counts.bicycles / total) * 100).toFixed(1)),
     vehicles: Number(((counts.vehicles / total) * 100).toFixed(1)),
+    night: Number(((counts.night / total) * 100).toFixed(1)),
   };
 }
 
@@ -738,6 +754,7 @@ function pickDominantTelraamMode(counts: TelraamModeTotals, total: number): Telr
     { label: "Pedestrians", value: counts.pedestrians },
     { label: "Bicycles", value: counts.bicycles },
     { label: "Vehicles", value: counts.vehicles },
+    { label: "Night mode", value: counts.night },
   ].sort((left, right) => right.value - left.value)[0];
 
   return {
@@ -839,6 +856,7 @@ export function deriveTelraamTrendChart(points: TelraamTrafficPoint[]): TelraamT
     pedestrians: Number(point.pedestrian_count || 0),
     bicycles: Number(point.bicycle_count || 0),
     vehicles: Number(point.vehicle_count || 0),
+    night: Number(point.night_count || 0),
   }));
 }
 
@@ -857,10 +875,11 @@ export function deriveTelraamHistorySummary(points: TelraamTrafficPoint[], anoma
       pedestrians: sum.pedestrians + Number(point.pedestrian_count || 0),
       bicycles: sum.bicycles + Number(point.bicycle_count || 0),
       vehicles: sum.vehicles + Number(point.vehicle_count || 0),
+      night: sum.night + Number(point.night_count || 0),
     }),
-    { pedestrians: 0, bicycles: 0, vehicles: 0 },
+    { pedestrians: 0, bicycles: 0, vehicles: 0, night: 0 },
   );
-  const combinedTotal = modeTotals.pedestrians + modeTotals.bicycles + modeTotals.vehicles;
+  const combinedTotal = modeTotals.pedestrians + modeTotals.bicycles + modeTotals.vehicles + modeTotals.night;
   const averageFlowPerRow = points.length ? Math.round(combinedTotal / points.length) : 0;
   const latestFlow = latestPoint ? sumTelraamFlow(latestPoint) : 0;
   const latestModeCounts = buildTelraamModeCounts(latestPoint);
@@ -1024,7 +1043,8 @@ export function deriveIncidentCorrelationChart(
     busyness:
       Number(point.pedestrian_count || 0) +
       Number(point.bicycle_count || 0) +
-      Number(point.vehicle_count || 0),
+      Number(point.vehicle_count || 0) +
+      Number(point.night_count || 0),
     vehicles: Number(point.vehicle_count || 0),
     sound: averageSound !== null ? Number(averageSound.toFixed(1)) : null,
   }));

@@ -19,12 +19,14 @@ export default function TelraamDetailsCard({ overview }: TelraamDetailsCardProps
   const pedestrians = metricValue(overview, "pedestrian_count");
   const bicycles = metricValue(overview, "bicycle_count");
   const vehicles = metricValue(overview, "vehicle_count");
-  const totalFlow = metricValue(overview, "total_flow") || pedestrians + bicycles + vehicles;
+  const night = metricValue(overview, "night_count");
+  const totalFlow = metricValue(overview, "total_flow") || pedestrians + bicycles + vehicles + night;
 
   const topStats = [
     { label: "Pedestrians", value: pedestrians, helper: "foot arrivals" },
     { label: "Bicycles", value: bicycles, helper: "bike arrivals" },
     { label: "Vehicles", value: vehicles, helper: "vehicle arrivals" },
+    { label: "Night mode", value: night, helper: "unclassified dark-hour flow" },
     { label: "Total flow", value: totalFlow, helper: "combined hourly count" },
   ];
 
@@ -42,7 +44,7 @@ export default function TelraamDetailsCard({ overview }: TelraamDetailsCardProps
           <Pill tone={totalFlow > 140 ? "amber" : "emerald"}>{totalFlow > 140 ? "busy edge" : "steady edge"}</Pill>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {topStats.map((item) => (
             <div
               key={item.label}

@@ -3,13 +3,6 @@ import { CARD_STYLE, MAIN_COLORS, CROWD_LEVEL_STYLES } from "../styles/theme";
 import type { CrowdSummary, WeatherData, BestTimeData } from "../types";
 import type { Translations } from "../i18n";
 
-interface Props {
-  crowd: CrowdSummary | null;
-  weather: WeatherData | null;
-  bestTime: BestTimeData | null;
-  t: Translations;
-}
-
 function KpiCard({
   icon,
   title,

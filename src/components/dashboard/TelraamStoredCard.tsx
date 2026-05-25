@@ -11,6 +11,7 @@ type TelraamStoredCardProps = {
 };
 
 const VEHICLE_COLOR = "#0f766e";
+const NIGHT_COLOR = "#6a0e3f";
 
 function formatLocalDateTime(value: string | null | undefined) {
   if (!value) return "Unavailable";
@@ -151,6 +152,12 @@ export default function TelraamStoredCard({
       value: summary.latestModeCounts.vehicles,
       share: summary.latestModeSharePct.vehicles,
       color: VEHICLE_COLOR,
+    },
+    {
+      label: "Night mode",
+      value: summary.latestModeCounts.night,
+      share: summary.latestModeSharePct.night,
+      color: NIGHT_COLOR,
     },
   ];
 
@@ -315,7 +322,7 @@ export default function TelraamStoredCard({
                     Current movement mix
                   </p>
                   <p className="mt-1 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
-                    How the current total is split between pedestrians, bicycles, and vehicles
+                    How the current total is split between pedestrians, bicycles, vehicles, and night mode
                   </p>
                 </div>
 
@@ -335,7 +342,7 @@ export default function TelraamStoredCard({
                 ))}
               </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {modeRows.map((row) => (
                   <div
                     key={row.label}

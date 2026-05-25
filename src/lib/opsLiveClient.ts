@@ -55,6 +55,7 @@ export type TelraamTrafficPoint = {
   pedestrian_count: number;
   bicycle_count: number;
   vehicle_count: number;
+  night_count: number;
 };
 
 export type AgendaItem = {

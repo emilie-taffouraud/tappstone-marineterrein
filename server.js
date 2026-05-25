@@ -10,7 +10,7 @@ import { getKnmiLiveData } from "./server/ops/adapters/knmiAdapter.js";
 import { getWeatherLiveData } from "./server/ops/adapters/weatherAdapter.js";
 import { getOpsEnv } from "./server/ops/config/env.js";
 
-dotenv.config();
+dotenv.config({ path: [".env.local", ".env"] });
 
 const app = express();
 app.use(cors());
@@ -33,6 +33,31 @@ const pool = process.env.DATABASE_URL
       host: process.env.PGHOST || "localhost",
       port: Number(process.env.PGPORT || 5432),
     });
+
+async function hasTrafficNightCountColumn() {
+  const result = await pool.query(
+    `
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'traffic_observations'
+        AND column_name = 'night_count'
+      LIMIT 1
+    `,
+  );
+
+  return result.rowCount > 0;
+}
+
+async function getTrafficNightCountSql() {
+  const hasNightCount = await hasTrafficNightCountColumn();
+
+  return {
+    row: hasNightCount ? "COALESCE(night_count, 0)::int" : "0::int",
+    sum: hasNightCount ? "COALESCE(SUM(night_count), 0)::int" : "0::int",
+    value: hasNightCount ? "COALESCE(night_count, 0)" : "0",
+  };
+}
 
 // Serve static dashboard files
 app.use(express.static(path.join(__dirname, "public")));
@@ -655,6 +680,7 @@ app.get("/api/ops/agenda", async (req, res) => {
 app.get("/api/traffic/latest", async (req, res) => {
   try {
     const segmentId = req.query.segment_id || 9000006266;
+    const nightCount = await getTrafficNightCountSql();
 
     const sql = `
       SELECT
@@ -662,7 +688,8 @@ app.get("/api/traffic/latest", async (req, res) => {
         recorded_at,
         pedestrian_count,
         bicycle_count,
-        vehicle_count
+        vehicle_count,
+        ${nightCount.row} AS night_count
       FROM traffic_observations
       WHERE segment_id = $1
       ORDER BY recorded_at DESC
@@ -680,6 +707,7 @@ app.get("/api/traffic/latest", async (req, res) => {
 app.get("/api/dashboard/summary", async (req, res) => {
   try {
     const segmentId = req.query.segment_id || 9000006266;
+    const nightCount = await getTrafficNightCountSql();
 
     const sql = `
       SELECT
@@ -687,6 +715,7 @@ app.get("/api/dashboard/summary", async (req, res) => {
         COALESCE(SUM(pedestrian_count),0) AS total_pedestrians,
         COALESCE(SUM(bicycle_count),0) AS total_bicycles,
         COALESCE(SUM(vehicle_count),0) AS total_vehicles,
+        ${nightCount.sum} AS total_night,
         COALESCE(MAX(recorded_at),NOW()) AS last_update
       FROM traffic_observations
       WHERE segment_id = $1
@@ -703,6 +732,7 @@ app.get("/api/dashboard/summary", async (req, res) => {
 app.get("/api/dashboard/busiest-hour", async (req, res) => {
   try {
     const segmentId = req.query.segment_id || 9000006266;
+    const nightCount = await getTrafficNightCountSql();
 
     const sql = `
       SELECT
@@ -711,7 +741,8 @@ app.get("/api/dashboard/busiest-hour", async (req, res) => {
         pedestrian_count,
         bicycle_count,
         vehicle_count,
-        (pedestrian_count + bicycle_count + vehicle_count) AS total_flow
+        ${nightCount.row} AS night_count,
+        (pedestrian_count + bicycle_count + vehicle_count + ${nightCount.value}) AS total_flow
       FROM traffic_observations
       WHERE segment_id = $1
       ORDER BY total_flow DESC
@@ -1100,6 +1131,7 @@ app.get("/api/public/trends", async (req, res) => {
     const segmentId = req.query.segment_id || 9000006266;
     const period = req.query.period === "30d" ? "30d" : "7d";
     const resolution = req.query.resolution === "daily" ? "daily" : "hourly";
+    const nightCount = await getTrafficNightCountSql();
 
     const interval = period === "30d" ? "30 days" : "7 days";
     const truncUnit = resolution === "daily" ? "day" : "hour";
@@ -1109,7 +1141,8 @@ app.get("/api/public/trends", async (req, res) => {
         date_trunc('${truncUnit}', recorded_at) AS bucket,
         COALESCE(SUM(pedestrian_count), 0)::int AS pedestrians,
         COALESCE(SUM(bicycle_count), 0)::int    AS bicycles,
-        COALESCE(SUM(vehicle_count), 0)::int    AS vehicles
+        COALESCE(SUM(vehicle_count), 0)::int    AS vehicles,
+        ${nightCount.sum} AS night
       FROM traffic_observations
       WHERE segment_id = $1
         AND recorded_at >= NOW() - INTERVAL '${interval}'
@@ -1134,11 +1167,12 @@ app.get("/api/public/best-time", async (req, res) => {
   try {
     const segmentId = req.query.segment_id || 9000006266;
     const currentHour = new Date().getHours();
+    const nightCount = await getTrafficNightCountSql();
 
     const sql = `
       SELECT
         EXTRACT(HOUR FROM recorded_at)::int AS hour_of_day,
-        AVG(pedestrian_count + bicycle_count)::int AS avg_foot_traffic
+        AVG(pedestrian_count + bicycle_count + ${nightCount.value})::int AS avg_foot_traffic
       FROM traffic_observations
       WHERE segment_id = $1
         AND recorded_at >= NOW() - INTERVAL '30 days'
