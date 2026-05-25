@@ -35,6 +35,10 @@ const assetUrlByFileName = Object.fromEntries(
 type TelraamLiveCardProps = {
   data: BreakdownChartPoint[];
   chartPalette: string[];
+  title?: string;
+  subtitle?: string;
+  totalLabel?: string;
+  totalHelper?: string;
 };
 
 type TravelTypeIconProps = {
@@ -157,6 +161,10 @@ function TravelTypeIcon({ iconSrc, color, opacity = 1 }: TravelTypeIconProps) {
 export default function TelraamLiveCard({
   data,
   chartPalette,
+  title = "Movement mix",
+  subtitle = "Share of measured movement by travel type at the main entrance.",
+  totalLabel = "Total flow",
+  totalHelper = "Sum of all travel modes in this live snapshot",
 }: TelraamLiveCardProps) {
   const [showAllTypes, setShowAllTypes] = useState(false);
   const activeTypes = data.filter((item) => item.value > 0);
@@ -190,10 +198,7 @@ export default function TelraamLiveCard({
   return (
     <Card className="min-h-[460px]">
       <CardHeader>
-        <SectionTitle
-          title="Movement mix"
-          subtitle="Share of measured movement by travel type at the main entrance."
-        />
+        <SectionTitle title={title} subtitle={subtitle} />
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px] md:items-stretch">
@@ -217,14 +222,14 @@ export default function TelraamLiveCard({
             <div className="flex items-center gap-2">
               {renderTravelTypeIcon("Total flow", MAIN_COLORS.aColor1)}
               <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
-                Total flow
+                {totalLabel}
               </p>
             </div>
             <p className="mt-2 text-3xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
               {totalFlow}
             </p>
             <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-              Sum of all travel modes in this live snapshot
+              {totalHelper}
             </p>
           </div>
         </div>

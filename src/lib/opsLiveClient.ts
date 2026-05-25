@@ -1,6 +1,6 @@
 export type UnifiedLiveRecord = {
   id: string;
-  source: "telraam" | "knmi" | "weather" | "husense" | "water";
+  source: "telraam" | "knmi" | "weather" | "husense" | "sound" | "water";
   category: "mobility" | "weather" | "warning" | "sound" | "recreation";
   metric: string;
   label: string;

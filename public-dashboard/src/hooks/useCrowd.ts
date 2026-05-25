@@ -2,12 +2,19 @@ import { useState, useEffect, useCallback } from "react";
 import { fetchCrowd } from "../api";
 import type { CrowdSummary, CrowdZone } from "../types";
 
+const HUSENSE_MARINETERREIN_SPACE_IDS = new Set([
+  "b9c17619-be37-4c6a-a1f3-45e08fd3466c",
+  "9b4a6d95-b5dc-426f-a5ae-ea31200b09b5",
+  "781e09a4-b0b1-4bcb-ad7c-67dfc0182792",
+]);
+
 function summarize(zones: CrowdZone[]): CrowdSummary {
-  const total = zones.reduce((s, z) => s + z.presenceCount, 0);
-  const totalCapacity = zones.reduce((s, z) => s + z.capacity, 0);
+  const marineterreinZones = zones.filter((zone) => HUSENSE_MARINETERREIN_SPACE_IDS.has(String(zone.id)));
+  const total = marineterreinZones.reduce((s, z) => s + z.presenceCount, 0);
+  const totalCapacity = marineterreinZones.reduce((s, z) => s + z.capacity, 0);
   const densityPct = totalCapacity > 0 ? Math.round((total / totalCapacity) * 100) : 0;
   const level = densityPct >= 70 ? "high" : densityPct >= 35 ? "medium" : "low";
-  return { zones, total, totalCapacity, densityPct, level };
+  return { zones: marineterreinZones, total, totalCapacity, densityPct, level };
 }
 
 export function useCrowd(intervalMs = 60_000) {

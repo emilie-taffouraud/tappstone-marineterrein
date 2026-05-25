@@ -17,7 +17,6 @@ import { useOpsLiveData } from "../../hooks/useOpsLiveData";
 import { useTelraamTraffic } from "../../hooks/useTelraamTraffic";
 import { DASHBOARD_HEADER_THEME, MAIN_COLORS, MT_COLORS } from "../../styles/theme";
 import mt_down from "../../assets/mt_down.jpg";
-import TelraamStoredCard from "./TelraamStoredCard";
 import UpcomingAgendaCard from "./UpcomingAgendaCard";
 import TelraamLiveCard from "./TelraamLiveCard";
 import { LiveOperationsMapSection } from "./live-map/LiveOperationsMapSection";
@@ -33,6 +32,7 @@ import {
   deriveTelraamLiveModeSplitChart,
   deriveWaterSummary,
   deriveWeatherWidgetModel,
+  type BreakdownChartPoint,
 } from "./opsLiveViewModel";
 import { Card, CardContent, CardHeader, Pill, SectionTitle, SelectLike } from "./ui";
 import type { AlertItem } from "./types";
@@ -78,12 +78,10 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
     label: "Crowd",
     description: "Occupancy, movement flow, and crowd context.",
     items: [
-      { id: "crowd-occupancy", label: "Occupancy" },
+      { id: "crowd-occupancy", label: "HuSense gates" },
       { id: "crowd-mobility-split", label: "Movement mix" },
       { id: "crowd-traffic", label: "Movement over time" },
-      { id: "crowd-history", label: "Movement summary" },
       { id: "crowd-baseline", label: "Vs normal" },
-      { id: "crowd-daily-visitors", label: "Daily visitors" },
       { id: "crowd-expected-measured", label: "Expected vs measured" },
     ],
   },
@@ -115,14 +113,6 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
   },
 ];
 
-const HIDDEN_OCCUPANCY_ZONE_IDS = new Set(["5db05d88-7833-440a-9c3e-24c93fb08406"]);
-
-const DAILY_MOVEMENT_STACK = [
-  { key: "pedestrianVisitors", label: "Pedestrians", color: MT_COLORS.cyan },
-  { key: "bicycleVisitors", label: "Bicycles", color: MT_COLORS.blue },
-  { key: "vehicleVisitors", label: "Vehicles", color: MT_COLORS.teal },
-] as const;
-
 const NAV_ACCENTS: Record<string, string> = {
   overview: MT_COLORS.darkTeal,
   map: MT_COLORS.teal,
@@ -144,26 +134,45 @@ type EnvironmentTrendPoint = {
   visitors: number;
 };
 
-type PresenceZone = {
-  id?: string | number;
-  name?: string;
-  zone?: string;
-  label?: string;
-  capacity?: number | string | null;
-  presenceCount?: number | string | null;
-  currentPresence?: number | string | null;
-  currentOccupancy?: number | string | null;
-  occupancyCount?: number | string | null;
-  peopleCount?: number | string | null;
-  count?: number | string | null;
+type HusenseGateModeCount = {
+  arrivals?: number | string | null;
+  departures?: number | string | null;
+  total?: number | string | null;
 };
 
-type OccupancyCardModel = {
+type HusenseGateCount = {
+  id?: string | number;
+  gateId?: string;
+  gateName?: string;
+  description?: string | null;
+  spaceId?: string;
+  spaceName?: string;
+  date?: string | null;
+  observedAt?: string | null;
+  arrivals?: number | string | null;
+  departures?: number | string | null;
+  totalCount?: number | string | null;
+  modeCounts?: Record<string, HusenseGateModeCount | undefined>;
+};
+
+type HusenseDashboardSummary = {
+  spaceId?: string;
+  spaceName?: string;
+  currentPresence?: number | string | null;
+  observedAt?: string | null;
+  activeGateCount?: number | string | null;
+  totals?: Record<string, number | string | null>;
+  gates?: HusenseGateCount[];
+};
+
+type HusenseGateCardModel = {
   id: string;
-  zone: string;
-  visitors: number;
-  capacity: number | null;
-  density: number;
+  gate: string;
+  space: string;
+  arrivals: number;
+  departures: number;
+  total: number;
+  date: string | null;
 };
 
 type DailyMovementPoint = {
@@ -638,12 +647,6 @@ function formatSignedPercent(value: number) {
   return `${formatted}%`;
 }
 
-function getOccupancyStatus(density: number) {
-  if (density >= 75) return { label: "High", tone: "rose" as const };
-  if (density >= 45) return { label: "Medium", tone: "amber" as const };
-  return { label: "Low", tone: "emerald" as const };
-}
-
 function buildTrafficComparisonFromAnomaly(points: { time: string; actual: number; expected: number }[]): TrafficComparisonPoint[] {
   return points.map((point) => ({
     time: point.time,
@@ -734,49 +737,119 @@ function parseOptionalNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
-function readPresenceCount(zone: PresenceZone) {
-  return (
-    parseOptionalNumber(zone.presenceCount) ??
-    parseOptionalNumber(zone.currentPresence) ??
-    parseOptionalNumber(zone.currentOccupancy) ??
-    parseOptionalNumber(zone.occupancyCount) ??
-    parseOptionalNumber(zone.peopleCount) ??
-    parseOptionalNumber(zone.count) ??
-    0
-  );
+function readHusenseGateTotal(gate: HusenseGateCount) {
+  const total = parseOptionalNumber(gate.totalCount);
+  if (total !== null) return total;
+
+  return (parseOptionalNumber(gate.arrivals) ?? 0) + (parseOptionalNumber(gate.departures) ?? 0);
 }
 
-function buildOccupancyCards(zones: PresenceZone[]): OccupancyCardModel[] {
-  return zones.map((zone, index) => {
-    const visitors = readPresenceCount(zone);
-    const capacity = parseOptionalNumber(zone.capacity);
-    const density = capacity && capacity > 0 ? Math.min(100, Math.round((visitors / capacity) * 100)) : 0;
-    const id = String(zone.id ?? zone.name ?? zone.zone ?? `zone-${index + 1}`);
+function readHusenseModeTotal(mode?: HusenseGateModeCount) {
+  if (!mode) return 0;
 
-    return {
-      id,
-      zone: zone.name || zone.zone || zone.label || `Zone ${index + 1}`,
-      visitors,
-      capacity,
-      density,
-    };
-  });
+  const total = parseOptionalNumber(mode.total);
+  if (total !== null) return total;
+
+  return (parseOptionalNumber(mode.arrivals) ?? 0) + (parseOptionalNumber(mode.departures) ?? 0);
 }
 
-function buildOccupancyInsight(zones: OccupancyCardModel[], error: string | null) {
-  if (!zones.length) {
-    return error
-      ? "Crowd density is unavailable because the Husense backend feed could not be loaded."
-      : "Crowd density will appear when the Husense backend returns live zone readings.";
+function countActiveHusenseGates(gates: HusenseGateCount[]) {
+  return gates.filter((gate) => readHusenseGateTotal(gate) > 0).length;
+}
+
+function cleanZoneLabel(zone?: string | null) {
+  if (!zone || zone.toLowerCase().includes("unknown")) return "Marineterrein";
+  if (zone.toLowerCase().startsWith("general marineterrein")) return "Marineterrein";
+  return zone;
+}
+
+function describeHusenseMode(mode: string) {
+  if (mode === "person") return "Pedestrians";
+  if (mode === "runner") return "Runners";
+  if (mode === "bike") return "Bicycles";
+  if (mode === "car") return "Cars";
+  if (mode === "bus") return "Buses";
+  return "Unclassified";
+}
+
+function deriveHusenseMovementMixChart(gates: HusenseGateCount[]): BreakdownChartPoint[] {
+  const counts = new Map<string, number>();
+
+  for (const gate of gates) {
+    for (const [mode, count] of Object.entries(gate.modeCounts || {})) {
+      const total = readHusenseModeTotal(count);
+      if (total <= 0) continue;
+
+      counts.set(mode, (counts.get(mode) || 0) + total);
+    }
   }
 
-  const busiest = [...zones].sort((left, right) => right.density - left.density || right.visitors - left.visitors)[0];
-  const hasCapacity = busiest.capacity !== null;
-  const comparison = hasCapacity
-    ? `${busiest.density}% of the configured comfortable capacity`
-    : `${formatMetricNumber(busiest.visitors)} people currently detected`;
+  return Array.from(counts.entries())
+    .map(([mode, value]) => ({ label: describeHusenseMode(mode), value }))
+    .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label));
+}
 
-  return `${busiest.zone} is currently the busiest live Husense zone at ${comparison}.`;
+function buildHusenseGateCards(gates: HusenseGateCount[]): HusenseGateCardModel[] {
+  const grouped = new Map<string, HusenseGateCardModel>();
+
+  gates.forEach((gate, index) => {
+    const space = cleanZoneLabel(gate.spaceName);
+    const key = space.toLowerCase();
+    const current = grouped.get(key) || {
+      id: String(gate.spaceId ?? gate.id ?? gate.gateId ?? `husense-gate-${index + 1}`),
+      gate: space,
+      space,
+      arrivals: 0,
+      departures: 0,
+      total: 0,
+      date: gate.date || null,
+    };
+
+    current.arrivals += parseOptionalNumber(gate.arrivals) ?? 0;
+    current.departures += parseOptionalNumber(gate.departures) ?? 0;
+    current.total += readHusenseGateTotal(gate);
+    const dates = [current.date, gate.date || null].filter(Boolean).sort();
+    current.date = dates.length ? dates[dates.length - 1] : null;
+    grouped.set(key, current);
+  });
+
+  return [...grouped.values()].filter((gate) => gate.total > 0);
+}
+
+function buildHusenseGateInsight(gates: HusenseGateCardModel[], error: string | null) {
+  if (!gates.length) {
+    return error
+      ? "HuSense gate totals are unavailable because the classified gate feed could not be loaded."
+      : "HuSense gate totals will appear when classified gate counts arrive.";
+  }
+
+  const busiest = [...gates].sort((left, right) => right.total - left.total || right.arrivals - left.arrivals)[0];
+  const dateLabel = busiest.date ? ` for ${busiest.date}` : "";
+
+  return `${busiest.space} / ${busiest.gate} has the largest latest HuSense classified gate total${dateLabel}: ${formatMetricNumber(busiest.total)} crossings.`;
+}
+
+function buildHusenseCategoryTotals(summary: HusenseDashboardSummary | null) {
+  const totals = summary?.totals || {};
+
+  return [
+    { label: "Persons", value: parseOptionalNumber(totals.person) ?? 0 },
+    { label: "Runners", value: parseOptionalNumber(totals.runner) ?? 0 },
+    { label: "Bikes", value: parseOptionalNumber(totals.bike) ?? 0 },
+    { label: "Unclassified", value: parseOptionalNumber(totals.unclassified) ?? 0 },
+  ];
+}
+
+function sumBreakdown(points: BreakdownChartPoint[]) {
+  return points.reduce((total, point) => total + Number(point.value || 0), 0);
+}
+
+function shouldUseTelraamClassification(telraam: BreakdownChartPoint[], husensePersonTotal: number | null) {
+  const telraamTotal = sumBreakdown(telraam);
+  if (telraamTotal <= 0) return false;
+  if (husensePersonTotal === null || husensePersonTotal <= 0) return true;
+
+  return Math.abs(telraamTotal - husensePersonTotal) <= Math.max(5, husensePersonTotal * 0.05);
 }
 
 function buildDailyMovementTrend(points: TelraamTrafficPoint[]): DailyMovementPoint[] {
@@ -954,36 +1027,43 @@ export function OperationsDashboard() {
   const [agendaLoading, setAgendaLoading] = useState(true);
   const [agendaError, setAgendaError] = useState<string | null>(null);
   const [activeNavId, setActiveNavId] = useState(DASHBOARD_NAV[0].id);
-  const [occupancyData, setOccupancyData] = useState<PresenceZone[]>([]);
+  const [husenseSummary, setHusenseSummary] = useState<HusenseDashboardSummary | null>(null);
+  const [husenseGateData, setHusenseGateData] = useState<HusenseGateCount[]>([]);
+  const [husenseLoading, setHusenseLoading] = useState(true);
   const [husenseError, setHusenseError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    const fetchOccupancy = async () => {
+    const fetchHusenseSummary = async () => {
       try {
-        const response = await fetch("/api/husense/presence");
+        setHusenseLoading(true);
+        const response = await fetch("/api/husense/dashboard-summary");
         if (!response.ok) throw new Error("Husense Network Error");
-        const data = await response.json();
-
-        // Handle the live endpoint defensively because the upstream payload shape can vary.
-        const zones = Array.isArray(data) ? data : (data?.value || data?.zones || data?.data || [data]);
+        const summary = (await response.json()) as HusenseDashboardSummary;
+        const gates = Array.isArray(summary?.gates) ? summary.gates : [];
 
         if (!cancelled) {
           setHusenseError(null);
-          setOccupancyData(zones);
+          setHusenseSummary(summary);
+          setHusenseGateData(gates);
         }
       } catch (err: any) {
         console.error("Failed to fetch Husense:", err);
         if (!cancelled) {
           setHusenseError(err.message);
-          setOccupancyData([]);
+          setHusenseSummary(null);
+          setHusenseGateData([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setHusenseLoading(false);
         }
       }
     };
 
-    fetchOccupancy();
-    const intervalId = setInterval(fetchOccupancy, 60 * 1000);
+    fetchHusenseSummary();
+    const intervalId = setInterval(fetchHusenseSummary, 60 * 1000);
 
     return () => {
       cancelled = true;
@@ -1058,7 +1138,17 @@ export function OperationsDashboard() {
     };
   }, []);
 
-  const liveKpis = useMemo(() => deriveLiveKpis(overview, health, opsLoading), [overview, health, opsLoading]);
+  const liveKpis = useMemo(
+    () => deriveLiveKpis(
+      overview,
+      health,
+      opsLoading,
+      parseOptionalNumber(husenseSummary?.currentPresence),
+      husenseLoading,
+      buildHusenseGateCards(husenseGateData).length || parseOptionalNumber(husenseSummary?.activeGateCount) || countActiveHusenseGates(husenseGateData),
+    ),
+    [overview, health, opsLoading, husenseSummary, husenseGateData, husenseLoading],
+  );
   const liveWeatherWidget = useMemo(() => deriveWeatherWidgetModel(overview, health), [overview, health]);
   const liveMetaSummary = useMemo(() => deriveLiveMetaSummary(overview, health), [overview, health]);
   const waterSummary = useMemo(() => deriveWaterSummary(overview, health), [overview, health]);
@@ -1087,7 +1177,16 @@ export function OperationsDashboard() {
     ...(soundFeedConnected ? [{ label: "7-day range", value: soundSummary.detail[0] || "Unavailable" }] : []),
   ];
   const currentModalityChart = useMemo(() => deriveCurrentModalityChart(overview), [overview]);
+  const husenseMovementMixChart = useMemo(() => deriveHusenseMovementMixChart(husenseGateData), [husenseGateData]);
+  const husenseCategoryTotals = useMemo(() => buildHusenseCategoryTotals(husenseSummary), [husenseSummary]);
   const telraamLiveModeSplitChart = useMemo(() => deriveTelraamLiveModeSplitChart(overview), [overview]);
+  const husensePersonTotal = parseOptionalNumber(husenseSummary?.totals?.person) ?? parseOptionalNumber(husenseSummary?.currentPresence);
+  const useTelraamClassification = useMemo(
+    () => shouldUseTelraamClassification(telraamLiveModeSplitChart, husensePersonTotal),
+    [telraamLiveModeSplitChart, husensePersonTotal],
+  );
+  const movementMixChart = useTelraamClassification ? telraamLiveModeSplitChart : husenseMovementMixChart;
+  const movementMixSource = useTelraamClassification ? "Telraam" : "HuSense";
   const anomalyChart = useMemo(() => deriveAnomalyChart(telraamHistory), [telraamHistory]);
   const telraamTrendChart = useMemo(() => deriveTelraamTrendChart(telraamHistory), [telraamHistory]);
   const trafficComparisonChart = useMemo<TrafficComparisonPoint[]>(
@@ -1095,12 +1194,8 @@ export function OperationsDashboard() {
     [anomalyChart],
   );
   const trafficComparisonInsight = useMemo(() => buildTrafficInsight(trafficComparisonChart), [trafficComparisonChart]);
-  const visibleOccupancyZones = useMemo(
-    () => occupancyData.filter((zone) => !HIDDEN_OCCUPANCY_ZONE_IDS.has(String(zone?.id ?? ""))),
-    [occupancyData],
-  );
-  const occupancyCards = useMemo(() => buildOccupancyCards(visibleOccupancyZones), [visibleOccupancyZones]);
-  const occupancyInsight = useMemo(() => buildOccupancyInsight(occupancyCards, husenseError), [occupancyCards, husenseError]);
+  const husenseGateCards = useMemo(() => buildHusenseGateCards(husenseGateData), [husenseGateData]);
+  const husenseGateInsight = useMemo(() => buildHusenseGateInsight(husenseGateCards, husenseError), [husenseGateCards, husenseError]);
 
   const chartPalette = [
     MT_COLORS.cyan,
@@ -1150,7 +1245,7 @@ export function OperationsDashboard() {
     }
 
     const soundLevels = overview.records
-      .filter((record) => record.source === "husense" && record.metric === "sound_level_db")
+      .filter((record) => record.source === "sound" && record.metric === "sound_level_db")
       .map((record) => numberFromRecord(record))
       .filter((value): value is number => value !== null);
     const averageSound = soundLevels.length
@@ -1251,7 +1346,7 @@ export function OperationsDashboard() {
                 >
                   <div className="flex items-center gap-2">
                     <Pill tone={liveMetaSummary.statusTone}>{health?.status || "unknown"}</Pill>
-                    <span>Current visitors: {liveKpis[0]?.value || "Unavailable"}</span>
+                    <span>Current presence: {liveKpis[0]?.value || "Unavailable"}</span>
                   </div>
                   <p className="mt-2 text-xs" style={{ color: MT_COLORS.muted }}>
                     {liveWeatherWidget.condition} / {liveWeatherWidget.temperature} / {liveWeatherWidget.location}
@@ -1294,12 +1389,12 @@ export function OperationsDashboard() {
                   {liveKpis.map((kpi) => {
                     const Icon = typeof kpi.icon === "string" ? null : kpi.icon;
                     const definition =
-                      kpi.label === "Current visitors at Marineterrein"
-                        ? "Live count at the Kattenburgerstraat gate."
+                      kpi.label === "Current presence"
+                        ? "Live HuSense person total across Hoofdingang, Commandantsbrug, and Oude Poort."
                         : kpi.label === "Sound level"
                           ? "Current decibel level with a simple comfort reading."
-                        : kpi.label === "Crowd density"
-                          ? "Crowd level shown as share of comfortable capacity."
+                        : kpi.label === "Tracked HuSense gates"
+                          ? "Active classified gates returned for the three Marineterrein HuSense captors."
                             : kpi.label === "Swim conditions"
                               ? "Swim recommendation is limited only when the water temperature sensor is offline."
                               : kpi.label === "Air quality"
@@ -1318,11 +1413,6 @@ export function OperationsDashboard() {
                                 </p>
                                 {definition ? <InfoHint label={definition} /> : null}
                               </div>
-                              {definition && kpi.label === "Crowd density" ? (
-                                <p className="mt-1 text-[11px] leading-4" style={{ color: MAIN_COLORS.aColorGray }}>
-                                  capacity-based density estimate
-                                </p>
-                              ) : null}
                               <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                                 <p className="text-[1.75rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
                                   {kpi.value}
@@ -1423,26 +1513,45 @@ export function OperationsDashboard() {
                 <Card>
                   <CardHeader>
                     <SectionTitle
-                      title="Crowd density"
-                      subtitle="Live zone estimate compared with comfortable capacity. Shown as a capacity-based density score rather than exact people per square meter."
+                      title="HuSense gate counts"
+                      subtitle={`Latest classified gate totals for ${husenseSummary?.spaceName || "the three Marineterrein HuSense captors"}.`}
                     />
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {husenseError ? (
                       <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-700">
-                        Crowd density feed degraded: using the latest available zone estimate.
+                        HuSense gate counts feed degraded: showing only the latest classified totals available.
                       </div>
                     ) : null}
 
-                    {occupancyCards.length ? (
-                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        {occupancyCards.map((occupancyZone) => {
-                        const density = occupancyZone.density;
-                        const status = getOccupancyStatus(density);
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {husenseCategoryTotals.map((item) => (
+                        <div
+                          key={item.label}
+                          className="rounded-2xl border p-4"
+                          style={{
+                            borderColor: `${MAIN_COLORS.aColor1}26`,
+                            backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
+                          }}
+                        >
+                          <p className="text-xs uppercase tracking-[0.14em]" style={{ color: MAIN_COLORS.aColorGray }}>
+                            {item.label}
+                          </p>
+                          <p className="mt-2 text-3xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
+                            {formatMetricNumber(item.value)}
+                          </p>
+                          <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                            Latest classified total across the HuSense captors
+                          </p>
+                        </div>
+                      ))}
+                    </div>
 
-                        return (
+                    {husenseGateCards.length ? (
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        {husenseGateCards.map((gate) => (
                           <div
-                            key={occupancyZone.id}
+                            key={gate.id}
                             className="rounded-2xl border p-4"
                             style={{
                               borderColor: `${MAIN_COLORS.aColor1}26`,
@@ -1450,44 +1559,43 @@ export function OperationsDashboard() {
                             }}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
-                                {occupancyZone.zone}
-                              </p>
-                              <Pill tone={status.tone}>{status.label}</Pill>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
+                                  {gate.space}
+                                </p>
+                                <p className="mt-0.5 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                                  {gate.gate}
+                                </p>
+                              </div>
+                              <Pill tone="sky">{gate.date || "Latest"}</Pill>
                             </div>
 
-                            <p className="mt-2 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                              {formatMetricNumber(occupancyZone.visitors)} detected
-                              {occupancyZone.capacity ? ` / ${formatMetricNumber(occupancyZone.capacity)} capacity` : ""}
+                            <p className="mt-4 text-3xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
+                              {formatMetricNumber(gate.total)}
                             </p>
+                            <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>classified crossings</p>
 
-                            <div className="mt-4">
-                              <div className="mb-1.5 flex items-end justify-between gap-3">
-                                <span className="text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                                  Density score
-                                </span>
-                                <span className="text-xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                                  {density}%
-                                </span>
+                            <div className="mt-4 grid grid-cols-2 gap-2">
+                              <div className="rounded-xl border px-3 py-2" style={{ borderColor: `${MAIN_COLORS.aColor1}26` }}>
+                                <p className="text-[11px] uppercase" style={{ color: MAIN_COLORS.aColorGray }}>In</p>
+                                <p className="mt-1 text-lg font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                                  {formatMetricNumber(gate.arrivals)}
+                                </p>
                               </div>
-                              <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
-                                <div
-                                  className="h-full rounded-full transition-all duration-1000"
-                                  style={{
-                                    width: `${density}%`,
-                                    backgroundColor: density >= 75 ? MT_COLORS.coral : density >= 45 ? MT_COLORS.yellow : MT_COLORS.cyan,
-                                  }}
-                                />
+                              <div className="rounded-xl border px-3 py-2" style={{ borderColor: `${MAIN_COLORS.aColor1}26` }}>
+                                <p className="text-[11px] uppercase" style={{ color: MAIN_COLORS.aColorGray }}>Out</p>
+                                <p className="mt-1 text-lg font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                                  {formatMetricNumber(gate.departures)}
+                                </p>
                               </div>
                             </div>
                           </div>
-                        );
-                        })}
+                        ))}
                       </div>
                     ) : (
                       <ChartPlaceholder
-                        title="Crowd density not available yet"
-                        detail={husenseError || "The Husense backend has not returned live zone readings yet."}
+                        title="HuSense gate totals not available yet"
+                        detail={husenseError || "The HuSense backend has not returned classified gate counts yet."}
                       />
                     )}
 
@@ -1499,14 +1607,29 @@ export function OperationsDashboard() {
                         color: MAIN_COLORS.aColorBlack,
                       }}
                     >
-                      {occupancyInsight}
+                      {husenseGateInsight}
                     </div>
                   </CardContent>
                 </Card>
               </div>
 
               <div id="crowd-mobility-split" style={ANCHOR_SCROLL_STYLE}>
-                <TelraamLiveCard data={telraamLiveModeSplitChart} chartPalette={chartPalette} />
+                <TelraamLiveCard
+                  data={movementMixChart}
+                  chartPalette={chartPalette}
+                  title="Movement mix"
+                  subtitle={
+                    useTelraamClassification
+                      ? "Live Telraam movement classification, used because its total lines up with the HuSense people count."
+                      : "HuSense classification is shown because the current Telraam total does not line up with the HuSense people count."
+                  }
+                  totalLabel={`${movementMixSource} activity`}
+                  totalHelper={
+                    useTelraamClassification
+                      ? "Sum of live Telraam movement classes"
+                      : "Sum of classified in and out counts from the three Marineterrein HuSense captors"
+                  }
+                />
               </div>
 
               <div id="crowd-traffic" style={ANCHOR_SCROLL_STYLE}>
@@ -1567,10 +1690,6 @@ export function OperationsDashboard() {
               </div>
 
               <div className="grid gap-5">
-                <div id="crowd-history" style={ANCHOR_SCROLL_STYLE}>
-                  <TelraamStoredCard points={telraamHistory} error={telraamHistoryError} anomalyThreshold={anomalyThreshold} />
-                </div>
-
                 <div id="crowd-baseline" style={ANCHOR_SCROLL_STYLE}>
                   <Card>
                     <CardHeader>
@@ -1658,82 +1777,6 @@ export function OperationsDashboard() {
                             telraamHistoryError ||
                             "Recent movement history is needed before normal-pattern tracking can be calculated."
                           }
-                        />
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div id="crowd-daily-visitors" style={ANCHOR_SCROLL_STYLE}>
-                  <Card>
-                    <CardHeader>
-                      <SectionTitle
-                        title="Daily movement"
-                        subtitle="Stacked view of stored Telraam movement rows from the backend, grouped by day and travel mode."
-                      />
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="flex flex-wrap items-center gap-3 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                        {DAILY_MOVEMENT_STACK.map((zoneItem) => (
-                          <span key={zoneItem.key} className="inline-flex items-center gap-1.5">
-                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: zoneItem.color }} />
-                            {zoneItem.label}
-                          </span>
-                        ))}
-                        <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
-                          <span className="h-2.5 w-2.5 rounded-full border-2 border-slate-900 bg-white" />
-                          Today
-                        </span>
-                      </div>
-
-                      {dailyMovementTrend.length ? (
-                        <div className="h-[300px]">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <ComposedChart data={dailyMovementTrend} margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
-                              <XAxis dataKey="day" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                              <YAxis
-                                label={{ value: "Movement", angle: -90, position: "insideLeft", fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
-                                tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
-                                axisLine={false}
-                                tickLine={false}
-                              />
-                              <Tooltip
-                                formatter={(value, name) => [
-                                  `${formatMetricNumber(Number(value))} movements`,
-                                  DAILY_MOVEMENT_STACK.find((item) => item.key === name)?.label || String(name),
-                                ]}
-                                labelFormatter={(label) => `${label}${dailyMovementTrend.find((item) => item.day === label)?.isToday ? " - Today" : ""}`}
-                              />
-                              <Legend />
-                              {DAILY_MOVEMENT_STACK.map((zoneItem) => (
-                                <Bar
-                                  key={zoneItem.key}
-                                  dataKey={zoneItem.key}
-                                  name={zoneItem.label}
-                                  stackId="visitors"
-                                  fill={zoneItem.color}
-                                  radius={zoneItem.key === "vehicleVisitors" ? [6, 6, 0, 0] : [0, 0, 0, 0]}
-                                />
-                              ))}
-                              <Line
-                                type="monotone"
-                                dataKey={(point) => (point.isToday ? point.visitors : null)}
-                                name="Today"
-                                stroke="#111827"
-                                strokeWidth={0}
-                                dot={{ r: 5, fill: "#ffffff", stroke: "#111827", strokeWidth: 2 }}
-                                activeDot={{ r: 6, fill: "#ffffff", stroke: "#111827", strokeWidth: 2 }}
-                                connectNulls={false}
-                                legendType="none"
-                              />
-                            </ComposedChart>
-                          </ResponsiveContainer>
-                        </div>
-                      ) : (
-                        <ChartPlaceholder
-                          title="Daily movement not available yet"
-                          detail={telraamHistoryError || "Stored Telraam movement rows are needed before this chart can be drawn."}
                         />
                       )}
                     </CardContent>

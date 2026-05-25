@@ -1,0 +1,304 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/components/AgendaCard.tsx");import __vite__cjsImport0_react_jsxDevRuntime from "/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=4a9125ee"; const Fragment = __vite__cjsImport0_react_jsxDevRuntime["Fragment"]; const jsxDEV = __vite__cjsImport0_react_jsxDevRuntime["jsxDEV"];
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
+let prevRefreshReg;
+let prevRefreshSig;
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react can't detect preamble. Something is wrong."
+    );
+  }
+  prevRefreshReg = window.$RefreshReg$;
+  prevRefreshSig = window.$RefreshSig$;
+  window.$RefreshReg$ = RefreshRuntime.getRefreshReg("C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx");
+  window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
+}
+import { Calendar, ExternalLink } from "/node_modules/.vite/deps/lucide-react.js?v=4a9125ee";
+import { CARD_STYLE, MT_COLORS } from "/src/styles/theme.ts";
+function Skeleton() {
+  return /* @__PURE__ */ jsxDEV("div", { className: "flex flex-col gap-3", children: [1, 2, 3].map(
+    (i) => /* @__PURE__ */ jsxDEV("div", { className: "flex gap-3 items-start", children: [
+      /* @__PURE__ */ jsxDEV("div", { className: "w-12 h-12 rounded-xl flex-shrink-0 animate-pulse", style: { background: "rgba(0,173,239,0.08)" } }, void 0, false, {
+        fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+        lineNumber: 36,
+        columnNumber: 11
+      }, this),
+      /* @__PURE__ */ jsxDEV("div", { className: "flex flex-col gap-1.5 flex-1 pt-1", children: [
+        /* @__PURE__ */ jsxDEV("div", { className: "h-3.5 w-3/4 rounded animate-pulse", style: { background: "rgba(0,173,239,0.08)" } }, void 0, false, {
+          fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+          lineNumber: 38,
+          columnNumber: 13
+        }, this),
+        /* @__PURE__ */ jsxDEV("div", { className: "h-3 w-1/2 rounded animate-pulse", style: { background: "rgba(0,173,239,0.05)" } }, void 0, false, {
+          fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+          lineNumber: 39,
+          columnNumber: 13
+        }, this)
+      ] }, void 0, true, {
+        fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+        lineNumber: 37,
+        columnNumber: 11
+      }, this)
+    ] }, i, true, {
+      fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+      lineNumber: 35,
+      columnNumber: 7
+    }, this)
+  ) }, void 0, false, {
+    fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+    lineNumber: 33,
+    columnNumber: 5
+  }, this);
+}
+_c = Skeleton;
+function formatDate(dateStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" });
+}
+export function AgendaCard({ feed, loading, t }) {
+  const items = feed?.items ?? [];
+  return /* @__PURE__ */ jsxDEV("div", { style: CARD_STYLE, className: "p-6 flex flex-col gap-4", children: [
+    /* @__PURE__ */ jsxDEV("div", { className: "flex items-center justify-between", children: [
+      /* @__PURE__ */ jsxDEV("div", { className: "flex items-center gap-2.5", children: [
+        /* @__PURE__ */ jsxDEV(
+          "div",
+          {
+            className: "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0",
+            style: { background: "rgba(0,173,239,0.1)", color: MT_COLORS.deepBlue },
+            children: /* @__PURE__ */ jsxDEV(Calendar, { size: 16 }, void 0, false, {
+              fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+              lineNumber: 65,
+              columnNumber: 13
+            }, this)
+          },
+          void 0,
+          false,
+          {
+            fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+            lineNumber: 61,
+            columnNumber: 11
+          },
+          this
+        ),
+        /* @__PURE__ */ jsxDEV(
+          "h2",
+          {
+            className: "text-sm font-semibold",
+            style: { color: MT_COLORS.darkTeal, fontFamily: "var(--font-body)", letterSpacing: "-0.01em" },
+            children: t.agenda
+          },
+          void 0,
+          false,
+          {
+            fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+            lineNumber: 67,
+            columnNumber: 11
+          },
+          this
+        )
+      ] }, void 0, true, {
+        fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+        lineNumber: 60,
+        columnNumber: 9
+      }, this),
+      /* @__PURE__ */ jsxDEV(
+        "a",
+        {
+          href: "https://marineterrein.nl/wat-is-er-te-doen/agenda/",
+          target: "_blank",
+          rel: "noopener noreferrer",
+          className: "flex items-center gap-1 text-xs font-semibold transition-opacity hover:opacity-70",
+          style: { color: MT_COLORS.skyBlue, textDecoration: "none", fontFamily: "var(--font-body)" },
+          children: [
+            t.viewMore,
+            /* @__PURE__ */ jsxDEV(ExternalLink, { size: 11 }, void 0, false, {
+              fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+              lineNumber: 82,
+              columnNumber: 11
+            }, this)
+          ]
+        },
+        void 0,
+        true,
+        {
+          fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+          lineNumber: 74,
+          columnNumber: 9
+        },
+        this
+      )
+    ] }, void 0, true, {
+      fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+      lineNumber: 59,
+      columnNumber: 7
+    }, this),
+    loading ? /* @__PURE__ */ jsxDEV(Skeleton, {}, void 0, false, {
+      fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+      lineNumber: 87,
+      columnNumber: 7
+    }, this) : items.length === 0 ? /* @__PURE__ */ jsxDEV("p", { className: "text-sm", style: { color: MT_COLORS.grayText, fontFamily: "var(--font-body)" }, children: t.agendaEmpty }, void 0, false, {
+      fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+      lineNumber: 89,
+      columnNumber: 7
+    }, this) : /* @__PURE__ */ jsxDEV("div", { className: "flex flex-col gap-0.5", children: items.map(
+      (item, idx) => /* @__PURE__ */ jsxDEV(
+        "a",
+        {
+          href: item.url || "https://marineterrein.nl/wat-is-er-te-doen/agenda/",
+          target: "_blank",
+          rel: "noopener noreferrer",
+          className: "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors",
+          style: { textDecoration: "none" },
+          onMouseEnter: (e) => {
+            e.currentTarget.style.background = "rgba(0,173,239,0.05)";
+          },
+          onMouseLeave: (e) => {
+            e.currentTarget.style.background = "transparent";
+          },
+          children: [
+            /* @__PURE__ */ jsxDEV(
+              "div",
+              {
+                className: "w-12 h-12 rounded-xl flex-shrink-0 flex flex-col items-center justify-center",
+                style: {
+                  background: "rgba(1,105,145,0.08)",
+                  border: "1px solid rgba(1,105,145,0.15)"
+                },
+                children: item.date ? /* @__PURE__ */ jsxDEV(Fragment, { children: [
+                  /* @__PURE__ */ jsxDEV(
+                    "span",
+                    {
+                      className: "text-[9px] uppercase font-bold tracking-wide",
+                      style: { color: MT_COLORS.coral, fontFamily: "var(--font-body)" },
+                      children: new Date(item.date).toLocaleDateString("nl-NL", { month: "short" })
+                    },
+                    void 0,
+                    false,
+                    {
+                      fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+                      lineNumber: 115,
+                      columnNumber: 21
+                    },
+                    this
+                  ),
+                  /* @__PURE__ */ jsxDEV(
+                    "span",
+                    {
+                      className: "text-lg font-bold leading-none",
+                      style: { color: MT_COLORS.darkTeal, fontFamily: "var(--font-heading)" },
+                      children: new Date(item.date).getDate()
+                    },
+                    void 0,
+                    false,
+                    {
+                      fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+                      lineNumber: 121,
+                      columnNumber: 21
+                    },
+                    this
+                  )
+                ] }, void 0, true, {
+                  fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+                  lineNumber: 114,
+                  columnNumber: 13
+                }, this) : /* @__PURE__ */ jsxDEV(Calendar, { size: 16, style: { color: MT_COLORS.deepBlue } }, void 0, false, {
+                  fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+                  lineNumber: 129,
+                  columnNumber: 13
+                }, this)
+              },
+              void 0,
+              false,
+              {
+                fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+                lineNumber: 106,
+                columnNumber: 15
+              },
+              this
+            ),
+            /* @__PURE__ */ jsxDEV("div", { className: "flex-1 min-w-0", children: [
+              /* @__PURE__ */ jsxDEV(
+                "p",
+                {
+                  className: "text-sm font-semibold truncate",
+                  style: { color: MT_COLORS.darkTeal, fontFamily: "var(--font-body)" },
+                  children: item.title
+                },
+                void 0,
+                false,
+                {
+                  fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+                  lineNumber: 134,
+                  columnNumber: 17
+                },
+                this
+              ),
+              /* @__PURE__ */ jsxDEV(
+                "p",
+                {
+                  className: "text-xs mt-0.5",
+                  style: { color: MT_COLORS.grayText, fontFamily: "var(--font-body)" },
+                  children: [
+                    item.date ? formatDate(item.date) : "",
+                    item.time ? ` · ${item.time}` : "",
+                    item.location ? ` · ${item.location}` : ""
+                  ]
+                },
+                void 0,
+                true,
+                {
+                  fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+                  lineNumber: 140,
+                  columnNumber: 17
+                },
+                this
+              )
+            ] }, void 0, true, {
+              fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+              lineNumber: 133,
+              columnNumber: 15
+            }, this)
+          ]
+        },
+        idx,
+        true,
+        {
+          fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+          lineNumber: 95,
+          columnNumber: 9
+        },
+        this
+      )
+    ) }, void 0, false, {
+      fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+      lineNumber: 93,
+      columnNumber: 7
+    }, this)
+  ] }, void 0, true, {
+    fileName: "C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx",
+    lineNumber: 57,
+    columnNumber: 5
+  }, this);
+}
+_c2 = AgendaCard;
+var _c, _c2;
+$RefreshReg$(_c, "Skeleton");
+$RefreshReg$(_c2, "AgendaCard");
+if (import.meta.hot && !inWebWorker) {
+  window.$RefreshReg$ = prevRefreshReg;
+  window.$RefreshSig$ = prevRefreshSig;
+}
+if (import.meta.hot && !inWebWorker) {
+  RefreshRuntime.__hmr_import(import.meta.url).then((currentExports) => {
+    RefreshRuntime.registerExportsForReactRefresh("C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("C:/Users/Admin/OneDrive/Desktop/UVA/yr3_sem6/ops-dashboard/tappstone-marineterrein-public/src/components/AgendaCard.tsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+
+//# sourceMappingURL=data:application/json;base64,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QTtBQUFBLG1CQWVBO0FBQUE7QUFBQTtBQUFBLFFBcERLWDtBQUFBQSxRQURQO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUEsTUFzREE7QUFBQSxJQUNELEtBekRIO0FBQUE7QUFBQTtBQUFBO0FBQUEsV0EwREE7QUFBQSxPQTlGSjtBQUFBO0FBQUE7QUFBQTtBQUFBLFNBZ0dBO0FBRUo7QUFBQ1ksTUF0R2U5QjtBQUFVLElBQUFYLElBQUF5QztBQUFBLGFBQUF6QyxJQUFBO0FBQUEsYUFBQXlDLEtBQUEiLCJuYW1lcyI6WyJDYWxlbmRhciIsIkV4dGVybmFsTGluayIsIkNBUkRfU1RZTEUiLCJNVF9DT0xPUlMiLCJTa2VsZXRvbiIsIm1hcCIsImkiLCJiYWNrZ3JvdW5kIiwiX2MiLCJmb3JtYXREYXRlIiwiZGF0ZVN0ciIsImQiLCJEYXRlIiwiaXNOYU4iLCJnZXRUaW1lIiwidG9Mb2NhbGVEYXRlU3RyaW5nIiwid2Vla2RheSIsImRheSIsIm1vbnRoIiwiQWdlbmRhQ2FyZCIsImZlZWQiLCJsb2FkaW5nIiwidCIsIml0ZW1zIiwiY29sb3IiLCJkZWVwQmx1ZSIsImRhcmtUZWFsIiwiZm9udEZhbWlseSIsImxldHRlclNwYWNpbmciLCJhZ2VuZGEiLCJza3lCbHVlIiwidGV4dERlY29yYXRpb24iLCJ2aWV3TW9yZSIsImxlbmd0aCIsImdyYXlUZXh0IiwiYWdlbmRhRW1wdHkiLCJpdGVtIiwiaWR4IiwidXJsIiwiZSIsImN1cnJlbnRUYXJnZXQiLCJzdHlsZSIsImJvcmRlciIsImRhdGUiLCJjb3JhbCIsImdldERhdGUiLCJ0aXRsZSIsInRpbWUiLCJsb2NhdGlvbiIsIl9jMiJdLCJpZ25vcmVMaXN0IjpbXSwic291cmNlcyI6WyJBZ2VuZGFDYXJkLnRzeCJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyBDYWxlbmRhciwgRXh0ZXJuYWxMaW5rIH0gZnJvbSBcImx1Y2lkZS1yZWFjdFwiO1xyXG5pbXBvcnQgeyBDQVJEX1NUWUxFLCBNVF9DT0xPUlMgfSBmcm9tIFwiLi4vc3R5bGVzL3RoZW1lXCI7XHJcbmltcG9ydCB0eXBlIHsgQWdlbmRhRmVlZCB9IGZyb20gXCIuLi90eXBlc1wiO1xyXG5pbXBvcnQgdHlwZSB7IFRyYW5zbGF0aW9ucyB9IGZyb20gXCIuLi9pMThuXCI7XHJcblxyXG5pbnRlcmZhY2UgUHJvcHMge1xyXG4gIGZlZWQ6IEFnZW5kYUZlZWQgfCBudWxsO1xyXG4gIGxvYWRpbmc6IGJvb2xlYW47XHJcbiAgdDogVHJhbnNsYXRpb25zO1xyXG59XHJcblxyXG5mdW5jdGlvbiBTa2VsZXRvbigpIHtcclxuICByZXR1cm4gKFxyXG4gICAgPGRpdiBjbGFzc05hbWU9XCJmbGV4IGZsZXgtY29sIGdhcC0zXCI+XHJcbiAgICAgIHtbMSwgMiwgM10ubWFwKChpKSA9PiAoXHJcbiAgICAgICAgPGRpdiBrZXk9e2l9IGNsYXNzTmFtZT1cImZsZXggZ2FwLTMgaXRlbXMtc3RhcnRcIj5cclxuICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwidy0xMiBoLTEyIHJvdW5kZWQteGwgZmxleC1zaHJpbmstMCBhbmltYXRlLXB1bHNlXCIgc3R5bGU9e3sgYmFja2dyb3VuZDogXCJyZ2JhKDAsMTczLDIzOSwwLjA4KVwiIH19IC8+XHJcbiAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cImZsZXggZmxleC1jb2wgZ2FwLTEuNSBmbGV4LTEgcHQtMVwiPlxyXG4gICAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cImgtMy41IHctMy80IHJvdW5kZWQgYW5pbWF0ZS1wdWxzZVwiIHN0eWxlPXt7IGJhY2tncm91bmQ6IFwicmdiYSgwLDE3MywyMzksMC4wOClcIiB9fSAvPlxyXG4gICAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cImgtMyB3LTEvMiByb3VuZGVkIGFuaW1hdGUtcHVsc2VcIiBzdHlsZT17eyBiYWNrZ3JvdW5kOiBcInJnYmEoMCwxNzMsMjM5LDAuMDUpXCIgfX0gLz5cclxuICAgICAgICAgIDwvZGl2PlxyXG4gICAgICAgIDwvZGl2PlxyXG4gICAgICApKX1cclxuICAgIDwvZGl2PlxyXG4gICk7XHJcbn1cclxuXHJcbmZ1bmN0aW9uIGZvcm1hdERhdGUoZGF0ZVN0cjogc3RyaW5nKSB7XHJcbiAgY29uc3QgZCA9IG5ldyBEYXRlKGRhdGVTdHIpO1xyXG4gIGlmIChpc05hTihkLmdldFRpbWUoKSkpIHJldHVybiBkYXRlU3RyO1xyXG4gIHJldHVybiBkLnRvTG9jYWxlRGF0ZVN0cmluZyhcIm5sLU5MXCIsIHsgd2Vla2RheTogXCJzaG9ydFwiLCBkYXk6IFwibnVtZXJpY1wiLCBtb250aDogXCJzaG9ydFwiIH0pO1xyXG59XHJcblxyXG5leHBvcnQgZnVuY3Rpb24gQWdlbmRhQ2FyZCh7IGZlZWQsIGxvYWRpbmcsIHQgfTogUHJvcHMpIHtcclxuICBjb25zdCBpdGVtcyA9IGZlZWQ/Lml0ZW1zID8/IFtdO1xyXG5cclxuICByZXR1cm4gKFxyXG4gICAgPGRpdiBzdHlsZT17Q0FSRF9TVFlMRX0gY2xhc3NOYW1lPVwicC02IGZsZXggZmxleC1jb2wgZ2FwLTRcIj5cclxuICAgICAgey8qIGhlYWRlciAqL31cclxuICAgICAgPGRpdiBjbGFzc05hbWU9XCJmbGV4IGl0ZW1zLWNlbnRlciBqdXN0aWZ5LWJldHdlZW5cIj5cclxuICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cImZsZXggaXRlbXMtY2VudGVyIGdhcC0yLjVcIj5cclxuICAgICAgICAgIDxkaXZcclxuICAgICAgICAgICAgY2xhc3NOYW1lPVwidy04IGgtOCByb3VuZGVkLWxnIGZsZXggaXRlbXMtY2VudGVyIGp1c3RpZnktY2VudGVyIGZsZXgtc2hyaW5rLTBcIlxyXG4gICAgICAgICAgICBzdHlsZT17eyBiYWNrZ3JvdW5kOiBcInJnYmEoMCwxNzMsMjM5LDAuMSlcIiwgY29sb3I6IE1UX0NPTE9SUy5kZWVwQmx1ZSB9fVxyXG4gICAgICAgICAgPlxyXG4gICAgICAgICAgICA8Q2FsZW5kYXIgc2l6ZT17MTZ9IC8+XHJcbiAgICAgICAgICA8L2Rpdj5cclxuICAgICAgICAgIDxoMlxyXG4gICAgICAgICAgICBjbGFzc05hbWU9XCJ0ZXh0LXNtIGZvbnQtc2VtaWJvbGRcIlxyXG4gICAgICAgICAgICBzdHlsZT17eyBjb2xvcjogTVRfQ09MT1JTLmRhcmtUZWFsLCBmb250RmFtaWx5OiBcInZhcigtLWZvbnQtYm9keSlcIiwgbGV0dGVyU3BhY2luZzogXCItMC4wMWVtXCIgfX1cclxuICAgICAgICAgID5cclxuICAgICAgICAgICAge3QuYWdlbmRhfVxyXG4gICAgICAgICAgPC9oMj5cclxuICAgICAgICA8L2Rpdj5cclxuICAgICAgICA8YVxyXG4gICAgICAgICAgaHJlZj1cImh0dHBzOi8vbWFyaW5ldGVycmVpbi5ubC93YXQtaXMtZXItdGUtZG9lbi9hZ2VuZGEvXCJcclxuICAgICAgICAgIHRhcmdldD1cIl9ibGFua1wiXHJcbiAgICAgICAgICByZWw9XCJub29wZW5lciBub3JlZmVycmVyXCJcclxuICAgICAgICAgIGNsYXNzTmFtZT1cImZsZXggaXRlbXMtY2VudGVyIGdhcC0xIHRleHQteHMgZm9udC1zZW1pYm9sZCB0cmFuc2l0aW9uLW9wYWNpdHkgaG92ZXI6b3BhY2l0eS03MFwiXHJcbiAgICAgICAgICBzdHlsZT17eyBjb2xvcjogTVRfQ09MT1JTLnNreUJsdWUsIHRleHREZWNvcmF0aW9uOiBcIm5vbmVcIiwgZm9udEZhbWlseTogXCJ2YXIoLS1mb250LWJvZHkpXCIgfX1cclxuICAgICAgICA+XHJcbiAgICAgICAgICB7dC52aWV3TW9yZX1cclxuICAgICAgICAgIDxFeHRlcm5hbExpbmsgc2l6ZT17MTF9IC8+XHJcbiAgICAgICAgPC9hPlxyXG4gICAgICA8L2Rpdj5cclxuXHJcbiAgICAgIHtsb2FkaW5nID8gKFxyXG4gICAgICAgIDxTa2VsZXRvbiAvPlxyXG4gICAgICApIDogaXRlbXMubGVuZ3RoID09PSAwID8gKFxyXG4gICAgICAgIDxwIGNsYXNzTmFtZT1cInRleHQtc21cIiBzdHlsZT17eyBjb2xvcjogTVRfQ09MT1JTLmdyYXlUZXh0LCBmb250RmFtaWx5OiBcInZhcigtLWZvbnQtYm9keSlcIiB9fT5cclxuICAgICAgICAgIHt0LmFnZW5kYUVtcHR5fVxyXG4gICAgICAgIDwvcD5cclxuICAgICAgKSA6IChcclxuICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cImZsZXggZmxleC1jb2wgZ2FwLTAuNVwiPlxyXG4gICAgICAgICAge2l0ZW1zLm1hcCgoaXRlbSwgaWR4KSA9PiAoXHJcbiAgICAgICAgICAgIDxhXHJcbiAgICAgICAgICAgICAga2V5PXtpZHh9XHJcbiAgICAgICAgICAgICAgaHJlZj17aXRlbS51cmwgfHwgXCJodHRwczovL21hcmluZXRlcnJlaW4ubmwvd2F0LWlzLWVyLXRlLWRvZW4vYWdlbmRhL1wifVxyXG4gICAgICAgICAgICAgIHRhcmdldD1cIl9ibGFua1wiXHJcbiAgICAgICAgICAgICAgcmVsPVwibm9vcGVuZXIgbm9yZWZlcnJlclwiXHJcbiAgICAgICAgICAgICAgY2xhc3NOYW1lPVwiZmxleCBpdGVtcy1jZW50ZXIgZ2FwLTMgcHgtMyBweS0yLjUgcm91bmRlZC14bCB0cmFuc2l0aW9uLWNvbG9yc1wiXHJcbiAgICAgICAgICAgICAgc3R5bGU9e3sgdGV4dERlY29yYXRpb246IFwibm9uZVwiIH19XHJcbiAgICAgICAgICAgICAgb25Nb3VzZUVudGVyPXsoZSkgPT4geyAoZS5jdXJyZW50VGFyZ2V0IGFzIEhUTUxBbmNob3JFbGVtZW50KS5zdHlsZS5iYWNrZ3JvdW5kID0gXCJyZ2JhKDAsMTczLDIzOSwwLjA1KVwiOyB9fVxyXG4gICAgICAgICAgICAgIG9uTW91c2VMZWF2ZT17KGUpID0+IHsgKGUuY3VycmVudFRhcmdldCBhcyBIVE1MQW5jaG9yRWxlbWVudCkuc3R5bGUuYmFja2dyb3VuZCA9IFwidHJhbnNwYXJlbnRcIjsgfX1cclxuICAgICAgICAgICAgPlxyXG4gICAgICAgICAgICAgIHsvKiBkYXRlIGRpYW1vbmQgYm94ICovfVxyXG4gICAgICAgICAgICAgIDxkaXZcclxuICAgICAgICAgICAgICAgIGNsYXNzTmFtZT1cInctMTIgaC0xMiByb3VuZGVkLXhsIGZsZXgtc2hyaW5rLTAgZmxleCBmbGV4LWNvbCBpdGVtcy1jZW50ZXIganVzdGlmeS1jZW50ZXJcIlxyXG4gICAgICAgICAgICAgICAgc3R5bGU9e3tcclxuICAgICAgICAgICAgICAgICAgYmFja2dyb3VuZDogXCJyZ2JhKDEsMTA1LDE0NSwwLjA4KVwiLFxyXG4gICAgICAgICAgICAgICAgICBib3JkZXI6IFwiMXB4IHNvbGlkIHJnYmEoMSwxMDUsMTQ1LDAuMTUpXCIsXHJcbiAgICAgICAgICAgICAgICB9fVxyXG4gICAgICAgICAgICAgID5cclxuICAgICAgICAgICAgICAgIHtpdGVtLmRhdGUgPyAoXHJcbiAgICAgICAgICAgICAgICAgIDw+XHJcbiAgICAgICAgICAgICAgICAgICAgPHNwYW5cclxuICAgICAgICAgICAgICAgICAgICAgIGNsYXNzTmFtZT1cInRleHQtWzlweF0gdXBwZXJjYXNlIGZvbnQtYm9sZCB0cmFja2luZy13aWRlXCJcclxuICAgICAgICAgICAgICAgICAgICAgIHN0eWxlPXt7IGNvbG9yOiBNVF9DT0xPUlMuY29yYWwsIGZvbnRGYW1pbHk6IFwidmFyKC0tZm9udC1ib2R5KVwiIH19XHJcbiAgICAgICAgICAgICAgICAgICAgPlxyXG4gICAgICAgICAgICAgICAgICAgICAge25ldyBEYXRlKGl0ZW0uZGF0ZSkudG9Mb2NhbGVEYXRlU3RyaW5nKFwibmwtTkxcIiwgeyBtb250aDogXCJzaG9ydFwiIH0pfVxyXG4gICAgICAgICAgICAgICAgICAgIDwvc3Bhbj5cclxuICAgICAgICAgICAgICAgICAgICA8c3BhblxyXG4gICAgICAgICAgICAgICAgICAgICAgY2xhc3NOYW1lPVwidGV4dC1sZyBmb250LWJvbGQgbGVhZGluZy1ub25lXCJcclxuICAgICAgICAgICAgICAgICAgICAgIHN0eWxlPXt7IGNvbG9yOiBNVF9DT0xPUlMuZGFya1RlYWwsIGZvbnRGYW1pbHk6IFwidmFyKC0tZm9udC1oZWFkaW5nKVwiIH19XHJcbiAgICAgICAgICAgICAgICAgICAgPlxyXG4gICAgICAgICAgICAgICAgICAgICAge25ldyBEYXRlKGl0ZW0uZGF0ZSkuZ2V0RGF0ZSgpfVxyXG4gICAgICAgICAgICAgICAgICAgIDwvc3Bhbj5cclxuICAgICAgICAgICAgICAgICAgPC8+XHJcbiAgICAgICAgICAgICAgICApIDogKFxyXG4gICAgICAgICAgICAgICAgICA8Q2FsZW5kYXIgc2l6ZT17MTZ9IHN0eWxlPXt7IGNvbG9yOiBNVF9DT0xPUlMuZGVlcEJsdWUgfX0gLz5cclxuICAgICAgICAgICAgICAgICl9XHJcbiAgICAgICAgICAgICAgPC9kaXY+XHJcblxyXG4gICAgICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwiZmxleC0xIG1pbi13LTBcIj5cclxuICAgICAgICAgICAgICAgIDxwXHJcbiAgICAgICAgICAgICAgICAgIGNsYXNzTmFtZT1cInRleHQtc20gZm9udC1zZW1pYm9sZCB0cnVuY2F0ZVwiXHJcbiAgICAgICAgICAgICAgICAgIHN0eWxlPXt7IGNvbG9yOiBNVF9DT0xPUlMuZGFya1RlYWwsIGZvbnRGYW1pbHk6IFwidmFyKC0tZm9udC1ib2R5KVwiIH19XHJcbiAgICAgICAgICAgICAgICA+XHJcbiAgICAgICAgICAgICAgICAgIHtpdGVtLnRpdGxlfVxyXG4gICAgICAgICAgICAgICAgPC9wPlxyXG4gICAgICAgICAgICAgICAgPHBcclxuICAgICAgICAgICAgICAgICAgY2xhc3NOYW1lPVwidGV4dC14cyBtdC0wLjVcIlxyXG4gICAgICAgICAgICAgICAgICBzdHlsZT17eyBjb2xvcjogTVRfQ09MT1JTLmdyYXlUZXh0LCBmb250RmFtaWx5OiBcInZhcigtLWZvbnQtYm9keSlcIiB9fVxyXG4gICAgICAgICAgICAgICAgPlxyXG4gICAgICAgICAgICAgICAgICB7aXRlbS5kYXRlID8gZm9ybWF0RGF0ZShpdGVtLmRhdGUpIDogXCJcIn1cclxuICAgICAgICAgICAgICAgICAge2l0ZW0udGltZSA/IGAgwrcgJHtpdGVtLnRpbWV9YCA6IFwiXCJ9XHJcbiAgICAgICAgICAgICAgICAgIHtpdGVtLmxvY2F0aW9uID8gYCDCtyAke2l0ZW0ubG9jYXRpb259YCA6IFwiXCJ9XHJcbiAgICAgICAgICAgICAgICA8L3A+XHJcbiAgICAgICAgICAgICAgPC9kaXY+XHJcbiAgICAgICAgICAgIDwvYT5cclxuICAgICAgICAgICkpfVxyXG4gICAgICAgIDwvZGl2PlxyXG4gICAgICApfVxyXG4gICAgPC9kaXY+XHJcbiAgKTtcclxufVxyXG4iXSwiZmlsZSI6IkM6L1VzZXJzL0FkbWluL09uZURyaXZlL0Rlc2t0b3AvVVZBL3lyM19zZW02L29wcy1kYXNoYm9hcmQvdGFwcHN0b25lLW1hcmluZXRlcnJlaW4tcHVibGljL3NyYy9jb21wb25lbnRzL0FnZW5kYUNhcmQudHN4In0=

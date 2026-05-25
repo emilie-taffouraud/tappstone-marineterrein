@@ -220,13 +220,10 @@ export function deriveLiveKpis(
   overview: OpsLiveOverviewResponse,
   health: OpsHealthResponse | null,
   loading: boolean,
+  husenseCurrentPresence: number | null,
+  husenseLoading: boolean,
+  husenseGateCount: number,
 ): Kpi[] {
-  const telraamTotal = findRecord(overview, "telraam", "total_flow");
-  const husenseZones = new Set(
-    overview.records
-      .filter((record) => record.source === "husense" && record.category !== "sound")
-      .map((record) => record.zone || record.id),
-  );
   const waterTemp = findRecord(overview, "water", "water_temperature_c");
   const healthySources = health
     ? Object.values(health.sources).filter((source) => source.status === "ok").length
@@ -236,7 +233,7 @@ export function deriveLiveKpis(
   if (loading && !overview.generatedAt) {
     return [
       {
-        label: "Current visitors at Marineterrein",
+        label: "Current presence",
         value: "Loading...",
         delta: "",
         trend: "up",
@@ -246,8 +243,21 @@ export function deriveLiveKpis(
     ];
   }
 
+  if (husenseLoading) {
+    return [
+      {
+        label: "Current presence",
+        value: "Loading...",
+        delta: "",
+        trend: "up",
+        helper: "syncing with HuSense presence",
+        icon: TrafficCone,
+      },
+    ];
+  }
+
   const soundLevels = overview.records
-    .filter((record) => record.source === "husense" && record.metric === "sound_level_db")
+    .filter((record) => record.source === "sound" && record.metric === "sound_level_db")
     .map((record) => asNumber(record.value))
     .filter((value): value is number => value !== null);
   const averageSound = soundLevels.length
@@ -266,11 +276,11 @@ export function deriveLiveKpis(
 
   return [
     {
-      label: "Current visitors at Marineterrein",
-      value: telraamTotal ? String(Math.round(asNumber(telraamTotal.value) || 0)) : "Unavailable",
+      label: "Current presence",
+      value: husenseCurrentPresence !== null ? String(Math.round(husenseCurrentPresence || 0)) : "Unavailable",
       delta: "",
       trend: "up",
-      helper: telraamTotal ? "Kattenburgerstraat gate" : "Live visitor count unavailable",
+      helper: husenseCurrentPresence !== null ? "HuSense person count across the three Marineterrein captors" : "HuSense person count unavailable",
       icon: TrafficCone,
     },
     {
@@ -282,11 +292,11 @@ export function deriveLiveKpis(
       icon: Volume2,
     },
     {
-      label: "Crowd density",
-      value: "62%",
+      label: "Tracked HuSense gates",
+      value: String(husenseGateCount),
       delta: "",
       trend: "up",
-      helper: "Terrace is currently busiest",
+      helper: "Latest classified gate rows loaded",
       icon: Radar,
     },
     {
@@ -500,10 +510,10 @@ export function deriveSoundSummary(
   health: OpsHealthResponse | null,
 ): SummaryModel {
   const levelRecords = overview.records.filter(
-    (record) => record.source === "husense" && record.metric === "sound_level_db",
+    (record) => record.source === "sound" && record.metric === "sound_level_db",
   );
   const classRecords = overview.records.filter(
-    (record) => record.source === "husense" && record.metric === "sound_classification",
+    (record) => record.source === "sound" && record.metric === "sound_classification",
   );
 
   if (!levelRecords.length) {
@@ -511,9 +521,9 @@ export function deriveSoundSummary(
       title: "Sound level",
       value: "Unavailable",
       helper:
-        health?.sources.husense?.error ||
+        health?.sources.sound?.error ||
         "Sound data not available yet.",
-      tone: statusTone(health?.sources.husense?.status || "unknown"),
+      tone: statusTone(health?.sources.sound?.status || "unknown"),
       detail: ["Sound data not available yet."],
     };
   }
@@ -545,7 +555,7 @@ export function deriveSoundSummary(
     title: "Sound level",
     value: average !== null ? `${average.toFixed(0)} dB` : `${levelRecords.length} sensors live`,
     helper: comfort,
-    tone: statusTone(health?.sources.husense?.status || "unknown"),
+    tone: statusTone(health?.sources.sound?.status || "unknown"),
     detail: [
       min !== null && max !== null ? `Current range: ${min.toFixed(0)}-${max.toFixed(0)} dB` : "Decibel range unavailable",
       categories.length ? `Categories now: ${categories.slice(0, 4).join(", ")}` : "Categories now: awaiting classification labels",
@@ -603,7 +613,7 @@ export function deriveWaterSummary(
 
 export function deriveSoundCategoryChart(overview: OpsLiveOverviewResponse): SoundChartPoint[] {
   const classRecords = overview.records.filter(
-    (record) => record.source === "husense" && record.metric === "sound_classification" && typeof record.value === "string",
+    (record) => record.source === "sound" && record.metric === "sound_classification" && typeof record.value === "string",
   );
 
   if (!classRecords.length) {
@@ -1003,7 +1013,7 @@ export function deriveIncidentCorrelationChart(
 ): IncidentCorrelationPoint[] {
   const orderedPoints = [...telraamPoints].reverse();
   const soundLevels = overview.records
-    .filter((record) => record.source === "husense" && record.metric === "sound_level_db")
+    .filter((record) => record.source === "sound" && record.metric === "sound_level_db")
     .map((record) => asNumber(record.value))
     .filter((value): value is number => value !== null);
   const averageSound =
@@ -1034,7 +1044,7 @@ export function deriveCrowdingSoundChart(
     );
   });
   const soundRecords = overview.records.filter(
-    (record) => record.source === "husense" && record.metric === "sound_level_db",
+    (record) => record.source === "sound" && record.metric === "sound_level_db",
   );
 
   if (!crowdingRecords.length || !soundRecords.length) {

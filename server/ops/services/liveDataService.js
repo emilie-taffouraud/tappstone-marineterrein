@@ -1,5 +1,5 @@
 import { getKnmiLiveData } from "../adapters/knmiAdapter.js";
-import { getHusenseLiveData } from "../adapters/husenseAdapter.js";
+import { getSoundClassificationLiveData } from "../adapters/soundClassificationAdapter.js";
 import { getTelraamLiveData } from "../adapters/telraamAdapter.js";
 import { getWaterTemperatureLiveData } from "../adapters/waterTemperatureAdapter.js";
 import { getWeatherLiveData } from "../adapters/weatherAdapter.js";
@@ -11,7 +11,7 @@ export async function getUnifiedLiveData({ includeRaw = false } = {}) {
 
   const sources = await Promise.all([
     getTelraamLiveData(env),
-    getHusenseLiveData(env),
+    getSoundClassificationLiveData(env),
     getWeatherLiveData(env),
     getWaterTemperatureLiveData(env),
     //getKnmiLiveData(env),

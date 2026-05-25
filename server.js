@@ -41,12 +41,7 @@ const KNMI_OPEN_DATA_API_KEY = process.env.KNMI_OPEN_DATA_API_KEY;
 const HUSENSE_DEFAULT_SPACES = [
   {
     id: "b9c17619-be37-4c6a-a1f3-45e08fd3466c",
-    name: "Marineterrein Hoofd Ingang",
-    capacity: 100,
-  },
-  {
-    id: "5db05d88-7833-440a-9c3e-24c93fb08406",
-    name: "UvA Ingang Roetersstraat",
+    name: "Marineterrein Hoofdingang",
     capacity: 100,
   },
   {
@@ -60,6 +55,7 @@ const HUSENSE_DEFAULT_SPACES = [
     capacity: 100,
   },
 ];
+const HUSENSE_CLASSIFIED_GATE_CLASSES = ["unclassified", "person", "runner", "bike", "car", "bus"];
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -98,20 +94,14 @@ function normalizeHusenseCollection(payload) {
   return [];
 }
 
-function extractPresencePayload(payload) {
-  if (!payload) return null;
+function resolveHusensePresenceCount(payload) {
+  if (payload == null) return null;
   if (Array.isArray(payload)) {
-    return payload.find((item) => extractPresencePayload(item)) || null;
+    return payload.reduce((sum, item) => sum + (resolveHusensePresenceCount(item) ?? 0), 0);
   }
   if (!isObject(payload)) return null;
 
-  const nestedKeys = ["data", "result", "space", "zone", "presence", "occupancy", "live"];
-  for (const key of nestedKeys) {
-    const nested = extractPresencePayload(payload[key]);
-    if (nested) return nested;
-  }
-
-  const presenceCount = firstFiniteNumber(
+  const aggregate = firstFiniteNumber(
     payload.presenceCount,
     payload.currentPresence,
     payload.currentOccupancy,
@@ -120,12 +110,58 @@ function extractPresencePayload(payload) {
     payload.personCount,
     payload.count,
     payload.total,
+    payload.entryCount,
+    payload.enteredCount,
+    payload.peopleEntered,
     payload.value,
   );
+  if (aggregate !== null) return aggregate;
+
+  const directPeople = [
+    payload.person,
+    payload.persons,
+    payload.runner,
+    payload.runners,
+    payload.bike,
+    payload.bikes,
+    payload.pedestrian_count,
+    payload.bicycle_count,
+    payload.vehicle_count,
+  ].reduce((sum, value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? sum + numeric : sum;
+  }, 0);
+
+  const nested = Object.values(payload).reduce((sum, value) => {
+    if (Array.isArray(value) || isObject(value)) {
+      return sum + (resolveHusensePresenceCount(value) ?? 0);
+    }
+    return sum;
+  }, 0);
+
+  const total = directPeople + nested;
+  return total > 0 ? total : null;
+}
+
+function extractPresencePayload(payload) {
+  if (!payload) return null;
+  if (Array.isArray(payload)) {
+    const presenceCount = resolveHusensePresenceCount(payload);
+    return presenceCount !== null ? { presenceCount, raw: payload } : null;
+  }
+  if (!isObject(payload)) return null;
+
+  const presenceCount = resolveHusensePresenceCount(payload);
   const capacity = firstFiniteNumber(payload.capacity, payload.maxCapacity, payload.limit);
 
   if (presenceCount !== null || capacity !== null) {
     return { presenceCount, capacity, raw: payload };
+  }
+
+  const nestedKeys = ["data", "result", "space", "zone", "presence", "occupancy", "live"];
+  for (const key of nestedKeys) {
+    const nested = extractPresencePayload(payload[key]);
+    if (nested) return nested;
   }
 
   return null;
@@ -152,6 +188,9 @@ function normalizePresenceZones(payload, fallbackZones = HUSENSE_DEFAULT_SPACES)
             entry?.peopleCount,
             entry?.personCount,
             entry?.count,
+            entry?.entryCount,
+            entry?.enteredCount,
+            entry?.peopleEntered,
             presence?.presenceCount,
           ) ?? 0,
       };
@@ -317,39 +356,34 @@ async function fetchJsonOrThrow(url, headers) {
   return response.json();
 }
 
-function summarizeHusensePresenceZones(payload) {
-  if (!isObject(payload)) {
-    const presence = extractPresencePayload(payload);
-    return {
-      presenceCount: presence?.presenceCount ?? 0,
-      observedAt: null,
-    };
+function extractLatestHusenseTimestamp(payload) {
+  if (payload == null) return null;
+  if (Array.isArray(payload)) {
+    return payload.reduce((latest, item) => {
+      const nested = extractLatestHusenseTimestamp(item);
+      if (nested !== null && (latest === null || nested > latest)) return nested;
+      return latest;
+    }, null);
   }
+  if (!isObject(payload)) return null;
 
-  const zoneEntries = Object.entries(payload).filter(([, value]) => isObject(value));
-  if (!zoneEntries.length) {
-    const presence = extractPresencePayload(payload);
-    return {
-      presenceCount: presence?.presenceCount ?? 0,
-      observedAt: null,
-    };
-  }
+  let latestTimestamp = firstFiniteNumber(payload.time_stamp, payload.timestamp, payload.observedAt, payload.observed_at);
 
-  let presenceCount = 0;
-  let latestTimestamp = null;
-
-  for (const [, value] of zoneEntries) {
-    const personCount = firstFiniteNumber(value.person, value.persons) ?? 0;
-    const runnerCount = firstFiniteNumber(value.runner) ?? 0;
-    const bicycleCount = firstFiniteNumber(value.bike) ?? 0;
-    const timestamp = firstFiniteNumber(value.time_stamp, value.timestamp);
-
-    presenceCount += personCount + runnerCount + bicycleCount;
-
-    if (timestamp !== null && (latestTimestamp === null || timestamp > latestTimestamp)) {
-      latestTimestamp = timestamp;
+  for (const value of Object.values(payload)) {
+    if (Array.isArray(value) || isObject(value)) {
+      const nested = extractLatestHusenseTimestamp(value);
+      if (nested !== null && (latestTimestamp === null || nested > latestTimestamp)) {
+        latestTimestamp = nested;
+      }
     }
   }
+
+  return latestTimestamp;
+}
+
+function summarizeHusensePresenceZones(payload) {
+  const presenceCount = resolveHusensePresenceCount(payload) ?? 0;
+  const latestTimestamp = extractLatestHusenseTimestamp(payload);
 
   return {
     presenceCount,
@@ -357,29 +391,205 @@ function summarizeHusensePresenceZones(payload) {
   };
 }
 
+function summarizeHusenseClassifiedGateData(payload, gateCatalog = new Map()) {
+  if (!isObject(payload)) return [];
+
+  return Object.entries(payload)
+    .filter(([, gateData]) => isObject(gateData))
+    .map(([gateId, gateData]) => {
+      const modeCounts = Object.fromEntries(
+        HUSENSE_CLASSIFIED_GATE_CLASSES.map((className) => {
+          const arrivals = firstFiniteNumber(gateData[className]?.in) ?? 0;
+          const departures = firstFiniteNumber(gateData[className]?.out) ?? 0;
+
+          return [
+            className,
+            {
+              arrivals,
+              departures,
+              total: arrivals + departures,
+            },
+          ];
+        }),
+      );
+
+      const arrivals = Object.values(modeCounts).reduce((sum, mode) => sum + mode.arrivals, 0);
+      const departures = Object.values(modeCounts).reduce((sum, mode) => sum + mode.departures, 0);
+      const latestTimestamp = firstFiniteNumber(gateData.time_stamp, gateData.timestamp);
+      const gateMetadata = gateCatalog.get(gateId);
+
+      return {
+        id: gateId,
+        gateId,
+        gateName: firstText(gateMetadata?.name, gateMetadata?.description) || "HuSense gate",
+        description: firstText(gateMetadata?.description),
+        date: firstText(gateData.date),
+        observedAt: latestTimestamp === null ? null : new Date(latestTimestamp).toISOString(),
+        arrivals,
+        departures,
+        totalCount: arrivals + departures,
+        modeCounts,
+      };
+    });
+}
+
 async function fetchHusensePresenceForSpace(space, headers) {
   const apiBaseUrl = buildHusensePresenceApiBaseUrl();
-  const [spaceResult, presenceResult] = await Promise.allSettled([
+  const [spaceResult, presenceResult, gateResult] = await Promise.allSettled([
     fetchJsonOrThrow(`${apiBaseUrl}/Spaces/${space.id}`, headers),
     fetchJsonOrThrow(`${apiBaseUrl}/Spaces/${space.id}/PresenceZones/_/LatestData`, headers),
+    fetchJsonOrThrow(`${apiBaseUrl}/Spaces/${space.id}/ClassifiedGates/_/LatestData`, headers),
   ]);
 
-  if (spaceResult.status === "rejected" && presenceResult.status === "rejected") {
-    throw presenceResult.reason || spaceResult.reason;
+  if (spaceResult.status === "rejected" && presenceResult.status === "rejected" && gateResult.status === "rejected") {
+    throw gateResult.reason || presenceResult.reason || spaceResult.reason;
   }
 
   const metadata = spaceResult.status === "fulfilled" && isObject(spaceResult.value) ? spaceResult.value : null;
   const presenceSummary =
     presenceResult.status === "fulfilled" ? summarizeHusensePresenceZones(presenceResult.value) : null;
+  const personMovementCount =
+    gateResult.status === "fulfilled"
+      ? summarizeHusenseClassifiedGateData(gateResult.value).reduce(
+          (total, gate) => total + (firstFiniteNumber(gate.modeCounts?.person?.total) ?? 0),
+          0,
+        )
+      : null;
 
   return {
     id: firstText(metadata?.identifier, metadata?.id, space.id) || space.id,
     name: firstText(metadata?.name, space.name) || space.name,
     capacity: firstPositiveNumber(metadata?.capacity, metadata?.maxCapacity, space.capacity) ?? space.capacity,
-    presenceCount: presenceSummary?.presenceCount ?? 0,
-    currentPresence: presenceSummary?.presenceCount ?? 0,
-    count: presenceSummary?.presenceCount ?? 0,
+    presenceCount: personMovementCount ?? presenceSummary?.presenceCount ?? 0,
+    currentPresence: personMovementCount ?? presenceSummary?.presenceCount ?? 0,
+    count: personMovementCount ?? presenceSummary?.presenceCount ?? 0,
     observedAt: presenceSummary?.observedAt ?? null,
+  };
+}
+
+async function fetchHusenseClassifiedGateCountsForSpace(space, headers) {
+  const apiBaseUrl = buildHusensePresenceApiBaseUrl();
+  const [spaceResult, gateResult, latestResult] = await Promise.allSettled([
+    fetchJsonOrThrow(`${apiBaseUrl}/Spaces/${space.id}`, headers),
+    fetchJsonOrThrow(`${apiBaseUrl}/Spaces/${space.id}/ClassifiedGates`, headers),
+    fetchJsonOrThrow(`${apiBaseUrl}/Spaces/${space.id}/ClassifiedGates/_/LatestData`, headers),
+  ]);
+
+  if (latestResult.status === "rejected") {
+    throw latestResult.reason;
+  }
+
+  const metadata = spaceResult.status === "fulfilled" && isObject(spaceResult.value) ? spaceResult.value : null;
+  const gates = gateResult.status === "fulfilled" && Array.isArray(gateResult.value) ? gateResult.value : [];
+  const gateCatalog = new Map(
+    gates
+      .filter((gate) => isObject(gate) && firstText(gate.identifier, gate.id))
+      .map((gate) => [firstText(gate.identifier, gate.id), gate]),
+  );
+
+  return summarizeHusenseClassifiedGateData(latestResult.value, gateCatalog).map((gate) => ({
+    ...gate,
+    spaceId: firstText(metadata?.identifier, metadata?.id, space.id) || space.id,
+    spaceName: firstText(metadata?.name, space.name) || space.name,
+  }));
+}
+
+async function fetchHusenseDashboardSummary(space, headers) {
+  const [presenceResult, gateResult] = await Promise.allSettled([
+    fetchHusensePresenceForSpace(space, headers),
+    fetchHusenseClassifiedGateCountsForSpace(space, headers),
+  ]);
+
+  if (presenceResult.status === "rejected" && gateResult.status === "rejected") {
+    throw gateResult.reason || presenceResult.reason;
+  }
+
+  const presence =
+    presenceResult.status === "fulfilled"
+      ? presenceResult.value
+      : {
+          id: space.id,
+          name: space.name,
+          presenceCount: 0,
+          currentPresence: 0,
+          observedAt: null,
+        };
+  const gates = gateResult.status === "fulfilled" ? gateResult.value : [];
+  const activeGates = gates.filter((gate) => firstFiniteNumber(gate.totalCount, gate.arrivals, gate.departures) !== 0);
+  const totals = activeGates.reduce(
+    (summary, gate) => {
+      for (const className of HUSENSE_CLASSIFIED_GATE_CLASSES) {
+        summary[className] += firstFiniteNumber(gate.modeCounts?.[className]?.total) ?? 0;
+      }
+
+      return summary;
+    },
+    {
+      unclassified: 0,
+      person: 0,
+      runner: 0,
+      bike: 0,
+      car: 0,
+      bus: 0,
+    },
+  );
+
+  return {
+    spaceId: presence.id,
+    spaceName: presence.name,
+    currentPresence: presence.presenceCount ?? 0,
+    observedAt: presence.observedAt,
+    activeGateCount: activeGates.length,
+    totals,
+    gates: activeGates,
+  };
+}
+
+async function fetchHusenseDashboardSummaryForSpaces(spaces, headers) {
+  const summaryResults = await Promise.allSettled(
+    spaces.map((space) => fetchHusenseDashboardSummary(space, headers)),
+  );
+  const summaries = summaryResults.flatMap((result, index) => {
+    if (result.status === "fulfilled") return [result.value];
+
+    const fallback = spaces[index];
+    console.warn(
+      `Husense dashboard summary fetch failed for space ${fallback.id} (${fallback.name}):`,
+      result.reason,
+    );
+    return [];
+  });
+
+  if (!summaries.length) {
+    throw summaryResults.find((result) => result.status === "rejected")?.reason || new Error("No HuSense summaries available.");
+  }
+
+  return {
+    spaceId: "marineterrein-husense-captors",
+    spaceName: "Marineterrein HuSense captors",
+    currentPresence: summaries.reduce((total, summary) => total + (firstFiniteNumber(summary.currentPresence) ?? 0), 0),
+    observedAt:
+      summaries
+        .map((summary) => summary.observedAt)
+        .filter(Boolean)
+        .sort()
+        .at(-1) ?? null,
+    activeGateCount: summaries.reduce((total, summary) => total + (firstFiniteNumber(summary.activeGateCount) ?? 0), 0),
+    totals: HUSENSE_CLASSIFIED_GATE_CLASSES.reduce((totals, className) => {
+      totals[className] = summaries.reduce(
+        (total, summary) => total + (firstFiniteNumber(summary.totals?.[className]) ?? 0),
+        0,
+      );
+      return totals;
+    }, {}),
+    gates: summaries.flatMap((summary) => summary.gates || []),
+    spaces: summaries.map((summary) => ({
+      id: summary.spaceId,
+      name: summary.spaceName,
+      currentPresence: summary.currentPresence,
+      observedAt: summary.observedAt,
+      activeGateCount: summary.activeGateCount,
+    })),
   };
 }
 
@@ -650,6 +860,58 @@ app.get("/api/husense/presence", async (req, res) => {
     res.json(zones);
   } catch (err) {
     console.error("Husense Live API error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------- Husense Classified Gate Counts ----------
+app.get("/api/husense/gate-counts", async (req, res) => {
+  try {
+    const bearerToken = getHusenseBearerToken();
+    if (!bearerToken) {
+      return res.status(500).json({ error: "Missing Husense bearer token." });
+    }
+
+    const headers = {
+      Accept: "application/json",
+      Authorization: `Bearer ${bearerToken}`,
+    };
+    const gateResults = await Promise.allSettled(
+      HUSENSE_DEFAULT_SPACES.map((space) => fetchHusenseClassifiedGateCountsForSpace(space, headers)),
+    );
+    const gates = gateResults.flatMap((result, index) => {
+      if (result.status === "fulfilled") return result.value;
+
+      const fallback = HUSENSE_DEFAULT_SPACES[index];
+      console.warn(
+        `Husense classified gate fetch failed for space ${fallback.id} (${fallback.name}):`,
+        result.reason,
+      );
+      return [];
+    });
+
+    res.json(gates);
+  } catch (err) {
+    console.error("Husense classified gate API error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/husense/dashboard-summary", async (req, res) => {
+  try {
+    const bearerToken = getHusenseBearerToken();
+    if (!bearerToken) {
+      return res.status(500).json({ error: "Missing Husense bearer token." });
+    }
+
+    const headers = {
+      Accept: "application/json",
+      Authorization: `Bearer ${bearerToken}`,
+    };
+    const summary = await fetchHusenseDashboardSummaryForSpaces(HUSENSE_DEFAULT_SPACES, headers);
+    res.json(summary);
+  } catch (err) {
+    console.error("Husense dashboard summary API error:", err);
     res.status(500).json({ error: err.message });
   }
 });
