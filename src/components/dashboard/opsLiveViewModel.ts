@@ -515,14 +515,14 @@ export function deriveSoundSummary(
   overview: OpsLiveOverviewResponse,
   health: OpsHealthResponse | null,
 ): SummaryModel {
-  const levelRecords = overview.records.filter(
-    (record) => record.source === "sound" && record.metric === "sound_level_db",
-  );
-  const classRecords = overview.records.filter(
-    (record) => record.source === "sound" && record.metric === "sound_classification",
-  );
+  const levelRecord = findRecord(overview, "sound", "sound_level_db");
+  const classRecord = findRecord(overview, "sound", "sound_classification");
+  const averageRecord = findRecord(overview, "sound", "sound_level_db_7d_average");
+  const minRecord = findRecord(overview, "sound", "sound_level_db_7d_min");
+  const maxRecord = findRecord(overview, "sound", "sound_level_db_7d_max");
+  const commonClassesRecord = findRecord(overview, "sound", "sound_classification_7d_top");
 
-  if (!levelRecords.length) {
+  if (!levelRecord) {
     return {
       title: "Sound level",
       value: "Unavailable",
@@ -534,38 +534,37 @@ export function deriveSoundSummary(
     };
   }
 
-  const values = levelRecords.map((record) => asNumber(record.value)).filter((value): value is number => value !== null);
-  const min = values.length ? Math.min(...values) : null;
-  const max = values.length ? Math.max(...values) : null;
-  const categories = Array.from(
-    new Set(
-      classRecords
-        .map((record) => (typeof record.value === "string" ? record.value : null))
-        .filter((value): value is string => Boolean(value)),
-    ),
-  );
-
-  const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  const current = asNumber(levelRecord.value);
+  const average = asNumber(averageRecord?.value ?? null);
+  const min = asNumber(minRecord?.value ?? null);
+  const max = asNumber(maxRecord?.value ?? null);
+  const currentClass = typeof classRecord?.value === "string" ? classRecord.value : null;
+  const commonClasses = typeof commonClassesRecord?.value === "string" ? commonClassesRecord.value : null;
   const comfort =
-    average === null
+    current === null
       ? "Sound data not available yet."
-      : average >= 85
+      : current >= 85
         ? "Too loud"
-        : average >= 75
+        : current >= 75
           ? "Loud"
-          : average >= 65
+          : current >= 65
             ? "Noticeable"
             : "Comfortable";
 
   return {
     title: "Sound level",
-    value: average !== null ? `${average.toFixed(0)} dB` : `${levelRecords.length} sensors live`,
+    value: current !== null ? `${current.toFixed(0)} dB` : "Sensor live",
     helper: comfort,
     tone: statusTone(health?.sources.sound?.status || "unknown"),
     detail: [
-      min !== null && max !== null ? `Current range: ${min.toFixed(0)}-${max.toFixed(0)} dB` : "Decibel range unavailable",
-      categories.length ? `Categories now: ${categories.slice(0, 4).join(", ")}` : "Categories now: awaiting classification labels",
+      min !== null && max !== null ? `7-day range: ${min.toFixed(0)}-${max.toFixed(0)} dB` : "Decibel range unavailable",
+      commonClasses || currentClass ? `Categories now: ${commonClasses || currentClass}` : "Categories now: awaiting classification labels",
     ],
+    stats: [
+      average !== null ? { label: "7-day average", value: `${average.toFixed(0)} dB` } : null,
+      min !== null && max !== null ? { label: "7-day range", value: `${min.toFixed(0)}-${max.toFixed(0)} dB` } : null,
+      commonClasses ? { label: "Common sounds", value: commonClasses } : null,
+    ].filter((item): item is { label: string; value: string } => Boolean(item)),
   };
 }
 

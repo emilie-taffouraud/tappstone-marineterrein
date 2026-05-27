@@ -9,8 +9,11 @@ import { getAgendaFeed } from "./server/ops/services/agendaService.js";
 import { getKnmiLiveData } from "./server/ops/adapters/knmiAdapter.js";
 import { getWeatherLiveData } from "./server/ops/adapters/weatherAdapter.js";
 import { getOpsEnv } from "./server/ops/config/env.js";
+import { startSoundMqttClient } from "./server/ops/adapters/soundMqttClient.js";
+import { persistSoundObservation } from "./server/ops/services/soundObservationStore.js";
 
 dotenv.config({ path: [".env.local", ".env"] });
+startSoundMqttClient(getOpsEnv(), { onMessage: persistSoundObservation });
 
 const app = express();
 app.use(cors());

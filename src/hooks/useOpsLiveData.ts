@@ -18,7 +18,7 @@ const EMPTY_OVERVIEW: OpsLiveOverviewResponse = {
   },
 };
 
-export function useOpsLiveData(refreshMs = 5 * 60 * 1000) {
+export function useOpsLiveData(refreshMs = 30 * 1000) {
   const [overview, setOverview] = useState<OpsLiveOverviewResponse>(EMPTY_OVERVIEW);
   const [health, setHealth] = useState<OpsHealthResponse | null>(null);
   const [loading, setLoading] = useState(true);

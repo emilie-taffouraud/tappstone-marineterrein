@@ -1091,7 +1091,16 @@ export function OperationsDashboard() {
     };
   }, []);
 
-  const liveKpis = useMemo(() => deriveLiveKpis(overview, health, opsLoading), [overview, health, opsLoading]);
+  const husenseCurrentPresence = useMemo(
+    () => (occupancyData.length ? occupancyData.reduce((sum, item) => sum + readPresenceCount(item), 0) : null),
+    [occupancyData],
+  );
+  const husenseLoading = !husenseError && !occupancyData.length;
+  const husenseGateCount = occupancyData.length;
+  const liveKpis = useMemo(
+    () => deriveLiveKpis(overview, health, opsLoading, husenseCurrentPresence, husenseLoading, husenseGateCount),
+    [overview, health, opsLoading, husenseCurrentPresence, husenseLoading, husenseGateCount],
+  );
   const liveWeatherWidget = useMemo(() => deriveWeatherWidgetModel(overview, health), [overview, health]);
   const liveMetaSummary = useMemo(() => deriveLiveMetaSummary(overview, health), [overview, health]);
   const waterSummary = useMemo(() => deriveWaterSummary(overview, health), [overview, health]);
@@ -1114,11 +1123,7 @@ export function OperationsDashboard() {
     { label: "7-day max", value: formatTemperature(airTemperatureRange.max) },
   ];
   const soundFeedConnected = soundSummary.value !== "Unavailable";
-  const soundStats = [
-    ...(soundFeedConnected ? [{ label: "Comfort", value: soundSummary.helper }] : []),
-    ...(soundFeedConnected ? [{ label: "7-day average", value: soundSummary.value }] : []),
-    ...(soundFeedConnected ? [{ label: "7-day range", value: soundSummary.detail[0] || "Unavailable" }] : []),
-  ];
+  const soundStats = soundFeedConnected ? [{ label: "Comfort", value: soundSummary.helper }, ...(soundSummary.stats || [])] : [];
   const currentModalityChart = useMemo(() => deriveCurrentModalityChart(overview), [overview]);
   const telraamLiveModeSplitChart = useMemo(() => deriveTelraamLiveModeSplitChart(overview), [overview]);
   const anomalyChart = useMemo(() => deriveAnomalyChart(telraamHistory), [telraamHistory]);
@@ -1186,7 +1191,7 @@ export function OperationsDashboard() {
     }
 
     const soundLevels = overview.records
-      .filter((record) => record.source === "husense" && record.metric === "sound_level_db")
+      .filter((record) => record.source === "sound" && record.metric === "sound_level_db")
       .map((record) => numberFromRecord(record))
       .filter((value): value is number => value !== null);
     const averageSound = soundLevels.length

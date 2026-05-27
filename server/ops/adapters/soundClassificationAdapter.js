@@ -2,6 +2,8 @@ import { getZoneById, getZoneByLookupKey } from "../config/zones.js";
 import { getOrSetCache } from "../lib/cache.js";
 import { fetchJson } from "../lib/http.js";
 import { createUnifiedRecord } from "../lib/normalize.js";
+import { getSoundObservationSummary } from "../services/soundObservationStore.js";
+import { startSoundMqttClient } from "./soundMqttClient.js";
 
 function normalizeEntries(payload) {
   if (Array.isArray(payload)) return payload;
@@ -33,14 +35,206 @@ function resolveSensorZone(entry) {
   return getZoneById("general");
 }
 
+function zoneLabel(zone) {
+  return zone?.label || zone?.displayName || "Marineterrein";
+}
+
+function zoneLat(zone) {
+  return zone?.lat ?? zone?.labelPosition?.[0] ?? null;
+}
+
+function zoneLon(zone) {
+  return zone?.lon ?? zone?.labelPosition?.[1] ?? null;
+}
+
 function soundStatus(level) {
   if (level === null) return "unknown";
   if (level >= 80) return "warning";
   return "ok";
 }
 
+async function buildMqttSoundSource(env, fetchedAt) {
+  const snapshot = startSoundMqttClient(env);
+  const zone = getZoneById(env.soundMqttZoneId);
+  const historicalSummary = await getSoundObservationSummary({ deviceId: snapshot.latest?.deviceId }).catch((error) => ({
+    error: error.message,
+    sampleCount: 0,
+    averageSoundLevelDb: null,
+    minSoundLevelDb: null,
+    maxSoundLevelDb: null,
+    latestObservedAt: null,
+    dominantClassifications: [],
+  }));
+
+  if (!snapshot.enabled) {
+    return {
+      source: "sound",
+      status: "unknown",
+      fetchedAt,
+      lastSuccessAt: null,
+      records: [],
+      raw: null,
+      error: snapshot.lastError || "Sound MQTT feed is not configured.",
+    };
+  }
+
+  if (!snapshot.latest) {
+    return {
+      source: "sound",
+      status: "unknown",
+      fetchedAt,
+      lastSuccessAt: null,
+      records: [],
+      raw: null,
+      error: snapshot.lastError || "Connected to the sound MQTT feed; waiting for the first sensor message.",
+    };
+  }
+
+  const ageMs = Date.now() - new Date(snapshot.latest.receivedAt).getTime();
+  const isStale = ageMs > env.soundMqttStaleAfterMs;
+  const status = isStale ? "warning" : soundStatus(snapshot.latest.soundLevel);
+  const sensorId = snapshot.latest.deviceId || "OE-007";
+  const records = [
+    createUnifiedRecord({
+      id: `sound-${sensorId}-mqtt-level`,
+      source: "sound",
+      category: "sound",
+      metric: "sound_level_db",
+      label: `${zoneLabel(zone)} sound level`,
+      value: snapshot.latest.soundLevel,
+      unit: "dB",
+      status,
+      confidence: isStale ? "low" : "high",
+      observedAt: snapshot.latest.observedAt,
+      fetchedAt,
+      lat: zoneLat(zone),
+      lon: zoneLon(zone),
+      zoneId: zone.id,
+      zone: zoneLabel(zone),
+      raw: snapshot.latest.raw,
+    }),
+    createUnifiedRecord({
+      id: `sound-${sensorId}-mqtt-class`,
+      source: "sound",
+      category: "sound",
+      metric: "sound_classification",
+      label: `${zoneLabel(zone)} dominant sound`,
+      value: snapshot.latest.soundClass,
+      unit: null,
+      status,
+      confidence: snapshot.latest.soundClassScore === null ? "low" : "medium",
+      observedAt: snapshot.latest.observedAt,
+      fetchedAt,
+      lat: zoneLat(zone),
+      lon: zoneLon(zone),
+      zoneId: zone.id,
+      zone: zoneLabel(zone),
+      raw: snapshot.latest.raw,
+    }),
+  ];
+
+  if (historicalSummary.averageSoundLevelDb !== null) {
+    records.push(
+      createUnifiedRecord({
+        id: `sound-${sensorId}-mqtt-level-7d-average`,
+        source: "sound",
+        category: "sound",
+        metric: "sound_level_db_7d_average",
+        label: `${zoneLabel(zone)} 7-day average sound level`,
+        value: historicalSummary.averageSoundLevelDb,
+        unit: "dB",
+        status: soundStatus(historicalSummary.averageSoundLevelDb),
+        confidence: historicalSummary.sampleCount >= 10 ? "medium" : "low",
+        observedAt: historicalSummary.latestObservedAt || snapshot.latest.observedAt,
+        fetchedAt,
+        lat: zoneLat(zone),
+        lon: zoneLon(zone),
+        zoneId: zone.id,
+        zone: zoneLabel(zone),
+        raw: historicalSummary,
+      }),
+      createUnifiedRecord({
+        id: `sound-${sensorId}-mqtt-level-7d-min`,
+        source: "sound",
+        category: "sound",
+        metric: "sound_level_db_7d_min",
+        label: `${zoneLabel(zone)} 7-day minimum sound level`,
+        value: historicalSummary.minSoundLevelDb,
+        unit: "dB",
+        status: soundStatus(historicalSummary.minSoundLevelDb),
+        confidence: historicalSummary.sampleCount >= 10 ? "medium" : "low",
+        observedAt: historicalSummary.latestObservedAt || snapshot.latest.observedAt,
+        fetchedAt,
+        lat: zoneLat(zone),
+        lon: zoneLon(zone),
+        zoneId: zone.id,
+        zone: zoneLabel(zone),
+        raw: historicalSummary,
+      }),
+      createUnifiedRecord({
+        id: `sound-${sensorId}-mqtt-level-7d-max`,
+        source: "sound",
+        category: "sound",
+        metric: "sound_level_db_7d_max",
+        label: `${zoneLabel(zone)} 7-day maximum sound level`,
+        value: historicalSummary.maxSoundLevelDb,
+        unit: "dB",
+        status: soundStatus(historicalSummary.maxSoundLevelDb),
+        confidence: historicalSummary.sampleCount >= 10 ? "medium" : "low",
+        observedAt: historicalSummary.latestObservedAt || snapshot.latest.observedAt,
+        fetchedAt,
+        lat: zoneLat(zone),
+        lon: zoneLon(zone),
+        zoneId: zone.id,
+        zone: zoneLabel(zone),
+        raw: historicalSummary,
+      }),
+    );
+  }
+
+  if (historicalSummary.dominantClassifications.length) {
+    records.push(
+      createUnifiedRecord({
+        id: `sound-${sensorId}-mqtt-class-7d-top`,
+        source: "sound",
+        category: "sound",
+        metric: "sound_classification_7d_top",
+        label: `${zoneLabel(zone)} common sound classes`,
+        value: historicalSummary.dominantClassifications.map((item) => item.label).join(", "),
+        unit: null,
+        status,
+        confidence: historicalSummary.sampleCount >= 10 ? "medium" : "low",
+        observedAt: historicalSummary.latestObservedAt || snapshot.latest.observedAt,
+        fetchedAt,
+        lat: zoneLat(zone),
+        lon: zoneLon(zone),
+        zoneId: zone.id,
+        zone: zoneLabel(zone),
+        raw: historicalSummary,
+      }),
+    );
+  }
+
+  return {
+    source: "sound",
+    status,
+    fetchedAt,
+    lastSuccessAt: snapshot.latest.receivedAt,
+    records,
+    raw: {
+      latest: snapshot.latest.raw,
+      historicalSummary,
+    },
+    error: isStale ? "Latest sound MQTT message is older than the freshness window." : historicalSummary.error || null,
+  };
+}
+
 export async function getSoundClassificationLiveData(env) {
   const fetchedAt = new Date().toISOString();
+
+  if (env.soundMqttPassword) {
+    return buildMqttSoundSource(env, fetchedAt);
+  }
 
   if (!env.soundClassificationApiUrl) {
     return {
@@ -51,7 +245,7 @@ export async function getSoundClassificationLiveData(env) {
       records: [],
       raw: null,
       error:
-        "Sound classification source is not connected yet. Configure an ingest URL now or add the MQTT subscriber for the sound sensor feed.",
+        "Sound classification source is not connected yet. Configure the MQTT subscriber or a sound classification ingest URL.",
     };
   }
 
@@ -79,17 +273,17 @@ export async function getSoundClassificationLiveData(env) {
             source: "sound",
             category: "sound",
             metric: "sound_level_db",
-            label: `${zone.label} sound level`,
+            label: `${zoneLabel(zone)} sound level`,
             value: soundLevel,
             unit: "dB",
             status: soundStatus(soundLevel),
             confidence: "medium",
             observedAt,
             fetchedAt,
-            lat: zone.lat,
-            lon: zone.lon,
+            lat: zoneLat(zone),
+            lon: zoneLon(zone),
             zoneId: zone.id,
-            zone: zone.label,
+            zone: zoneLabel(zone),
             raw: entry,
           }),
           createUnifiedRecord({
@@ -97,17 +291,17 @@ export async function getSoundClassificationLiveData(env) {
             source: "sound",
             category: "sound",
             metric: "sound_classification",
-            label: `${zone.label} dominant sound`,
+            label: `${zoneLabel(zone)} dominant sound`,
             value: soundClass,
             unit: null,
             status: soundStatus(soundLevel),
             confidence: "low",
             observedAt,
             fetchedAt,
-            lat: zone.lat,
-            lon: zone.lon,
+            lat: zoneLat(zone),
+            lon: zoneLon(zone),
             zoneId: zone.id,
-            zone: zone.label,
+            zone: zoneLabel(zone),
             raw: entry,
           }),
         ];
