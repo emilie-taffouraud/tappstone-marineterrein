@@ -2,7 +2,7 @@ import { getZoneById, getZoneByLookupKey } from "../config/zones.js";
 import { getOrSetCache } from "../lib/cache.js";
 import { fetchJson } from "../lib/http.js";
 import { createUnifiedRecord } from "../lib/normalize.js";
-import { getSoundObservationSummary } from "../services/soundObservationStore.js";
+import { getLatestSoundObservation, getSoundObservationSummary } from "../services/soundObservationStore.js";
 import { startSoundMqttClient } from "./soundMqttClient.js";
 
 function normalizeEntries(payload) {
@@ -53,10 +53,28 @@ function soundStatus(level) {
   return "ok";
 }
 
+function formatSoundClassLabel(value) {
+  return String(value || "Unclassified")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Unclassified";
+}
+
+function formatTopSoundScores(scores = {}, limit = 5) {
+  return Object.entries(scores)
+    .map(([label, score]) => ({ label: formatSoundClassLabel(label), score: Number(score) }))
+    .filter((item) => Number.isFinite(item.score))
+    .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label))
+    .slice(0, limit);
+}
+
 async function buildMqttSoundSource(env, fetchedAt) {
   const snapshot = startSoundMqttClient(env);
+  const latestStoredObservation = await getLatestSoundObservation().catch(() => null);
+  const latest = snapshot.latest || latestStoredObservation;
   const zone = getZoneById(env.soundMqttZoneId);
-  const historicalSummary = await getSoundObservationSummary({ deviceId: snapshot.latest?.deviceId }).catch((error) => ({
+  const historicalSummary = await getSoundObservationSummary({ deviceId: latest?.deviceId }).catch((error) => ({
     error: error.message,
     sampleCount: 0,
     averageSoundLevelDb: null,
@@ -78,7 +96,7 @@ async function buildMqttSoundSource(env, fetchedAt) {
     };
   }
 
-  if (!snapshot.latest) {
+  if (!latest) {
     return {
       source: "sound",
       status: "unknown",
@@ -90,10 +108,11 @@ async function buildMqttSoundSource(env, fetchedAt) {
     };
   }
 
-  const ageMs = Date.now() - new Date(snapshot.latest.receivedAt).getTime();
+  const ageMs = Date.now() - new Date(latest.receivedAt).getTime();
   const isStale = ageMs > env.soundMqttStaleAfterMs;
-  const status = isStale ? "warning" : soundStatus(snapshot.latest.soundLevel);
-  const sensorId = snapshot.latest.deviceId || "OE-007";
+  const status = isStale ? "warning" : soundStatus(latest.soundLevel);
+  const sensorId = latest.deviceId || "OE-007";
+  const topScores = formatTopSoundScores(latest.classScores);
   const records = [
     createUnifiedRecord({
       id: `sound-${sensorId}-mqtt-level`,
@@ -101,17 +120,17 @@ async function buildMqttSoundSource(env, fetchedAt) {
       category: "sound",
       metric: "sound_level_db",
       label: `${zoneLabel(zone)} sound level`,
-      value: snapshot.latest.soundLevel,
+      value: latest.soundLevel,
       unit: "dB",
       status,
       confidence: isStale ? "low" : "high",
-      observedAt: snapshot.latest.observedAt,
+      observedAt: latest.observedAt,
       fetchedAt,
       lat: zoneLat(zone),
       lon: zoneLon(zone),
       zoneId: zone.id,
       zone: zoneLabel(zone),
-      raw: snapshot.latest.raw,
+      raw: latest.raw,
     }),
     createUnifiedRecord({
       id: `sound-${sensorId}-mqtt-class`,
@@ -119,19 +138,42 @@ async function buildMqttSoundSource(env, fetchedAt) {
       category: "sound",
       metric: "sound_classification",
       label: `${zoneLabel(zone)} dominant sound`,
-      value: snapshot.latest.soundClass,
+      value: formatSoundClassLabel(latest.soundClass),
       unit: null,
       status,
-      confidence: snapshot.latest.soundClassScore === null ? "low" : "medium",
-      observedAt: snapshot.latest.observedAt,
+      confidence: latest.soundClassScore === null ? "low" : "medium",
+      observedAt: latest.observedAt,
       fetchedAt,
       lat: zoneLat(zone),
       lon: zoneLon(zone),
       zoneId: zone.id,
       zone: zoneLabel(zone),
-      raw: snapshot.latest.raw,
+      raw: latest.raw,
     }),
   ];
+
+  if (topScores.length) {
+    records.push(
+      createUnifiedRecord({
+        id: `sound-${sensorId}-mqtt-class-current-top`,
+        source: "sound",
+        category: "sound",
+        metric: "sound_classification_current_top",
+        label: `${zoneLabel(zone)} sound categories`,
+        value: topScores.map((item) => item.label).join(", "),
+        unit: null,
+        status,
+        confidence: "medium",
+        observedAt: latest.observedAt,
+        fetchedAt,
+        lat: zoneLat(zone),
+        lon: zoneLon(zone),
+        zoneId: zone.id,
+        zone: zoneLabel(zone),
+        raw: topScores,
+      }),
+    );
+  }
 
   if (historicalSummary.averageSoundLevelDb !== null) {
     records.push(
@@ -145,7 +187,7 @@ async function buildMqttSoundSource(env, fetchedAt) {
         unit: "dB",
         status: soundStatus(historicalSummary.averageSoundLevelDb),
         confidence: historicalSummary.sampleCount >= 10 ? "medium" : "low",
-        observedAt: historicalSummary.latestObservedAt || snapshot.latest.observedAt,
+        observedAt: historicalSummary.latestObservedAt || latest.observedAt,
         fetchedAt,
         lat: zoneLat(zone),
         lon: zoneLon(zone),
@@ -163,7 +205,7 @@ async function buildMqttSoundSource(env, fetchedAt) {
         unit: "dB",
         status: soundStatus(historicalSummary.minSoundLevelDb),
         confidence: historicalSummary.sampleCount >= 10 ? "medium" : "low",
-        observedAt: historicalSummary.latestObservedAt || snapshot.latest.observedAt,
+        observedAt: historicalSummary.latestObservedAt || latest.observedAt,
         fetchedAt,
         lat: zoneLat(zone),
         lon: zoneLon(zone),
@@ -181,7 +223,7 @@ async function buildMqttSoundSource(env, fetchedAt) {
         unit: "dB",
         status: soundStatus(historicalSummary.maxSoundLevelDb),
         confidence: historicalSummary.sampleCount >= 10 ? "medium" : "low",
-        observedAt: historicalSummary.latestObservedAt || snapshot.latest.observedAt,
+        observedAt: historicalSummary.latestObservedAt || latest.observedAt,
         fetchedAt,
         lat: zoneLat(zone),
         lon: zoneLon(zone),
@@ -200,11 +242,11 @@ async function buildMqttSoundSource(env, fetchedAt) {
         category: "sound",
         metric: "sound_classification_7d_top",
         label: `${zoneLabel(zone)} common sound classes`,
-        value: historicalSummary.dominantClassifications.map((item) => item.label).join(", "),
+        value: historicalSummary.dominantClassifications.map((item) => formatSoundClassLabel(item.label)).join(", "),
         unit: null,
         status,
         confidence: historicalSummary.sampleCount >= 10 ? "medium" : "low",
-        observedAt: historicalSummary.latestObservedAt || snapshot.latest.observedAt,
+        observedAt: historicalSummary.latestObservedAt || latest.observedAt,
         fetchedAt,
         lat: zoneLat(zone),
         lon: zoneLon(zone),
@@ -219,11 +261,12 @@ async function buildMqttSoundSource(env, fetchedAt) {
     source: "sound",
     status,
     fetchedAt,
-    lastSuccessAt: snapshot.latest.receivedAt,
+    lastSuccessAt: latest.receivedAt,
     records,
     raw: {
-      latest: snapshot.latest.raw,
+      latest: latest.raw,
       historicalSummary,
+      source: snapshot.latest ? "mqtt" : "stored",
     },
     error: isStale ? "Latest sound MQTT message is older than the freshness window." : historicalSummary.error || null,
   };

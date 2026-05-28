@@ -49,7 +49,9 @@ async function fetchRecentTemperatureRange(env) {
         return [];
       }
 
-      return [{ date, min, max }];
+      const avg = Number(day?.avgtemp_c);
+
+      return [{ date, min, max, avg: Number.isFinite(avg) ? avg : (min + max) / 2 }];
     })
     .sort((left, right) => left.date.localeCompare(right.date));
 
@@ -60,6 +62,7 @@ async function fetchRecentTemperatureRange(env) {
   return {
     min: Math.min(...sampledDays.map((day) => day.min)),
     max: Math.max(...sampledDays.map((day) => day.max)),
+    days: sampledDays,
     sampleDays: sampledDays.length,
     startDate: sampledDays[0]?.date || null,
     endDate: sampledDays[sampledDays.length - 1]?.date || null,
@@ -81,7 +84,7 @@ export async function getWeatherLiveData(env) {
     };
   }
 
-  return getOrSetCache("ops:weather", env.opsCacheTtlMs, async () => {
+  return getOrSetCache("ops:weather:v2", env.opsCacheTtlMs, async () => {
     try {
       const forecastUrl =
         `https://api.weatherapi.com/v1/forecast.json?key=${env.weatherApiKey}` +

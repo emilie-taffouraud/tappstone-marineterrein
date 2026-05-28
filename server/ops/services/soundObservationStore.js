@@ -111,3 +111,42 @@ export async function getSoundObservationSummary({ deviceId, sinceHours = 24 * 7
     })),
   };
 }
+
+export async function getLatestSoundObservation({ deviceId } = {}) {
+  const params = [];
+  const deviceFilter = deviceId ? "WHERE device_id = $1" : "";
+  if (deviceId) params.push(deviceId);
+
+  const sql = `
+    SELECT
+      device_id,
+      topic,
+      observed_at,
+      received_at,
+      sound_level_db,
+      dominant_classification,
+      dominant_classification_score,
+      classification_scores,
+      raw_payload
+    FROM sound_observations
+    ${deviceFilter}
+    ORDER BY received_at DESC, observed_at DESC
+    LIMIT 1
+  `;
+
+  const result = await getPool().query(sql, params);
+  const row = result.rows[0];
+  if (!row) return null;
+
+  return {
+    topic: row.topic,
+    deviceId: row.device_id,
+    soundLevel: row.sound_level_db === null ? null : Number(row.sound_level_db),
+    soundClass: row.dominant_classification || "Unclassified",
+    soundClassScore: row.dominant_classification_score === null ? null : Number(row.dominant_classification_score),
+    classScores: row.classification_scores || {},
+    observedAt: row.observed_at instanceof Date ? row.observed_at.toISOString() : new Date(row.observed_at).toISOString(),
+    receivedAt: row.received_at instanceof Date ? row.received_at.toISOString() : new Date(row.received_at).toISOString(),
+    raw: row.raw_payload || {},
+  };
+}

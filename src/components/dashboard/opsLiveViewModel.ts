@@ -1,4 +1,5 @@
-import { CloudSun, Radar, TrafficCone, Volume2, Waves } from "lucide-react";
+import { CloudSun, Radar, TrafficCone, Volume2 } from "lucide-react";
+import { getEnvironmentThreshold } from "../../utils/environmentThresholds";
 import type { AlertItem, Kpi, SensorHealthItem } from "./types";
 import type {
   OpsHealthResponse,
@@ -218,6 +219,14 @@ function findRecord(overview: OpsLiveOverviewResponse, source: UnifiedLiveRecord
   return overview.records.find((record) => record.source === source && record.metric === metric);
 }
 
+function findMetricRecord(overview: OpsLiveOverviewResponse, metrics: string[]) {
+  return overview.records.find((record) => metrics.includes(record.metric.toLowerCase()));
+}
+
+function telraamPeopleCount(pedestrians: number, night: number) {
+  return pedestrians + night;
+}
+
 export function deriveLiveKpis(
   overview: OpsLiveOverviewResponse,
   health: OpsHealthResponse | null,
@@ -227,6 +236,8 @@ export function deriveLiveKpis(
   husenseGateCount: number,
 ): Kpi[] {
   const waterTemp = findRecord(overview, "water", "water_temperature_c");
+  const weatherCondition = findRecord(overview, "weather", "condition_text");
+  const weatherTemp = findRecord(overview, "weather", "temperature_c");
   const healthySources = health
     ? Object.values(health.sources).filter((source) => source.status === "ok").length
     : 0;
@@ -268,13 +279,11 @@ export function deriveLiveKpis(
   const soundComfort =
     averageSound === null
       ? "Sound data not available yet."
-      : averageSound >= 85
-        ? "Too loud"
-        : averageSound >= 75
-          ? "Loud"
-          : averageSound >= 65
-            ? "Noticeable"
-            : "Comfortable";
+      : getEnvironmentThreshold("noise", averageSound).label;
+  const no2Record = findMetricRecord(overview, ["no2", "no2_ug_m3", "nitrogen_dioxide"]);
+  const no2Value = asNumber(no2Record?.value ?? null);
+  const no2Threshold = getEnvironmentThreshold("no2", no2Value);
+  const hasAirQualityReading = no2Value !== null && no2Value !== 0;
 
   return [
     {
@@ -302,23 +311,27 @@ export function deriveLiveKpis(
       icon: Radar,
     },
     {
-      label: "Swim conditions",
-      value: waterTemp ? formatValue(waterTemp) : "Limited",
+      label: "Public conditions",
+      value: weatherCondition?.value ? String(weatherCondition.value) : weatherTemp ? formatValue(weatherTemp) : "Limited",
       delta: "",
       trend: "up",
-      helper: waterTemp
-        ? "Water temperature available for swim guidance"
-        : "Swim guidance limited: water temperature sensor offline",
-      icon: Waves,
+      helper:
+        weatherCondition || weatherTemp
+          ? `Public dashboard context: ${husenseCurrentPresence !== null ? `${Math.round(husenseCurrentPresence || 0)} visitors` : "crowd unavailable"} | ${weatherTemp ? formatValue(weatherTemp) : "weather limited"}`
+          : "Public dashboard conditions are limited until weather and crowd feeds return",
+      icon: CloudSun,
     },
     {
       label: "Air quality",
-      value: health?.sources.weather?.status === "ok" ? "Good" : "Limited",
+      value: hasAirQualityReading ? `${no2Value!.toFixed(0)} ${no2Record?.unit || "ug/m3"}` : "Unavailable",
       delta: "",
       trend: "up",
-      helper: totalSources
-        ? `${healthySources} / ${totalSources} live sources; detailed air readings appear when connected`
-        : "Environmental feed awaiting source data",
+      helper:
+        hasAirQualityReading
+          ? no2Threshold.label
+          : totalSources
+            ? `${healthySources} / ${totalSources} live sources; detailed air readings appear when connected`
+            : "Environmental feed awaiting source data",
       icon: CloudSun,
     },
   ];
@@ -517,9 +530,7 @@ export function deriveSoundSummary(
 ): SummaryModel {
   const levelRecord = findRecord(overview, "sound", "sound_level_db");
   const classRecord = findRecord(overview, "sound", "sound_classification");
-  const averageRecord = findRecord(overview, "sound", "sound_level_db_7d_average");
-  const minRecord = findRecord(overview, "sound", "sound_level_db_7d_min");
-  const maxRecord = findRecord(overview, "sound", "sound_level_db_7d_max");
+  const currentClassesRecord = findRecord(overview, "sound", "sound_classification_current_top");
   const commonClassesRecord = findRecord(overview, "sound", "sound_classification_7d_top");
 
   if (!levelRecord) {
@@ -535,21 +546,13 @@ export function deriveSoundSummary(
   }
 
   const current = asNumber(levelRecord.value);
-  const average = asNumber(averageRecord?.value ?? null);
-  const min = asNumber(minRecord?.value ?? null);
-  const max = asNumber(maxRecord?.value ?? null);
   const currentClass = typeof classRecord?.value === "string" ? classRecord.value : null;
+  const currentClasses = typeof currentClassesRecord?.value === "string" ? currentClassesRecord.value : null;
   const commonClasses = typeof commonClassesRecord?.value === "string" ? commonClassesRecord.value : null;
   const comfort =
     current === null
       ? "Sound data not available yet."
-      : current >= 85
-        ? "Too loud"
-        : current >= 75
-          ? "Loud"
-          : current >= 65
-            ? "Noticeable"
-            : "Comfortable";
+      : getEnvironmentThreshold("noise", current).label;
 
   return {
     title: "Sound level",
@@ -557,12 +560,11 @@ export function deriveSoundSummary(
     helper: comfort,
     tone: statusTone(health?.sources.sound?.status || "unknown"),
     detail: [
-      min !== null && max !== null ? `7-day range: ${min.toFixed(0)}-${max.toFixed(0)} dB` : "Decibel range unavailable",
-      commonClasses || currentClass ? `Categories now: ${commonClasses || currentClass}` : "Categories now: awaiting classification labels",
+      currentClasses || commonClasses || currentClass ? `Categories now: ${currentClasses || commonClasses || currentClass}` : "Categories now: awaiting classification labels",
     ],
     stats: [
-      average !== null ? { label: "7-day average", value: `${average.toFixed(0)} dB` } : null,
-      min !== null && max !== null ? { label: "7-day range", value: `${min.toFixed(0)}-${max.toFixed(0)} dB` } : null,
+      currentClass ? { label: "Dominant sound", value: currentClass } : null,
+      currentClasses ? { label: "Categories now", value: currentClasses } : null,
       commonClasses ? { label: "Common sounds", value: commonClasses } : null,
     ].filter((item): item is { label: string; value: string } => Boolean(item)),
   };
@@ -675,10 +677,9 @@ export function deriveCurrentModalityChart(overview: OpsLiveOverviewResponse): B
   const night = asNumber(findRecord(overview, "telraam", "night_count")?.value ?? null) || 0;
 
   return [
-    { label: "Pedestrians", value: pedestrians },
+    { label: "Pedestrians", value: telraamPeopleCount(pedestrians, night) },
     { label: "Bicycles", value: bicycles },
     { label: "Vehicles", value: vehicles },
-    { label: "Night mode", value: night },
   ];
 }
 
@@ -697,10 +698,16 @@ const TELRAAM_LIVE_MODE_METRICS: Array<{ metric: string; label: string }> = [
 ];
 
 export function deriveTelraamLiveModeSplitChart(overview: OpsLiveOverviewResponse): BreakdownChartPoint[] {
-  return TELRAAM_LIVE_MODE_METRICS.map(({ metric, label }) => ({
-    label,
-    value: asNumber(findRecord(overview, "telraam", metric)?.value ?? null) || 0,
-  })).sort((left, right) => right.value - left.value || left.label.localeCompare(right.label));
+  const night = asNumber(findRecord(overview, "telraam", "night_count")?.value ?? null) || 0;
+
+  return TELRAAM_LIVE_MODE_METRICS.filter(({ metric }) => metric !== "night_count").map(({ metric, label }) => {
+    const value = asNumber(findRecord(overview, "telraam", metric)?.value ?? null) || 0;
+
+    return {
+      label,
+      value: metric === "pedestrian_count" ? telraamPeopleCount(value, night) : value,
+    };
+  }).sort((left, right) => right.value - left.value || left.label.localeCompare(right.label));
 }
 
 function formatChartTime(value: string) {
@@ -852,10 +859,10 @@ function buildTelraamInsight({
 export function deriveTelraamTrendChart(points: TelraamTrafficPoint[]): TelraamTrendChartPoint[] {
   return sortTelraamTrafficPoints(points).map((point) => ({
     time: formatChartTime(point.recorded_at),
-    pedestrians: Number(point.pedestrian_count || 0),
+    pedestrians: telraamPeopleCount(Number(point.pedestrian_count || 0), Number(point.night_count || 0)),
     bicycles: Number(point.bicycle_count || 0),
     vehicles: Number(point.vehicle_count || 0),
-    night: Number(point.night_count || 0),
+    night: 0,
   }));
 }
 

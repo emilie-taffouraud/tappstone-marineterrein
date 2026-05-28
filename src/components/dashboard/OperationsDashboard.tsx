@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bike, Car, CloudSun, Info, Moon, Thermometer, Users, Volume2, Waves, type LucideIcon } from "lucide-react";
+import { Bike, Car, CloudSun, Info, Thermometer, Users, Volume2, Waves, type LucideIcon } from "lucide-react";
 import {
   Area,
   AreaChart,
-  Bar,
   CartesianGrid,
   ComposedChart,
   Legend,
@@ -17,11 +16,22 @@ import { useOpsLiveData } from "../../hooks/useOpsLiveData";
 import { useTelraamTraffic } from "../../hooks/useTelraamTraffic";
 import { DASHBOARD_HEADER_THEME, MAIN_COLORS, MT_COLORS } from "../../styles/theme";
 import mt_down from "../../assets/mt_down.jpg";
-import TelraamStoredCard from "./TelraamStoredCard";
 import UpcomingAgendaCard from "./UpcomingAgendaCard";
 import TelraamLiveCard from "./TelraamLiveCard";
 import { LiveOperationsMapSection } from "./live-map/LiveOperationsMapSection";
-import { fetchOpsAgenda, type AgendaItem, type OpsLiveOverviewResponse, type TelraamTrafficPoint } from "../../lib/opsLiveClient";
+import {
+  fetchHusenseDashboardSummary,
+  fetchOpsAgenda,
+  type AgendaItem,
+  type HusenseDashboardSummary,
+  type OpsLiveOverviewResponse,
+  type TelraamTrafficPoint,
+} from "../../lib/opsLiveClient";
+import {
+  getEnvironmentThreshold,
+  type EnvironmentThresholdResult,
+  type EnvironmentThresholdStatus,
+} from "../../utils/environmentThresholds";
 import {
   deriveAnomalyChart,
   deriveCurrentModalityChart,
@@ -38,14 +48,7 @@ import { Card, CardContent, CardHeader, Pill, SectionTitle, SelectLike } from ".
 import type { AlertItem } from "./types";
 
 const locationOptions = ["All locations", "Portiersloge", "TAPP", "CODAM", "AHK MakerSpace", "Swim area"];
-const sensorCategories = [
-  "All categories",
-  "Mobility & Access",
-  "Crowd & Presence",
-  "Environmental Conditions",
-  "Recreation & Water",
-  "Safety & Monitoring",
-];
+const sensorCategories = ["busyness", "water temp", "vehicle classification", "air quality", "sound"];
 const severityOptions = ["All severities", "info", "warning", "critical"];
 const timeRangeOptions = ["Last 30 min", "Last 2 hrs", "Today"];
 const modeOptions = ["Live", "Incident mode"];
@@ -84,7 +87,6 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
       { id: "crowd-history", label: "Movement summary" },
       { id: "crowd-baseline", label: "Vs normal" },
       { id: "crowd-daily-visitors", label: "Daily visitors" },
-      { id: "crowd-expected-measured", label: "Expected vs measured" },
     ],
   },
   {
@@ -117,11 +119,9 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
 
 const HIDDEN_OCCUPANCY_ZONE_IDS = new Set(["5db05d88-7833-440a-9c3e-24c93fb08406"]);
 
-const DAILY_MOVEMENT_STACK = [
-  { key: "pedestrianVisitors", label: "Pedestrians", color: MT_COLORS.cyan },
-  { key: "bicycleVisitors", label: "Bicycles", color: MT_COLORS.blue },
-  { key: "vehicleVisitors", label: "Vehicles", color: MT_COLORS.teal },
-  { key: "nightVisitors", label: "Night mode", color: MT_COLORS.burgundy },
+const DAILY_MOVEMENT_LINES = [
+  { key: "today", label: "Today", color: MT_COLORS.coral },
+  { key: "yesterday", label: "Yesterday", color: MT_COLORS.cyan },
 ] as const;
 
 const NAV_ACCENTS: Record<string, string> = {
@@ -130,12 +130,6 @@ const NAV_ACCENTS: Record<string, string> = {
   crowd: MT_COLORS.cyan,
   environment: MT_COLORS.green,
   events: MT_COLORS.burgundy,
-};
-
-type TrafficComparisonPoint = {
-  time: string;
-  measured: number;
-  expected: number;
 };
 
 type EnvironmentTrendPoint = {
@@ -168,13 +162,9 @@ type OccupancyCardModel = {
 };
 
 type DailyMovementPoint = {
-  day: string;
-  visitors: number;
-  pedestrianVisitors: number;
-  bicycleVisitors: number;
-  vehicleVisitors: number;
-  nightVisitors: number;
-  isToday?: boolean;
+  hour: string;
+  today: number | null;
+  yesterday: number | null;
 };
 
 function resolveActiveSection(activeId: string) {
@@ -490,25 +480,77 @@ function formatTemperature(value: number | null) {
   return value === null ? "Unavailable" : `${value.toFixed(1)} C`;
 }
 
+function formatLocalDateTime(value: string | null | undefined) {
+  if (!value) return "Unavailable";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unavailable";
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDateKey(value: Date) {
+  const year = value.getFullYear();
+  const month = `${value.getMonth() + 1}`.padStart(2, "0");
+  const day = `${value.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatHourLabel(hour: number) {
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
+function environmentStatusTone(status: EnvironmentThresholdStatus): "slate" | "emerald" | "amber" | "rose" {
+  if (status === "green") return "emerald";
+  if (status === "yellow" || status === "orange") return "amber";
+  if (status === "red" || status === "darkRed") return "rose";
+  return "slate";
+}
+
+function environmentStatusColor(status: EnvironmentThresholdStatus) {
+  if (status === "green") return MT_COLORS.teal;
+  if (status === "yellow") return MT_COLORS.yellow;
+  if (status === "orange") return MT_COLORS.coral;
+  if (status === "red" || status === "darkRed") return MT_COLORS.burgundy;
+  return MT_COLORS.paleBlue;
+}
+
+function alertSeverityFromEnvironmentStatus(status: EnvironmentThresholdStatus): AlertItem["severity"] | null {
+  if (status === "red" || status === "darkRed") return "critical";
+  if (status === "orange" || status === "yellow") return "warning";
+  return null;
+}
+
 function EnvironmentMetricCard({
   title,
   value,
   helper,
   icon: Icon,
   stats,
+  threshold,
 }: {
   title: string;
   value: string;
   helper: string;
   icon: LucideIcon;
   stats: { label: string; value: string }[];
+  threshold?: EnvironmentThresholdResult;
 }) {
+  const thresholdTone = threshold ? environmentStatusTone(threshold.status) : null;
+  const thresholdColor = threshold ? environmentStatusColor(threshold.status) : MT_COLORS.teal;
+
   return (
-    <Card className="h-full">
+    <Card
+      className="h-full"
+      style={{
+        borderColor: threshold ? `${thresholdColor}66` : MT_COLORS.border,
+      }}
+    >
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-3">
           <SectionTitle title={title} subtitle={helper} />
-          <Icon className="h-5 w-5 shrink-0" style={{ color: MT_COLORS.teal }} />
+          <div className="flex flex-col items-end gap-2">
+            <Icon className="h-5 w-5 shrink-0" style={{ color: thresholdColor }} />
+            {threshold && threshold.status !== "unavailable" ? <Pill tone={thresholdTone || "slate"}>{threshold.label}</Pill> : null}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -516,6 +558,18 @@ function EnvironmentMetricCard({
           <p className="text-3xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
             {value}
           </p>
+        ) : null}
+        {threshold ? (
+          <div
+            className="rounded-xl border px-3 py-2 text-sm"
+            style={{
+              borderColor: `${thresholdColor}44`,
+              backgroundColor: threshold.status === "unavailable" ? "#edf4f8" : `${thresholdColor}14`,
+              color: MAIN_COLORS.aColorGray,
+            }}
+          >
+            {threshold.message}
+          </div>
         ) : null}
         {stats.length ? (
           <div className="space-y-2">
@@ -587,6 +641,136 @@ function EnvironmentTrendCard({ data }: { data: EnvironmentTrendPoint[] }) {
           <ChartPlaceholder
             title="Temperature trend not available yet"
             detail="Water and air temperature lines will appear once at least one connected feed returns temperature data."
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function HusenseMovementSummaryCard({
+  summary,
+  error,
+}: {
+  summary: HusenseDashboardSummary | null;
+  error?: string | null;
+}) {
+  const totals = summary?.totals || {};
+  const movementRows = [
+    { label: "People", value: Number(totals.person || 0), color: MT_COLORS.cyan },
+    { label: "Runners", value: Number(totals.runner || 0), color: MT_COLORS.blue },
+    { label: "Bikes", value: Number(totals.bike || 0), color: MT_COLORS.teal },
+    { label: "Cars", value: Number(totals.car || 0), color: MT_COLORS.coral },
+    { label: "Buses", value: Number(totals.bus || 0), color: MT_COLORS.burgundy },
+  ];
+  const totalMovement = movementRows.reduce((sum, row) => sum + row.value, 0);
+  const dominant = movementRows
+    .filter((row) => row.value > 0)
+    .sort((left, right) => right.value - left.value)[0];
+  const busiestGate = (summary?.gates || [])
+    .filter((gate) => Number(gate.totalCount || 0) > 0)
+    .sort((left, right) => Number(right.totalCount || 0) - Number(left.totalCount || 0))[0];
+
+  return (
+    <Card>
+      <CardHeader>
+        <SectionTitle
+          title="Movement summary"
+          subtitle="HuSense classified gates across the Marineterrein captors, using the live gate counts instead of Telraam."
+        />
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {summary ? (
+          <>
+            <div className="grid gap-3 lg:grid-cols-3">
+              {[
+                {
+                  label: "Movement now",
+                  value: formatMetricNumber(totalMovement),
+                  note: `Latest HuSense update ${formatLocalDateTime(summary.observedAt)}`,
+                },
+                {
+                  label: "Current presence",
+                  value: formatMetricNumber(Number(summary.currentPresence || 0)),
+                  note: "Current HuSense presence across the configured spaces",
+                },
+                {
+                  label: "Active gates",
+                  value: formatMetricNumber(Number(summary.activeGateCount || 0)),
+                  note: busiestGate
+                    ? `${busiestGate.gateName} has the strongest movement right now.`
+                    : "No active classified gate movement in the latest HuSense payload.",
+                },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-2xl border p-4"
+                  style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+                >
+                  <p className="text-[11px] font-medium uppercase tracking-[0.12em]" style={{ color: MAIN_COLORS.aColorGray }}>
+                    {item.label}
+                  </p>
+                  <p className="mt-2 text-[2rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
+                    {item.value}
+                  </p>
+                  <p className="mt-1 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
+                    {item.note}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border p-4" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                    Current HuSense movement mix
+                  </p>
+                  <p className="mt-1 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
+                    {dominant ? `${dominant.label} are the main movement type right now.` : "No classified movement stands out right now."}
+                  </p>
+                </div>
+                <Pill tone={totalMovement > 0 ? "emerald" : "slate"}>HuSense live</Pill>
+              </div>
+
+              <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-slate-200/70">
+                {movementRows.map((row) => (
+                  <div
+                    key={row.label}
+                    className="h-full transition-all duration-500"
+                    style={{
+                      width: totalMovement > 0 ? `${(row.value / totalMovement) * 100}%` : "0%",
+                      backgroundColor: row.color,
+                    }}
+                  />
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                {movementRows.map((row) => (
+                  <div
+                    key={row.label}
+                    className="rounded-2xl border p-3.5"
+                    style={{ borderColor: `${MAIN_COLORS.aColor1}1f`, backgroundColor: "rgba(255, 255, 255, 0.76)" }}
+                  >
+                    <p className="text-sm" style={{ color: row.color }}>
+                      {row.label}
+                    </p>
+                    <p className="mt-2 text-xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                      {formatMetricNumber(row.value)}
+                    </p>
+                    <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                      {totalMovement > 0 ? `${formatMetricNumber((row.value / totalMovement) * 100, 1)}% of movement now` : "No current share"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <ChartPlaceholder
+            title="HuSense movement summary not available yet"
+            detail={error || "The HuSense dashboard summary endpoint has not returned live classified gate counts yet."}
           />
         )}
       </CardContent>
@@ -668,36 +852,16 @@ function formatSignedPercent(value: number) {
   return `${formatted}%`;
 }
 
-function getOccupancyStatus(density: number) {
-  if (density >= 75) return { label: "High", tone: "rose" as const };
-  if (density >= 45) return { label: "Medium", tone: "amber" as const };
-  return { label: "Low", tone: "emerald" as const };
-}
-
-function buildTrafficComparisonFromAnomaly(points: { time: string; actual: number; expected: number }[]): TrafficComparisonPoint[] {
-  return points.map((point) => ({
-    time: point.time,
-    measured: point.actual,
-    expected: point.expected,
-  }));
-}
-
-function buildTrafficInsight(points: TrafficComparisonPoint[]) {
-  if (!points.length) return "Measured activity will be compared with expected movement as soon as traffic rows are available.";
-
-  const largestGap = points.reduce(
-    (best, point) => {
-      const gap = point.measured - point.expected;
-      return gap > best.gap ? { point, gap } : best;
-    },
-    { point: points[0], gap: points[0].measured - points[0].expected },
-  );
-
-  if (largestGap.gap <= 0) {
-    return "Measured activity is currently at or below the expected movement pattern.";
+function getOccupancyStatusByRank(index: number, total: number) {
+  if (total <= 1 || index === 0) {
+    return { label: "High", tone: "rose" as const, color: MT_COLORS.coral };
   }
 
-  return `Measured activity is above expected around ${largestGap.point.time}.`;
+  if (index === total - 1) {
+    return { label: "Low", tone: "sky" as const, color: MT_COLORS.cyan };
+  }
+
+  return { label: "Medium", tone: "amber" as const, color: MT_COLORS.yellow };
 }
 
 function describeAnomaly(
@@ -759,6 +923,11 @@ function getRecord(overview: OpsLiveOverviewResponse, source: string, metric: st
   return overview.records.find((record) => record.source === source && record.metric === metric);
 }
 
+function getMetricRecord(overview: OpsLiveOverviewResponse, metrics: string[]) {
+  const normalizedMetrics = new Set(metrics.map((metric) => metric.toLowerCase()));
+  return overview.records.find((record) => normalizedMetrics.has(record.metric.toLowerCase()));
+}
+
 function parseOptionalNumber(value: unknown) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
@@ -777,20 +946,24 @@ function readPresenceCount(zone: PresenceZone) {
 }
 
 function buildOccupancyCards(zones: PresenceZone[]): OccupancyCardModel[] {
-  return zones.map((zone, index) => {
-    const visitors = readPresenceCount(zone);
-    const capacity = parseOptionalNumber(zone.capacity);
-    const density = capacity && capacity > 0 ? Math.min(100, Math.round((visitors / capacity) * 100)) : 0;
-    const id = String(zone.id ?? zone.name ?? zone.zone ?? `zone-${index + 1}`);
+  const totalVisitors = zones.reduce((sum, zone) => sum + readPresenceCount(zone), 0);
 
-    return {
-      id,
-      zone: zone.name || zone.zone || zone.label || `Zone ${index + 1}`,
-      visitors,
-      capacity,
-      density,
-    };
-  });
+  return zones
+    .map((zone, index) => {
+      const visitors = readPresenceCount(zone);
+      const capacity = parseOptionalNumber(zone.capacity);
+      const density = totalVisitors > 0 ? Math.round((visitors / totalVisitors) * 1000) / 10 : 0;
+      const id = String(zone.id ?? zone.name ?? zone.zone ?? `zone-${index + 1}`);
+
+      return {
+        id,
+        zone: zone.name || zone.zone || zone.label || `Zone ${index + 1}`,
+        visitors,
+        capacity,
+        density,
+      };
+    })
+    .sort((left, right) => right.density - left.density || right.visitors - left.visitors || left.zone.localeCompare(right.zone));
 }
 
 function buildOccupancyInsight(zones: OccupancyCardModel[], error: string | null) {
@@ -801,47 +974,46 @@ function buildOccupancyInsight(zones: OccupancyCardModel[], error: string | null
   }
 
   const busiest = [...zones].sort((left, right) => right.density - left.density || right.visitors - left.visitors)[0];
-  const hasCapacity = busiest.capacity !== null;
-  const comparison = hasCapacity
-    ? `${busiest.density}% of the configured comfortable capacity`
-    : `${formatMetricNumber(busiest.visitors)} people currently detected`;
+  const comparison = `${formatMetricNumber(busiest.density, 1)}% of detected people`;
 
   return `${busiest.zone} is currently the busiest live Husense zone at ${comparison}.`;
 }
 
+function totalTelraamMovement(point: TelraamTrafficPoint) {
+  return (
+    Number(point.pedestrian_count || 0) +
+    Number(point.bicycle_count || 0) +
+    Number(point.vehicle_count || 0) +
+    Number(point.night_count || 0)
+  );
+}
+
 function buildDailyMovementTrend(points: TelraamTrafficPoint[]): DailyMovementPoint[] {
-  const grouped = new Map<string, DailyMovementPoint>();
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const todayKey = formatDateKey(today);
+  const yesterdayKey = formatDateKey(yesterday);
+  const todayByHour = new Map<number, number>();
+  const yesterdayByHour = new Map<number, number>();
 
   for (const point of points) {
     const recordedAt = new Date(point.recorded_at);
     if (Number.isNaN(recordedAt.getTime())) continue;
 
-    const dayKey = recordedAt.toISOString().slice(0, 10);
-    const existing =
-      grouped.get(dayKey) || {
-        day: recordedAt.toLocaleDateString([], { month: "short", day: "numeric" }),
-        visitors: 0,
-        pedestrianVisitors: 0,
-        bicycleVisitors: 0,
-        vehicleVisitors: 0,
-        nightVisitors: 0,
-        isToday: dayKey === todayKey,
-      };
+    const dayKey = formatDateKey(recordedAt);
+    const hour = recordedAt.getHours();
+    const target = dayKey === todayKey ? todayByHour : dayKey === yesterdayKey ? yesterdayByHour : null;
+    if (!target) continue;
 
-    existing.pedestrianVisitors += Number(point.pedestrian_count || 0);
-    existing.bicycleVisitors += Number(point.bicycle_count || 0);
-    existing.vehicleVisitors += Number(point.vehicle_count || 0);
-    existing.nightVisitors += Number(point.night_count || 0);
-    existing.visitors =
-      existing.pedestrianVisitors + existing.bicycleVisitors + existing.vehicleVisitors + existing.nightVisitors;
-    grouped.set(dayKey, existing);
+    target.set(hour, (target.get(hour) || 0) + totalTelraamMovement(point));
   }
 
-  return [...grouped.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .slice(-7)
-    .map(([, point]) => point);
+  return Array.from({ length: 24 }, (_, hour) => ({
+    hour: formatHourLabel(hour),
+    today: todayByHour.has(hour) ? todayByHour.get(hour)! : null,
+    yesterday: yesterdayByHour.has(hour) ? yesterdayByHour.get(hour)! : null,
+  })).filter((point) => point.today !== null || point.yesterday !== null);
 }
 
 function buildEnvironmentTrend(
@@ -859,32 +1031,77 @@ function buildEnvironmentTrend(
     typeof waterRecord.raw.history === "object"
       ? waterRecord.raw.history
       : null) as { trailingWeekAvg?: number | null; yesterdayAvg?: number | null } | null;
+  const waterDailyHistory = (waterRecord?.raw &&
+    typeof waterRecord.raw === "object" &&
+    "dailyHistory" in waterRecord.raw &&
+    Array.isArray(waterRecord.raw.dailyHistory)
+      ? waterRecord.raw.dailyHistory
+      : []) as { date: string; avg?: number | null; min?: number | null; max?: number | null }[];
   const weeklyRange = (airRecord?.raw &&
     typeof airRecord.raw === "object" &&
     "weeklyRange" in airRecord.raw &&
     airRecord.raw.weeklyRange &&
     typeof airRecord.raw.weeklyRange === "object"
       ? airRecord.raw.weeklyRange
-      : null) as { min?: number | null; max?: number | null } | null;
-  const latestVisitors = dailyMovementTrend.length ? dailyMovementTrend[dailyMovementTrend.length - 1].visitors : 0;
+      : null) as { min?: number | null; max?: number | null; days?: { date: string; avg?: number | null; min?: number | null; max?: number | null }[] } | null;
+  const latestVisitors = dailyMovementTrend.length
+    ? dailyMovementTrend.reduce((sum, point) => sum + (point.today ?? 0), 0)
+    : 0;
   const trend: EnvironmentTrendPoint[] = [];
 
-  if (typeof waterHistory?.trailingWeekAvg === "number" || typeof weeklyRange?.min === "number") {
-    trend.push({
-      day: "7d low",
-      waterTemperature: waterHistory?.trailingWeekAvg ?? null,
-      airTemperature: weeklyRange?.min ?? null,
-      visitors: 0,
-    });
-  }
+  if ((Array.isArray(weeklyRange?.days) && weeklyRange.days.length) || waterDailyHistory.length) {
+    const byDate = new Map<string, EnvironmentTrendPoint>();
 
-  if (typeof waterHistory?.yesterdayAvg === "number" || typeof weeklyRange?.max === "number") {
-    trend.push({
-      day: "7d high",
-      waterTemperature: waterHistory?.yesterdayAvg ?? null,
-      airTemperature: weeklyRange?.max ?? null,
-      visitors: 0,
-    });
+    for (const day of weeklyRange?.days || []) {
+      byDate.set(day.date, {
+        day: new Date(`${day.date}T00:00:00`).toLocaleDateString([], { month: "short", day: "numeric" }),
+        waterTemperature: null,
+        airTemperature:
+          typeof day.avg === "number"
+            ? day.avg
+            : typeof day.min === "number" && typeof day.max === "number"
+              ? (day.min + day.max) / 2
+              : null,
+        visitors: 0,
+      });
+    }
+
+    for (const day of waterDailyHistory) {
+      const existing = byDate.get(day.date) || {
+        day: new Date(`${day.date}T00:00:00`).toLocaleDateString([], { month: "short", day: "numeric" }),
+        waterTemperature: null,
+        airTemperature: null,
+        visitors: 0,
+      };
+
+      existing.waterTemperature =
+        typeof day.avg === "number"
+          ? day.avg
+          : typeof day.min === "number" && typeof day.max === "number"
+            ? (day.min + day.max) / 2
+            : null;
+      byDate.set(day.date, existing);
+    }
+
+    trend.push(...[...byDate.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, point]) => point));
+  } else {
+    if (typeof waterHistory?.trailingWeekAvg === "number" || typeof weeklyRange?.min === "number") {
+      trend.push({
+        day: "7d low",
+        waterTemperature: waterHistory?.trailingWeekAvg ?? null,
+        airTemperature: weeklyRange?.min ?? null,
+        visitors: 0,
+      });
+    }
+
+    if (typeof waterHistory?.yesterdayAvg === "number" || typeof weeklyRange?.max === "number") {
+      trend.push({
+        day: "7d high",
+        waterTemperature: waterHistory?.yesterdayAvg ?? null,
+        airTemperature: weeklyRange?.max ?? null,
+        visitors: 0,
+      });
+    }
   }
 
   if (waterCurrent !== null || airCurrent !== null || latestVisitors > 0) {
@@ -975,7 +1192,7 @@ type HolidayItem = {
 
 export function OperationsDashboard() {
   const [zone, setZone] = useState("All locations");
-  const [category, setCategory] = useState("All categories");
+  const [category, setCategory] = useState(sensorCategories[0]);
   const [severity, setSeverity] = useState("All severities");
   const [range, setRange] = useState("Last 2 hrs");
   const [mode, setMode] = useState("Live");
@@ -989,6 +1206,8 @@ export function OperationsDashboard() {
   const [activeNavId, setActiveNavId] = useState(DASHBOARD_NAV[0].id);
   const [occupancyData, setOccupancyData] = useState<PresenceZone[]>([]);
   const [husenseError, setHusenseError] = useState<string | null>(null);
+  const [husenseSummary, setHusenseSummary] = useState<HusenseDashboardSummary | null>(null);
+  const [husenseSummaryError, setHusenseSummaryError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1017,6 +1236,34 @@ export function OperationsDashboard() {
 
     fetchOccupancy();
     const intervalId = setInterval(fetchOccupancy, 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadHusenseSummary = async () => {
+      try {
+        const summary = await fetchHusenseDashboardSummary();
+        if (!cancelled) {
+          setHusenseSummary(summary);
+          setHusenseSummaryError(null);
+        }
+      } catch (error) {
+        console.error("Failed to fetch HuSense summary:", error);
+        if (!cancelled) {
+          setHusenseSummary(null);
+          setHusenseSummaryError(error instanceof Error ? error.message : "Unable to load HuSense movement summary.");
+        }
+      }
+    };
+
+    loadHusenseSummary();
+    const intervalId = setInterval(loadHusenseSummary, 60 * 1000);
 
     return () => {
       cancelled = true;
@@ -1123,16 +1370,34 @@ export function OperationsDashboard() {
     { label: "7-day max", value: formatTemperature(airTemperatureRange.max) },
   ];
   const soundFeedConnected = soundSummary.value !== "Unavailable";
+  const soundLevelRecord = getRecord(overview, "sound", "sound_level_db");
+  const soundLevelValue = numberFromRecord(soundLevelRecord);
+  const soundThreshold = getEnvironmentThreshold("noise", soundLevelValue);
+  const airTemperatureRecord = getRecord(overview, "weather", "temperature_c");
+  const airTemperatureValue = numberFromRecord(airTemperatureRecord);
+  const airTemperatureThreshold = getEnvironmentThreshold("temperature", airTemperatureValue);
+  const no2Record = getMetricRecord(overview, ["no2", "no2_ug_m3", "nitrogen_dioxide"]);
+  const no2Value = numberFromRecord(no2Record);
+  const no2Threshold = getEnvironmentThreshold("no2", no2Value);
+  const co2Record = getMetricRecord(overview, ["co2", "co2_ppm", "carbon_dioxide"]);
+  const co2Value = numberFromRecord(co2Record);
+  const hasAirQualityReading = no2Value !== null && no2Value !== 0;
   const soundStats = soundFeedConnected ? [{ label: "Comfort", value: soundSummary.helper }, ...(soundSummary.stats || [])] : [];
+  const airQualityStats = [
+    hasAirQualityReading ? { label: "NO2", value: `${no2Value!.toFixed(0)} ${no2Record?.unit || "ug/m3"}` } : null,
+    co2Value !== null ? { label: "CO2 context", value: `${co2Value.toFixed(0)} ${co2Record?.unit || "ppm"}` } : null,
+  ].filter((item): item is { label: string; value: string } => Boolean(item));
+  const airQualityValue = hasAirQualityReading ? `${no2Value!.toFixed(0)} ${no2Record?.unit || "ug/m3"}` : "Unavailable";
+  const airQualityHelper =
+    hasAirQualityReading
+      ? "NO2 pollutant-specific threshold"
+      : co2Value !== null
+        ? getEnvironmentThreshold("co2", co2Value).message
+        : "Sensor feed not connected yet";
   const currentModalityChart = useMemo(() => deriveCurrentModalityChart(overview), [overview]);
   const telraamLiveModeSplitChart = useMemo(() => deriveTelraamLiveModeSplitChart(overview), [overview]);
   const anomalyChart = useMemo(() => deriveAnomalyChart(telraamHistory), [telraamHistory]);
   const telraamTrendChart = useMemo(() => deriveTelraamTrendChart(telraamHistory), [telraamHistory]);
-  const trafficComparisonChart = useMemo<TrafficComparisonPoint[]>(
-    () => (anomalyChart.length ? buildTrafficComparisonFromAnomaly(anomalyChart) : []),
-    [anomalyChart],
-  );
-  const trafficComparisonInsight = useMemo(() => buildTrafficInsight(trafficComparisonChart), [trafficComparisonChart]);
   const visibleOccupancyZones = useMemo(
     () => occupancyData.filter((zone) => !HIDDEN_OCCUPANCY_ZONE_IDS.has(String(zone?.id ?? ""))),
     [occupancyData],
@@ -1190,28 +1455,84 @@ export function OperationsDashboard() {
       });
     }
 
-    const soundLevels = overview.records
-      .filter((record) => record.source === "sound" && record.metric === "sound_level_db")
-      .map((record) => numberFromRecord(record))
-      .filter((value): value is number => value !== null);
-    const averageSound = soundLevels.length
-      ? soundLevels.reduce((sum, value) => sum + value, 0) / soundLevels.length
-      : null;
+    const addEnvironmentAlert = ({
+      title,
+      zone,
+      source,
+      time,
+      value,
+      unit,
+      threshold,
+    }: {
+      title: string;
+      zone: string;
+      source: string;
+      time: string;
+      value: number | null;
+      unit: string;
+      threshold: EnvironmentThresholdResult;
+    }) => {
+      const severity = alertSeverityFromEnvironmentStatus(threshold.status);
+      if (value === null || !severity) return;
 
-    if (averageSound !== null && averageSound >= 75) {
       alerts.push({
         id: id++,
-        severity: averageSound >= 85 ? "critical" : "warning",
-        title: "Sound level is high",
-        zone: "Marineterrein",
-        source: "SOUND",
-        time: latestTelraamPoint?.time || liveMetaSummary.generatedAt,
-        detail: `${averageSound.toFixed(0)} dB is ${averageSound >= 85 ? "too loud" : "loud"} for comfortable operations.`,
+        severity,
+        title,
+        zone,
+        source,
+        time,
+        detail: `${value.toFixed(0)} ${unit}: ${threshold.label}. ${threshold.message}`,
       });
-    }
+    };
+
+    addEnvironmentAlert({
+      title: "Sound level threshold reached",
+      zone: "Marineterrein",
+      source: "SOUND",
+      time: formatLocalDateTime(soundLevelRecord?.observedAt || liveMetaSummary.generatedAt),
+      value: soundLevelValue,
+      unit: soundLevelRecord?.unit || "dB",
+      threshold: soundThreshold,
+    });
+
+    addEnvironmentAlert({
+      title: "Heat threshold reached",
+      zone: "Marineterrein",
+      source: "WEATHER",
+      time: formatLocalDateTime(airTemperatureRecord?.observedAt || liveMetaSummary.generatedAt),
+      value: airTemperatureValue,
+      unit: airTemperatureRecord?.unit || "C",
+      threshold: airTemperatureThreshold,
+    });
+
+    addEnvironmentAlert({
+      title: "NO2 threshold reached",
+      zone: no2Record?.zone || "Marineterrein",
+      source: "AIR",
+      time: formatLocalDateTime(no2Record?.observedAt || liveMetaSummary.generatedAt),
+      value: no2Value,
+      unit: no2Record?.unit || "ug/m3",
+      threshold: no2Threshold,
+    });
 
     return alerts;
-  }, [flowThreshold, anomalyThreshold, latestTelraamPoint, latestAnomaly, overview, liveMetaSummary.generatedAt]);
+  }, [
+    flowThreshold,
+    anomalyThreshold,
+    latestTelraamPoint,
+    latestAnomaly,
+    liveMetaSummary.generatedAt,
+    soundLevelRecord,
+    soundLevelValue,
+    soundThreshold,
+    airTemperatureRecord,
+    airTemperatureValue,
+    airTemperatureThreshold,
+    no2Record,
+    no2Value,
+    no2Threshold,
+  ]);
   const filteredAlerts = useMemo(() => {
     const feedAlerts = deriveLiveAlerts(overview, "All locations", "All severities");
     return [...thresholdAlerts, ...feedAlerts]
@@ -1341,8 +1662,8 @@ export function OperationsDashboard() {
                           ? "Current decibel level with a simple comfort reading."
                         : kpi.label === "Crowd density"
                           ? "Crowd level shown as share of comfortable capacity."
-                            : kpi.label === "Swim conditions"
-                              ? "Swim recommendation is limited only when the water temperature sensor is offline."
+                            : kpi.label === "Public conditions"
+                              ? "Weather and crowd context matching the public dashboard."
                               : kpi.label === "Air quality"
                                 ? "Environmental context for operators; detailed air readings appear when available."
                             : undefined;
@@ -1477,9 +1798,9 @@ export function OperationsDashboard() {
 
                     {occupancyCards.length ? (
                       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        {occupancyCards.map((occupancyZone) => {
+                        {occupancyCards.map((occupancyZone, index) => {
                         const density = occupancyZone.density;
-                        const status = getOccupancyStatus(density);
+                        const status = getOccupancyStatusByRank(index, occupancyCards.length);
 
                         return (
                           <div
@@ -1499,16 +1820,16 @@ export function OperationsDashboard() {
 
                             <p className="mt-2 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
                               {formatMetricNumber(occupancyZone.visitors)} detected
-                              {occupancyZone.capacity ? ` / ${formatMetricNumber(occupancyZone.capacity)} capacity` : ""}
+                              {occupancyZone.capacity ? ` / ${formatMetricNumber(occupancyZone.capacity)} capacity reference` : ""}
                             </p>
 
                             <div className="mt-4">
                               <div className="mb-1.5 flex items-end justify-between gap-3">
                                 <span className="text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                                  Density score
+                                  Share of crowd
                                 </span>
                                 <span className="text-xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                                  {density}%
+                                  {formatMetricNumber(density, 1)}%
                                 </span>
                               </div>
                               <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
@@ -1516,7 +1837,7 @@ export function OperationsDashboard() {
                                   className="h-full rounded-full transition-all duration-1000"
                                   style={{
                                     width: `${density}%`,
-                                    backgroundColor: density >= 75 ? MT_COLORS.coral : density >= 45 ? MT_COLORS.yellow : MT_COLORS.cyan,
+                                    backgroundColor: status.color,
                                   }}
                                 />
                               </div>
@@ -1555,7 +1876,7 @@ export function OperationsDashboard() {
                     <CardHeader>
                       <SectionTitle
                         title="Movement over time"
-                        subtitle="Trend across the loaded Telraam period, with the current pedestrian, bicycle, vehicle, and night-mode split shown below."
+                        subtitle="Trend across the loaded Telraam period. Telraam night-mode counts are included in pedestrians so evening and overnight movement stays visible."
                       />
                     </CardHeader>
                   <CardContent className="space-y-4">
@@ -1570,7 +1891,6 @@ export function OperationsDashboard() {
                             <Area type="monotone" dataKey="pedestrians" stackId="1" stroke={MT_COLORS.cyan} fill={MT_COLORS.cyan} fillOpacity={0.85} />
                             <Area type="monotone" dataKey="bicycles" stackId="1" stroke={MT_COLORS.blue} fill={MT_COLORS.blue} fillOpacity={0.78} />
                             <Area type="monotone" dataKey="vehicles" stackId="1" stroke={MT_COLORS.teal} fill={MT_COLORS.teal} fillOpacity={0.75} />
-                            <Area type="monotone" dataKey="night" stackId="1" stroke={MT_COLORS.burgundy} fill={MT_COLORS.burgundy} fillOpacity={0.68} />
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
@@ -1584,7 +1904,7 @@ export function OperationsDashboard() {
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                       {currentModalityChart.map((item, index) => {
                         const Icon =
-                          item.label === "Pedestrians" ? Users : item.label === "Bicycles" ? Bike : item.label === "Night mode" ? Moon : Car;
+                          item.label === "Pedestrians" ? Users : item.label === "Bicycles" ? Bike : Car;
 
                         return (
                           <div
@@ -1611,7 +1931,7 @@ export function OperationsDashboard() {
 
               <div className="grid gap-5">
                 <div id="crowd-history" style={ANCHOR_SCROLL_STYLE}>
-                  <TelraamStoredCard points={telraamHistory} error={telraamHistoryError} anomalyThreshold={anomalyThreshold} />
+                  <HusenseMovementSummaryCard summary={husenseSummary} error={husenseSummaryError} />
                 </div>
 
                 <div id="crowd-baseline" style={ANCHOR_SCROLL_STYLE}>
@@ -1712,21 +2032,17 @@ export function OperationsDashboard() {
                     <CardHeader>
                       <SectionTitle
                         title="Daily movement"
-                        subtitle="Stacked view of stored Telraam movement rows from the backend, grouped by day and travel mode."
+                        subtitle="Live Telraam movement compared hour by hour between yesterday and today."
                       />
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="flex flex-wrap items-center gap-3 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                        {DAILY_MOVEMENT_STACK.map((zoneItem) => (
+                        {DAILY_MOVEMENT_LINES.map((zoneItem) => (
                           <span key={zoneItem.key} className="inline-flex items-center gap-1.5">
                             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: zoneItem.color }} />
                             {zoneItem.label}
                           </span>
                         ))}
-                        <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
-                          <span className="h-2.5 w-2.5 rounded-full border-2 border-slate-900 bg-white" />
-                          Today
-                        </span>
                       </div>
 
                       {dailyMovementTrend.length ? (
@@ -1734,7 +2050,7 @@ export function OperationsDashboard() {
                           <ResponsiveContainer width="100%" height="100%">
                             <ComposedChart data={dailyMovementTrend} margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
-                              <XAxis dataKey="day" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                              <XAxis dataKey="hour" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
                               <YAxis
                                 label={{ value: "Movement", angle: -90, position: "insideLeft", fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
                                 tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
@@ -1743,117 +2059,33 @@ export function OperationsDashboard() {
                               />
                               <Tooltip
                                 formatter={(value, name) => [
-                                  `${formatMetricNumber(Number(value))} movements`,
-                                  DAILY_MOVEMENT_STACK.find((item) => item.key === name)?.label || String(name),
+                                  value === null ? "No reading" : `${formatMetricNumber(Number(value))} movements`,
+                                  DAILY_MOVEMENT_LINES.find((item) => item.key === name)?.label || String(name),
                                 ]}
-                                labelFormatter={(label) => `${label}${dailyMovementTrend.find((item) => item.day === label)?.isToday ? " - Today" : ""}`}
                               />
                               <Legend />
-                              {DAILY_MOVEMENT_STACK.map((zoneItem) => (
-                                <Bar
+                              {DAILY_MOVEMENT_LINES.map((zoneItem) => (
+                                <Line
                                   key={zoneItem.key}
+                                  type="monotone"
                                   dataKey={zoneItem.key}
                                   name={zoneItem.label}
-                                  stackId="visitors"
-                                  fill={zoneItem.color}
-                                  radius={zoneItem.key === "nightVisitors" ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                                  stroke={zoneItem.color}
+                                  strokeWidth={zoneItem.key === "today" ? 3 : 2}
+                                  strokeDasharray={zoneItem.key === "yesterday" ? "5 5" : undefined}
+                                  dot={{ r: zoneItem.key === "today" ? 3 : 2, fill: zoneItem.color }}
+                                  connectNulls={false}
                                 />
                               ))}
-                              <Line
-                                type="monotone"
-                                dataKey={(point) => (point.isToday ? point.visitors : null)}
-                                name="Today"
-                                stroke="#111827"
-                                strokeWidth={0}
-                                dot={{ r: 5, fill: "#ffffff", stroke: "#111827", strokeWidth: 2 }}
-                                activeDot={{ r: 6, fill: "#ffffff", stroke: "#111827", strokeWidth: 2 }}
-                                connectNulls={false}
-                                legendType="none"
-                              />
                             </ComposedChart>
                           </ResponsiveContainer>
                         </div>
                       ) : (
                         <ChartPlaceholder
                           title="Daily movement not available yet"
-                          detail={telraamHistoryError || "Stored Telraam movement rows are needed before this chart can be drawn."}
+                          detail={telraamHistoryError || "Live Telraam rows for yesterday and today are needed before this chart can be drawn."}
                         />
                       )}
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div id="crowd-expected-measured" style={ANCHOR_SCROLL_STYLE}>
-                  <Card>
-                    <CardHeader>
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <SectionTitle
-                          title="Traffic compared with expected"
-                          subtitle="Compares live measured movement against the expected pattern for this time period."
-                        />
-                        <div className="flex items-center gap-2">
-                          <InfoHint label="Expected vs measured compares counted movement with the expected movement pattern for the selected time range." />
-                          {trafficComparisonChart.length ? <Pill tone="sky">loaded traffic</Pill> : null}
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {trafficComparisonChart.length ? (
-                        <div className="h-[300px]">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <ComposedChart data={trafficComparisonChart} margin={{ top: 8, right: 18, left: 0, bottom: 8 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
-                              <XAxis
-                                dataKey="time"
-                                label={{ value: "Time", position: "insideBottom", offset: -4, fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
-                                tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
-                                axisLine={false}
-                                tickLine={false}
-                              />
-                              <YAxis
-                                label={{ value: "Movement", angle: -90, position: "insideLeft", fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
-                                tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
-                                axisLine={false}
-                                tickLine={false}
-                              />
-                              <Tooltip
-                                formatter={(value, name) => [
-                                  `${formatMetricNumber(Number(value))} movements/hour`,
-                                  name === "measured" ? "Measured movement" : "Expected movement",
-                                ]}
-                              />
-                              <Legend
-                                formatter={(value) => (value === "measured" ? "Measured" : value === "expected" ? "Expected" : value)}
-                              />
-                              <Bar dataKey="measured" name="Measured" fill={MT_COLORS.coral} radius={[6, 6, 0, 0]} />
-                              <Line
-                                type="monotone"
-                                dataKey="expected"
-                                name="Expected"
-                                stroke={MT_COLORS.cyan}
-                                strokeWidth={3}
-                                dot={{ r: 3, fill: MT_COLORS.cyan }}
-                              />
-                            </ComposedChart>
-                          </ResponsiveContainer>
-                        </div>
-                      ) : (
-                        <ChartPlaceholder
-                          title="Expected comparison not available yet"
-                          detail={telraamHistoryError || "The backend needs stored Telraam rows before expected movement can be computed."}
-                        />
-                      )}
-
-                      <div
-                        className="rounded-2xl border px-4 py-3 text-sm leading-6"
-                        style={{
-                          borderColor: `${MAIN_COLORS.aColor1}26`,
-                          backgroundColor: "rgba(120, 169, 198, 0.09)",
-                          color: MAIN_COLORS.aColorBlack,
-                        }}
-                      >
-                        {trafficComparisonInsight}
-                      </div>
                     </CardContent>
                   </Card>
                 </div>
@@ -1880,13 +2112,15 @@ export function OperationsDashboard() {
                   helper={liveWeatherWidget.condition}
                   icon={Thermometer}
                   stats={airTemperatureStats}
+                  threshold={airTemperatureThreshold}
                 />
                 <EnvironmentMetricCard
                   title="Air quality"
-                  value=""
-                  helper="Sensor feed not connected yet"
+                  value={airQualityValue}
+                  helper={airQualityHelper}
                   icon={CloudSun}
-                  stats={[]}
+                  stats={airQualityStats}
+                  threshold={hasAirQualityReading ? no2Threshold : undefined}
                 />
                 <EnvironmentMetricCard
                   title="Sound level"
@@ -1894,6 +2128,7 @@ export function OperationsDashboard() {
                   helper={soundFeedConnected ? soundSummary.helper : "Sensor feed not connected yet"}
                   icon={Volume2}
                   stats={soundStats}
+                  threshold={soundThreshold}
                 />
               </div>
 

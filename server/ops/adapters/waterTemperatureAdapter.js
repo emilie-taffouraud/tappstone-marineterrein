@@ -129,19 +129,55 @@ async function readWaterTemperatureStatsFromDatabase(env) {
   };
 }
 
+async function readWaterTemperatureDailyHistoryFromDatabase(env) {
+  const db = getWaterPool(env);
+  if (!db) return [];
+
+  const query = `
+    select
+      date_trunc('day', received_at)::date as date,
+      avg(temp_c1) as avg,
+      min(temp_c1) as min,
+      max(temp_c1) as max
+    from temperature_readings
+    where temp_c1 is not null
+      and received_at >= date_trunc('day', now() - interval '6 days')
+    group by date_trunc('day', received_at)::date
+    order by date asc
+  `;
+
+  const result = await db.query(query);
+
+  return result.rows
+    .map((row) => {
+      const avg = row.avg === null ? null : Number(row.avg);
+      const min = row.min === null ? null : Number(row.min);
+      const max = row.max === null ? null : Number(row.max);
+
+      return {
+        date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date).slice(0, 10),
+        avg: Number.isFinite(avg) ? avg : null,
+        min: Number.isFinite(min) ? min : null,
+        max: Number.isFinite(max) ? max : null,
+      };
+    })
+    .filter((row) => row.date);
+}
+
 export async function getWaterTemperatureLiveData(env) {
   const fetchedAt = new Date().toISOString();
   const zone = getZoneById("swim-area");
 
-  return getOrSetCache("ops:water-temperature", env.opsCacheTtlMs, async () => {
+  return getOrSetCache("ops:water-temperature:v2", env.opsCacheTtlMs, async () => {
     try {
       if (!hasWaterDatabaseConfig(env)) {
         throw new Error("Water temperature database is not configured.");
       }
 
-      const [dbReading, dbStats] = await Promise.all([
+      const [dbReading, dbStats, dailyHistory] = await Promise.all([
         readWaterTemperatureFromDatabase(env),
         readWaterTemperatureStatsFromDatabase(env),
+        readWaterTemperatureDailyHistoryFromDatabase(env),
       ]);
 
       if (!dbReading) {
@@ -175,6 +211,7 @@ export async function getWaterTemperatureLiveData(env) {
               deviceId: dbReading.deviceId,
               batteryV: Number.isFinite(dbReading.batteryV) ? dbReading.batteryV : null,
               history: dbStats,
+              dailyHistory,
             },
           }),
         ],
@@ -183,6 +220,7 @@ export async function getWaterTemperatureLiveData(env) {
           deviceId: dbReading.deviceId,
           batteryV: Number.isFinite(dbReading.batteryV) ? dbReading.batteryV : null,
           history: dbStats,
+          dailyHistory,
         },
         error: null,
       };

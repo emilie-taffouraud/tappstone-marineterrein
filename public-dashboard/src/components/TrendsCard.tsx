@@ -70,10 +70,9 @@ export function TrendsCard({ data, loading, period, onPeriodChange, t }: Props) 
 
   const chartData = rows.map((r) => ({
     label: formatBucket(r.bucket, resolution),
-    [t.pedestrians]: r.pedestrians,
+    [t.pedestrians]: r.pedestrians + r.night,
     [t.bicycles]: r.bicycles,
     [t.vehicles]: r.vehicles,
-    [t.nightMode]: r.night,
   }));
 
   // Show every Nth label to avoid crowding
@@ -155,14 +154,6 @@ export function TrendsCard({ data, loading, period, onPeriodChange, t }: Props) 
               type="monotone"
               dataKey={t.vehicles}
               stroke={TREND_COLORS.vehicles}
-              strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 4 }}
-            />
-            <Line
-              type="monotone"
-              dataKey={t.nightMode}
-              stroke={TREND_COLORS.night}
               strokeWidth={2}
               dot={false}
               activeDot={{ r: 4 }}

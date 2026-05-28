@@ -3,6 +3,10 @@ function toNumber(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function cleanText(value, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
 export function getOpsEnv() {
   return {
     knmiOpenDataApiKey: process.env.KNMI_OPEN_DATA_API_KEY || "",
@@ -14,12 +18,12 @@ export function getOpsEnv() {
     telraamLookbackHours: toNumber(process.env.TELRAAM_LOOKBACK_HOURS, 12),
     soundClassificationApiUrl: process.env.SOUND_CLASSIFICATION_API_URL || "",
     soundClassificationApiToken: process.env.SOUND_CLASSIFICATION_API_TOKEN || "",
-    soundMqttHost: process.env.SOUND_MQTT_HOST || "sensemakersams.org",
+    soundMqttHost: cleanText(process.env.SOUND_MQTT_HOST, "sensemakersams.org"),
     soundMqttPort: toNumber(process.env.SOUND_MQTT_PORT, 1883),
-    soundMqttUsername: process.env.SOUND_MQTT_USERNAME || "SenseSound",
-    soundMqttPassword: process.env.SOUND_MQTT_PASSWORD || "",
-    soundMqttTopic: process.env.SOUND_MQTT_TOPIC || "pipeline/urbansounds/OE-007",
-    soundMqttZoneId: process.env.SOUND_MQTT_ZONE_ID || "general",
+    soundMqttUsername: cleanText(process.env.SOUND_MQTT_USERNAME, "SenseSound"),
+    soundMqttPassword: cleanText(process.env.SOUND_MQTT_PASSWORD),
+    soundMqttTopic: cleanText(process.env.SOUND_MQTT_TOPIC, "pipeline/urbansounds/OE-007"),
+    soundMqttZoneId: cleanText(process.env.SOUND_MQTT_ZONE_ID, "general"),
     soundMqttStaleAfterMs: toNumber(process.env.SOUND_MQTT_STALE_AFTER_MS, 10 * 60 * 1000),
     waterDatabaseUrl: process.env.WATER_DATABASE_URL || "",
     waterDbHost: process.env.WATER_DB_HOST || "",

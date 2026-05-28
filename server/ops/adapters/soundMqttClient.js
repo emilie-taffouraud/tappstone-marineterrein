@@ -11,6 +11,11 @@ const METADATA_FIELDS = new Set([
   "ptp",
   "rms",
   "wind_speed",
+  "classification_scores",
+  "class_scores",
+  "scores",
+  "classes",
+  "labels",
 ]);
 
 const clients = new Map();
@@ -110,6 +115,18 @@ function firstFiniteNumber(...values) {
 function soundClassScores(fields) {
   const scores = {};
 
+  for (const key of ["classification_scores", "class_scores", "scores", "classes", "labels"]) {
+    const nested = fields?.[key];
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+      for (const [label, value] of Object.entries(nested)) {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+          scores[label] = parsed;
+        }
+      }
+    }
+  }
+
   for (const [key, value] of Object.entries(fields || {})) {
     if (METADATA_FIELDS.has(key.toLowerCase())) continue;
     const parsed = Number(value);
@@ -137,9 +154,14 @@ function dominantSoundClass(fields) {
 function normalizeSoundMessage(payloadText, topic) {
   const receivedAt = new Date().toISOString();
   const parsed = JSON.parse(payloadText);
-  const fields = parsed.payload_fields && typeof parsed.payload_fields === "object"
-    ? parsed.payload_fields
-    : parsed;
+  const fields =
+    parsed.payload_fields && typeof parsed.payload_fields === "object"
+      ? parsed.payload_fields
+      : parsed.uplink_message?.decoded_payload && typeof parsed.uplink_message.decoded_payload === "object"
+        ? parsed.uplink_message.decoded_payload
+        : parsed.payload && typeof parsed.payload === "object"
+          ? parsed.payload
+          : parsed;
   const soundLevel = firstFiniteNumber(fields.db_spl, fields.sound_level_db, fields.db, fields.dba, fields.level);
   const classScores = soundClassScores(fields);
   const dominantClass = dominantSoundClass(fields);

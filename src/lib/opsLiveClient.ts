@@ -90,6 +90,30 @@ export type HusenseHeatmapResponse = {
   range: unknown;
 };
 
+export type HusenseDashboardSummary = {
+  spaceId: string;
+  spaceName: string;
+  currentPresence: number;
+  observedAt: string | null;
+  activeGateCount: number;
+  totals: {
+    unclassified?: number;
+    person?: number;
+    runner?: number;
+    bike?: number;
+    car?: number;
+    bus?: number;
+  };
+  gates: Array<{
+    id: string;
+    gateName: string;
+    totalCount: number;
+    arrivals: number;
+    departures: number;
+    observedAt: string | null;
+  }>;
+};
+
 export type HusenseHeatmapRequest = {
   range?: string;
   date?: string;
@@ -115,12 +139,21 @@ export async function fetchOpsHealth() {
 }
 
 export async function fetchTelraamTrafficLatest() {
-  const response = await fetch("/api/traffic/latest");
+  const response = await fetch("/api/traffic/latest?lookback_hours=48");
   if (!response.ok) {
     throw new Error("Failed to fetch /api/traffic/latest");
   }
 
   return response.json() as Promise<TelraamTrafficPoint[]>;
+}
+
+export async function fetchHusenseDashboardSummary() {
+  const response = await fetch("/api/husense/dashboard-summary");
+  if (!response.ok) {
+    throw new Error("Failed to fetch /api/husense/dashboard-summary");
+  }
+
+  return response.json() as Promise<HusenseDashboardSummary>;
 }
 
 export async function fetchOpsAgenda(limit = 4) {

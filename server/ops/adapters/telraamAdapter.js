@@ -167,7 +167,7 @@ export async function getTelraamLiveData(env) {
     };
   }
 
-  return getOrSetCache("ops:telraam", env.opsCacheTtlMs, async () => {
+  return getOrSetCache(`ops:telraam:${env.telraamSegmentId}:${env.telraamLookbackHours}`, env.opsCacheTtlMs, async () => {
     try {
       const body = buildTrafficRequestBody(env);
       const url = `${env.telraamBaseUrl.replace(/\/$/, "")}/advanced/reports/traffic`;

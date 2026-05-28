@@ -8,6 +8,7 @@ import { getUnifiedLiveData, getOpsHealth } from "./server/ops/services/liveData
 import { getAgendaFeed } from "./server/ops/services/agendaService.js";
 import { getKnmiLiveData } from "./server/ops/adapters/knmiAdapter.js";
 import { getWeatherLiveData } from "./server/ops/adapters/weatherAdapter.js";
+import { getTelraamLiveData } from "./server/ops/adapters/telraamAdapter.js";
 import { getOpsEnv } from "./server/ops/config/env.js";
 import { startSoundMqttClient } from "./server/ops/adapters/soundMqttClient.js";
 import { persistSoundObservation } from "./server/ops/services/soundObservationStore.js";
@@ -60,6 +61,40 @@ async function getTrafficNightCountSql() {
     sum: hasNightCount ? "COALESCE(SUM(night_count), 0)::int" : "0::int",
     value: hasNightCount ? "COALESCE(night_count, 0)" : "0",
   };
+}
+
+function telraamLiveCount(row, fields) {
+  return fields.reduce((sum, field) => {
+    const value = Number(row?.[field]);
+    return Number.isFinite(value) ? sum + value : sum;
+  }, 0);
+}
+
+function normalizeTelraamLiveTrafficPoint(row, segmentId) {
+  const recordedAt = row?.date || row?.recorded_at || row?.time || row?.timestamp;
+  const busCount = telraamLiveCount(row, ["mode_bus_lft", "mode_bus_rgt"]);
+  const carCount = telraamLiveCount(row, ["mode_car_lft", "mode_car_rgt"]);
+  const lightTruckCount = telraamLiveCount(row, ["mode_lighttruck_lft", "mode_lighttruck_rgt"]);
+  const motorcycleCount = telraamLiveCount(row, ["mode_motorcycle_lft", "mode_motorcycle_rgt"]);
+  const tractorCount = telraamLiveCount(row, ["mode_tractor_lft", "mode_tractor_rgt"]);
+  const trailerCount = telraamLiveCount(row, ["mode_trailer_lft", "mode_trailer_rgt"]);
+  const truckCount = telraamLiveCount(row, ["mode_truck_lft", "mode_truck_rgt"]);
+
+  return {
+    segment_id: row?.segment_id || segmentId,
+    recorded_at: recordedAt,
+    pedestrian_count: telraamLiveCount(row, ["mode_pedestrian_lft", "mode_pedestrian_rgt"]),
+    bicycle_count: telraamLiveCount(row, ["mode_bicycle_lft", "mode_bicycle_rgt"]),
+    vehicle_count: busCount + carCount + lightTruckCount + motorcycleCount + tractorCount + trailerCount + truckCount,
+    night_count: telraamLiveCount(row, ["mode_night_lft", "mode_night_rgt"]),
+  };
+}
+
+function latestTrafficTimestamp(rows) {
+  return rows.reduce((latest, row) => {
+    const parsed = new Date(row.recorded_at).getTime();
+    return Number.isFinite(parsed) && parsed > latest ? parsed : latest;
+  }, 0);
 }
 
 // Serve static dashboard files
@@ -683,7 +718,35 @@ app.get("/api/ops/agenda", async (req, res) => {
 app.get("/api/traffic/latest", async (req, res) => {
   try {
     const segmentId = req.query.segment_id || 9000006266;
+    const lookbackHours = Number(req.query.lookback_hours || 48);
+    const liveTraffic = await getTelraamLiveData({
+      ...getOpsEnv(),
+      telraamSegmentId: String(segmentId),
+      telraamLookbackHours: Number.isFinite(lookbackHours) ? lookbackHours : 48,
+    });
+    const liveRows = Array.isArray(liveTraffic.raw?.rows)
+      ? liveTraffic.raw.rows
+          .map((row) => normalizeTelraamLiveTrafficPoint(row, segmentId))
+          .filter((row) => row.recorded_at)
+      : [];
+
+    const latestLiveTimestamp = latestTrafficTimestamp(liveRows);
+    const liveFreshAfter = Date.now() - 36 * 60 * 60 * 1000;
+
+    if (liveRows.length && latestLiveTimestamp >= liveFreshAfter) {
+      return res.json(liveRows);
+    }
+
+    if (req.query.fallback !== "stored") {
+      return res.status(503).json({
+        error: liveRows.length
+          ? `Live Telraam rows are stale; latest row is ${new Date(latestLiveTimestamp).toISOString()}.`
+          : liveTraffic.error || "No live Telraam rows were returned for the requested lookback window.",
+      });
+    }
+
     const nightCount = await getTrafficNightCountSql();
+    const limit = Number(req.query.limit || 72);
 
     const sql = `
       SELECT
@@ -696,10 +759,10 @@ app.get("/api/traffic/latest", async (req, res) => {
       FROM traffic_observations
       WHERE segment_id = $1
       ORDER BY recorded_at DESC
-      LIMIT 24
+      LIMIT $2
     `;
 
-    const result = await pool.query(sql, [segmentId]);
+    const result = await pool.query(sql, [segmentId, Number.isFinite(limit) ? limit : 72]);
     res.json(result.rows);
   } catch (err) {
     console.error(err);

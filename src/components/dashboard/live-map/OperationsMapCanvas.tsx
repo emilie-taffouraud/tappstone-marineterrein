@@ -16,12 +16,19 @@ function sensorPopupMessage(point: SensorPoint) {
   return point.availabilityLabel || "Data not available.";
 }
 
+function statusColor(status: WeatherPoint["status"] | WarningPoint["status"]) {
+  if (status === "ok") return "#2f9e44";
+  if (status === "warning") return "#f59e0b";
+  if (status === "critical") return "#dc2626";
+  return "#94a3b8";
+}
+
 export function OperationsMapCanvas({
   visibility,
   sensorPoints,
   zones: _zones,
-  weatherPoints: _weatherPoints,
-  warningPoints: _warningPoints,
+  weatherPoints,
+  warningPoints,
 }: {
   visibility: LayerVisibility;
   zones: ZoneFeature[];
@@ -90,6 +97,59 @@ export function OperationsMapCanvas({
                     {point.state === "live" ? "Data available" : point.state === "broken" ? "Data not available" : "Data not found"}
                   </p>
                   <p className="text-xs text-slate-600">{sensorPopupMessage(point)}</p>
+                </div>
+              </Popup>
+            </CircleMarker>
+          ))}
+
+        {visibility.weather &&
+          weatherPoints.map((point) => (
+            <CircleMarker
+              key={point.id}
+              center={point.center}
+              radius={7}
+              pathOptions={{
+                color: "#ffffff",
+                fillColor: statusColor(point.status),
+                fillOpacity: 0.9,
+                weight: 2,
+              }}
+            >
+              {visibility.labels ? (
+                <Tooltip direction="top" offset={[0, -6]}>
+                  {point.title}
+                </Tooltip>
+              ) : null}
+              <Popup>
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-900">{point.title}</p>
+                  <p className="text-xs text-slate-600">{point.zone}</p>
+                  <p className="text-xs text-slate-600">Value: {point.value}</p>
+                  <p className="text-xs text-slate-600">Status: {point.status}</p>
+                  <p className="text-xs text-slate-600">Observed: {new Date(point.observedAt).toLocaleString()}</p>
+                </div>
+              </Popup>
+            </CircleMarker>
+          ))}
+
+        {visibility.warnings &&
+          warningPoints.map((point) => (
+            <CircleMarker
+              key={point.id}
+              center={point.center}
+              radius={10}
+              pathOptions={{
+                color: "#ffffff",
+                fillColor: statusColor(point.status),
+                fillOpacity: 0.94,
+                weight: 3,
+              }}
+            >
+              <Popup>
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-900">{point.title}</p>
+                  <p className="text-xs text-slate-600">{point.zone}</p>
+                  <p className="text-xs text-slate-600">{point.detail}</p>
                 </div>
               </Popup>
             </CircleMarker>

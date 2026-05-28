@@ -1,6 +1,7 @@
 import { getDefaultSitePlace, getSitePlaceByDisplayName, getSitePlaceById } from "../../../config/sitePlaces.js";
 import { sitePlaces } from "./mapConfig";
 import { getSensorPoints, summarizeSensorPoints } from "./sensorCatalog";
+import { getEnvironmentThreshold, type EnvironmentThresholdStatus } from "../../../utils/environmentThresholds";
 import type {
   OpsHealthResponse,
   OpsLiveOverviewResponse,
@@ -24,6 +25,28 @@ function maxStatus(statuses: UnifiedLiveRecord["status"][]) {
   return statuses.reduce<UnifiedLiveRecord["status"]>((current, candidate) => {
     return statusRank(candidate) > statusRank(current) ? candidate : current;
   }, "unknown");
+}
+
+function statusFromEnvironmentThreshold(status: EnvironmentThresholdStatus): UnifiedLiveRecord["status"] {
+  if (status === "red" || status === "darkRed") return "critical";
+  if (status === "yellow" || status === "orange") return "warning";
+  if (status === "green") return "ok";
+  return "unknown";
+}
+
+function statusForEnvironmentalRecord(record: UnifiedLiveRecord) {
+  const metric = record.metric.toLowerCase();
+  if (metric === "temperature_c") return statusFromEnvironmentThreshold(getEnvironmentThreshold("temperature", record.value).status);
+  if (metric === "sound_level_db") {
+    const zoneLabel = (record.zone || "").toLowerCase();
+    if (zoneLabel.includes("marineterrein")) return "ok";
+    return statusFromEnvironmentThreshold(getEnvironmentThreshold("noise", record.value).status);
+  }
+  if (["no2", "no2_ug_m3", "nitrogen_dioxide"].includes(metric)) {
+    return statusFromEnvironmentThreshold(getEnvironmentThreshold("no2", record.value).status);
+  }
+  if (["co2", "co2_ppm", "carbon_dioxide"].includes(metric)) return "ok";
+  return record.status;
 }
 
 function resolveSitePlace(record: Pick<UnifiedLiveRecord, "zoneId" | "zone">) {
@@ -70,20 +93,40 @@ export function buildZoneFeatures(records: UnifiedLiveRecord[]): ZoneFeature[] {
 }
 
 export function buildWeatherPoints(records: UnifiedLiveRecord[]): WeatherPoint[] {
-  const supportedMetrics = ["condition_text", "temperature_c", "wind_kph", "precip_mm"];
+  const supportedMetrics = [
+    "condition_text",
+    "temperature_c",
+    "wind_kph",
+    "precip_mm",
+    "sound_level_db",
+    "no2",
+    "no2_ug_m3",
+    "nitrogen_dioxide",
+    "co2",
+    "co2_ppm",
+    "carbon_dioxide",
+  ];
   const offsets: Record<string, [number, number]> = {
     condition_text: [0, 0],
     temperature_c: [0.00011, -0.00008],
     wind_kph: [-0.0001, 0.00009],
     precip_mm: [0.00002, 0.00016],
+    sound_level_db: [0.00013, 0.00013],
+    no2: [-0.00012, -0.00012],
+    no2_ug_m3: [-0.00012, -0.00012],
+    nitrogen_dioxide: [-0.00012, -0.00012],
+    co2: [0.00016, -0.00012],
+    co2_ppm: [0.00016, -0.00012],
+    carbon_dioxide: [0.00016, -0.00012],
   };
 
   return records
-    .filter((record) => record.category === "weather" && supportedMetrics.includes(record.metric))
+    .filter((record) => ["weather", "sound"].includes(record.category) && supportedMetrics.includes(record.metric.toLowerCase()))
     .map((record) => {
       const place = resolveSitePlace(record) ?? getDefaultSitePlace();
       const fallbackCenter: [number, number] = [52.37278, 4.91535];
-      const offset = offsets[record.metric] || [0, 0];
+      const metric = record.metric.toLowerCase();
+      const offset = offsets[metric] || [0, 0];
       const baseCenter = place
         ? place.geometry.type === "point"
           ? place.geometry.coordinates
@@ -95,7 +138,7 @@ export function buildWeatherPoints(records: UnifiedLiveRecord[]): WeatherPoint[]
         zone: place?.displayName || "Unknown place",
         title: record.label,
         value: record.unit ? `${record.value ?? "n/a"} ${record.unit}` : String(record.value ?? "n/a"),
-        status: record.status,
+        status: statusForEnvironmentalRecord(record),
         observedAt: record.observedAt,
       };
     });
