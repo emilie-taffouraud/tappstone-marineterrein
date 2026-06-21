@@ -5,7 +5,7 @@ type SensorSeed = {
   name: string;
   category: string;
   center: [number, number];
-  backendSource?: "telraam" | "weather" | "husense" | "water" | "knmi";
+  backendSource?: "telraam" | "weather" | "husense" | "water" | "knmi" | "air" | "sound";
   installState: "installed" | "planned";
 };
 
@@ -29,11 +29,21 @@ const SENSOR_SEEDS: SensorSeed[] = [
   { id: "busyness-swimming", name: "Busyness Monitor - Swimming", category: "Crowd & Presence", center: [52.372524, 4.915365], installState: "installed" },
   { id: "busyness-voorwerf", name: "Busyness Monitor - Voorwerf", category: "Crowd & Presence", center: [52.372866, 4.916744], installState: "installed" },
   { id: "water-temperature", name: "Water Temperature Sensor", category: "Recreation & Water", center: [52.37323, 4.914612], backendSource: "water", installState: "installed" },
-  { id: "air-quality", name: "Air Quality Sensor", category: "Environmental Conditions", center: [52.37243443, 4.917521035], installState: "installed" },
+  { id: "air-quality", name: "Air Quality Sensor", category: "Environmental Conditions", center: [52.37243443, 4.917521035], backendSource: "air", installState: "installed" },
+  { id: "sound-level", name: "Sound Level Sensor", category: "Environmental Conditions", center: [52.37278, 4.91535], backendSource: "sound", installState: "installed" },
   { id: "water-quality", name: "Water Quality", category: "Recreation & Water", center: [52.37298, 4.91495], installState: "planned" },
   { id: "soil-moisture", name: "Soil Moisture", category: "Environmental Conditions", center: [52.37274, 4.91589], installState: "planned" },
   { id: "busyness-ams-inst", name: "Busyness Monitor - AMS-Inst", category: "Crowd & Presence", center: [52.37295, 4.91592], installState: "planned" },
 ];
+
+export function getSensorCatalogItems() {
+  return SENSOR_SEEDS.map(({ id, name, category, installState }) => ({
+    id,
+    name,
+    category,
+    installState,
+  }));
+}
 
 export function getSensorPoints(health: OpsHealthResponse | null): SensorPoint[] {
   return SENSOR_SEEDS.map((sensor) => {

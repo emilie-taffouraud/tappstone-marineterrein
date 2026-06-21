@@ -17,7 +17,9 @@ export type EnvironmentMetricType =
   | "temperature_c"
   | "co2"
   | "pm25"
-  | "pm10";
+  | "pm10"
+  | "aqi"
+  | "humidity";
 
 type ThresholdBand = {
   max?: number;
@@ -54,6 +56,19 @@ const THRESHOLDS: Partial<Record<EnvironmentMetricType, ThresholdBand[]>> = {
     { max: 32, status: "yellow", label: "Caution", message: "Heat conditions call for caution." },
     { max: 40, status: "orange", label: "Extreme caution", message: "Heat conditions call for extreme caution." },
     { status: "darkRed", label: "Danger", message: "Heat conditions are dangerous." },
+  ],
+  aqi: [
+    { max: 50, status: "green", label: "Good", message: "AQI is in the good band." },
+    { max: 100, status: "yellow", label: "Moderate", message: "AQI is acceptable, with possible sensitivity for vulnerable groups." },
+    { max: 150, status: "orange", label: "Unhealthy for sensitive groups", message: "AQI may affect sensitive groups." },
+    { max: 200, status: "red", label: "Unhealthy", message: "AQI is unhealthy." },
+    { status: "darkRed", label: "Very unhealthy", message: "AQI is in a health-alert band." },
+  ],
+  humidity: [
+    { max: 30, status: "yellow", label: "Dry", message: "Humidity is lower than the comfortable outdoor context band." },
+    { max: 60, status: "green", label: "Comfortable", message: "Humidity is within the comfortable context band." },
+    { max: 80, status: "yellow", label: "Humid", message: "Humidity is elevated." },
+    { status: "orange", label: "Very humid", message: "Humidity is very high." },
   ],
   pm25: [],
   pm10: [],

@@ -1,6 +1,6 @@
 export type UnifiedLiveRecord = {
   id: string;
-  source: "telraam" | "knmi" | "weather" | "husense" | "sound" | "water";
+  source: "telraam" | "knmi" | "weather" | "husense" | "sound" | "water" | "air";
   category: "mobility" | "weather" | "warning" | "sound" | "recreation";
   metric: string;
   label: string;
@@ -56,6 +56,27 @@ export type TelraamTrafficPoint = {
   bicycle_count: number;
   vehicle_count: number;
   night_count: number;
+  car_count?: number | null;
+  bus_count?: number | null;
+  light_truck_count?: number | null;
+  truck_count?: number | null;
+  motorcycle_count?: number | null;
+  tractor_count?: number | null;
+  trailer_count?: number | null;
+};
+
+export type TrafficRangeRequest = {
+  lookbackHours?: number;
+  start?: string;
+  end?: string;
+};
+
+export type SoundHourlyPoint = {
+  bucket: string;
+  averageSoundLevelDb: number | null;
+  minSoundLevelDb: number | null;
+  maxSoundLevelDb: number | null;
+  sampleCount: number;
 };
 
 export type AgendaItem = {
@@ -106,11 +127,21 @@ export type HusenseDashboardSummary = {
   };
   gates: Array<{
     id: string;
+    spaceId?: string;
+    spaceName?: string;
     gateName: string;
     totalCount: number;
     arrivals: number;
     departures: number;
     observedAt: string | null;
+    modeCounts?: Record<
+      string,
+      {
+        arrivals?: number;
+        departures?: number;
+        total?: number;
+      }
+    >;
   }>;
 };
 
@@ -138,13 +169,32 @@ export async function fetchOpsHealth() {
   };
 }
 
-export async function fetchTelraamTrafficLatest() {
-  const response = await fetch("/api/traffic/latest?lookback_hours=48");
+export async function fetchTelraamTrafficLatest(request: number | TrafficRangeRequest = 2) {
+  const normalized = typeof request === "number" ? { lookbackHours: request } : request;
+  const params = new URLSearchParams();
+  if (normalized.lookbackHours !== undefined) params.set("lookback_hours", String(normalized.lookbackHours));
+  if (normalized.start) params.set("start", normalized.start);
+  if (normalized.end) params.set("end", normalized.end);
+
+  const response = await fetch(`/api/traffic/latest?${params.toString()}`);
   if (!response.ok) {
     throw new Error("Failed to fetch /api/traffic/latest");
   }
 
   return response.json() as Promise<TelraamTrafficPoint[]>;
+}
+
+export async function fetchSoundHourly(sinceHours = 24) {
+  const params = new URLSearchParams({
+    since_hours: String(sinceHours),
+  });
+  const response = await fetch(`/api/sound/hourly?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch /api/sound/hourly");
+  }
+
+  const payload = (await response.json()) as { rows?: SoundHourlyPoint[] };
+  return Array.isArray(payload.rows) ? payload.rows : [];
 }
 
 export async function fetchHusenseDashboardSummary() {

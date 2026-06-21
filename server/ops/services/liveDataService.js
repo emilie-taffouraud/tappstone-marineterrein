@@ -1,6 +1,7 @@
 import { getKnmiLiveData } from "../adapters/knmiAdapter.js";
 import { getSoundClassificationLiveData } from "../adapters/soundClassificationAdapter.js";
 import { getTelraamLiveData } from "../adapters/telraamAdapter.js";
+import { getAirQualityMqttLiveData } from "../adapters/airQualityMqttAdapter.js";
 import { getWaterTemperatureLiveData } from "../adapters/waterTemperatureAdapter.js";
 import { getWeatherLiveData } from "../adapters/weatherAdapter.js";
 import { getOpsEnv } from "../config/env.js";
@@ -14,6 +15,7 @@ export async function getUnifiedLiveData({ includeRaw = false } = {}) {
     getSoundClassificationLiveData(env),
     getWeatherLiveData(env),
     getWaterTemperatureLiveData(env),
+    getAirQualityMqttLiveData(env),
     //getKnmiLiveData(env),
   ]);
 

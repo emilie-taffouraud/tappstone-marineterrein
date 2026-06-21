@@ -11,6 +11,11 @@ export type Kpi = {
   helper: string;
   icon: string | LucideIcon;
   iconSize?: string;
+  directionCounts?: Array<{
+    label: "IN" | "OUT";
+    value: number;
+    color: string;
+  }>;
 };
 
 export type AlertItem = {

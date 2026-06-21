@@ -31,6 +31,8 @@ function getSensorFeedLabel(sourceName: string) {
     husense: "Zone occupancy sensors",
     weather: "Weather feed",
     water: "Water temperature sensor",
+    air: "Air quality sensors",
+    sound: "Sound sensor",
     knmi: "Weather warning feed",
   };
 

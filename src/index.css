@@ -137,6 +137,33 @@ select {
   display: none;
 }
 
+@media print {
+  @page {
+    margin: 12mm;
+    size: A4 portrait;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+  }
+
+  .print\:hidden {
+    display: none !important;
+  }
+
+  aside,
+  iframe {
+    break-inside: avoid;
+  }
+
+  section,
+  article,
+  .recharts-wrapper {
+    break-inside: avoid;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

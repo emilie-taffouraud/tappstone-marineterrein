@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bike, Car, CloudSun, Info, Thermometer, Users, Volume2, Waves, type LucideIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CloudSun, Download, Droplets, Info, Thermometer, Volume2, Waves, type LucideIcon } from "lucide-react";
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   ComposedChart,
   Legend,
@@ -17,15 +17,17 @@ import { useTelraamTraffic } from "../../hooks/useTelraamTraffic";
 import { DASHBOARD_HEADER_THEME, MAIN_COLORS, MT_COLORS } from "../../styles/theme";
 import mt_down from "../../assets/mt_down.jpg";
 import UpcomingAgendaCard from "./UpcomingAgendaCard";
-import TelraamLiveCard from "./TelraamLiveCard";
-import { LiveOperationsMapSection } from "./live-map/LiveOperationsMapSection";
+import { getSensorCatalogItems } from "./live-map/sensorCatalog";
 import {
   fetchHusenseDashboardSummary,
   fetchOpsAgenda,
+  fetchSoundHourly,
   type AgendaItem,
   type HusenseDashboardSummary,
   type OpsLiveOverviewResponse,
+  type SoundHourlyPoint,
   type TelraamTrafficPoint,
+  type TrafficRangeRequest,
 } from "../../lib/opsLiveClient";
 import {
   getEnvironmentThreshold,
@@ -34,13 +36,11 @@ import {
 } from "../../utils/environmentThresholds";
 import {
   deriveAnomalyChart,
-  deriveCurrentModalityChart,
   deriveLiveAlerts,
   deriveLiveKpis,
   deriveLiveMetaSummary,
   deriveSoundSummary,
   deriveTelraamTrendChart,
-  deriveTelraamLiveModeSplitChart,
   deriveWaterSummary,
   deriveWeatherWidgetModel,
 } from "./opsLiveViewModel";
@@ -50,7 +50,7 @@ import type { AlertItem } from "./types";
 const locationOptions = ["All locations", "Portiersloge", "TAPP", "CODAM", "AHK MakerSpace", "Swim area"];
 const sensorCategories = ["busyness", "water temp", "vehicle classification", "air quality", "sound"];
 const severityOptions = ["All severities", "info", "warning", "critical"];
-const timeRangeOptions = ["Last 30 min", "Last 2 hrs", "Today"];
+const timeRangeOptions = ["Average of past weeks", "Last week", "This week", "Today", "Past 3 hours"];
 const modeOptions = ["Live", "Incident mode"];
 const ANCHOR_SCROLL_STYLE = { scrollMarginTop: "2rem" } as const;
 
@@ -79,13 +79,12 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
   {
     id: "crowd",
     label: "Crowd",
-    description: "Occupancy, movement flow, and crowd context.",
+    description: "Visitor and vehicle signals grouped together to read current pressure within the selected range.",
     items: [
-      { id: "crowd-occupancy", label: "Occupancy" },
-      { id: "crowd-mobility-split", label: "Movement mix" },
-      { id: "crowd-traffic", label: "Movement over time" },
+      { id: "crowd-occupancy", label: "Visitor summary" },
+      { id: "crowd-mobility-split", label: "Vehicle summary" },
       { id: "crowd-history", label: "Movement summary" },
-      { id: "crowd-baseline", label: "Vs normal" },
+      { id: "crowd-baseline", label: "Busiest visitors" },
       { id: "crowd-daily-visitors", label: "Daily visitors" },
     ],
   },
@@ -120,8 +119,7 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
 const HIDDEN_OCCUPANCY_ZONE_IDS = new Set(["5db05d88-7833-440a-9c3e-24c93fb08406"]);
 
 const DAILY_MOVEMENT_LINES = [
-  { key: "today", label: "Today", color: MT_COLORS.coral },
-  { key: "yesterday", label: "Yesterday", color: MT_COLORS.cyan },
+  { key: "today", label: "Selected range", color: MT_COLORS.coral },
 ] as const;
 
 const NAV_ACCENTS: Record<string, string> = {
@@ -157,6 +155,9 @@ type OccupancyCardModel = {
   id: string;
   zone: string;
   visitors: number;
+  dayIns: number;
+  dayOuts: number;
+  dayNetVisitors: number;
   capacity: number | null;
   density: number;
 };
@@ -165,6 +166,75 @@ type DailyMovementPoint = {
   hour: string;
   today: number | null;
   yesterday: number | null;
+};
+
+type VehicleCategoryKey = "car" | "bus" | "light_truck" | "truck" | "motorcycle" | "tractor" | "trailer";
+
+type VehicleCategoryCard = {
+  key: string;
+  label: string;
+  count: number | null;
+};
+
+type VehicleChartPoint = {
+  time: string;
+  total: number;
+  cars: number;
+  buses: number;
+  lightTrucks: number;
+  trucks: number;
+  motorcycles: number;
+  tractors: number;
+  trailers: number;
+  vehicles: number;
+};
+
+type SafeDensitySummary = {
+  capacity: number;
+  density: number;
+  sharePct: number;
+};
+
+type DashboardTimeRange = {
+  label: string;
+  start: Date;
+  end: Date;
+  lookbackHours: number;
+};
+
+const VEHICLE_CATEGORIES: Array<{
+  key: VehicleCategoryKey;
+  dataKey: keyof Omit<VehicleChartPoint, "time">;
+  label: string;
+  color: string;
+  iconFile: string;
+}> = [
+  { key: "car", dataKey: "cars", label: "Cars", color: MT_COLORS.cyan, iconFile: "Car - Clolor@2x.png" },
+  { key: "bus", dataKey: "buses", label: "Buses", color: MT_COLORS.blue, iconFile: "Bus - Color.png" },
+  { key: "light_truck", dataKey: "lightTrucks", label: "Light trucks", color: MT_COLORS.teal, iconFile: "img_LightTruck.png" },
+  { key: "truck", dataKey: "trucks", label: "Trucks", color: MT_COLORS.coral, iconFile: "img_Truck.png" },
+  { key: "motorcycle", dataKey: "motorcycles", label: "Motorcycles", color: MT_COLORS.yellow, iconFile: "img_Motorcycle.png" },
+  { key: "tractor", dataKey: "tractors", label: "Tractors", color: MT_COLORS.green, iconFile: "img_Tractor.png" },
+  { key: "trailer", dataKey: "trailers", label: "Trailers", color: MT_COLORS.burgundy, iconFile: "img_Trailer.png" },
+];
+
+const assetModules = import.meta.glob("../../assets/*.{png,jpg,jpeg,svg,webp,gif,avif}", {
+  eager: true,
+  import: "default",
+}) as Record<string, string>;
+
+const assetUrlByFileName = Object.fromEntries(
+  Object.entries(assetModules)
+    .map(([path, assetUrl]) => {
+      const fileName = path.split("/").pop();
+      return fileName ? [fileName, assetUrl] : null;
+    })
+    .filter((entry): entry is [string, string] => Boolean(entry)),
+);
+
+const VISITOR_DENSITY_CONFIG = {
+  areaSquareMeters: null as number | null,
+  safeDensityPeoplePerSquareMeter: null as number | null,
 };
 
 function resolveActiveSection(activeId: string) {
@@ -494,10 +564,6 @@ function formatDateKey(value: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function formatHourLabel(hour: number) {
-  return `${String(hour).padStart(2, "0")}:00`;
-}
-
 function environmentStatusTone(status: EnvironmentThresholdStatus): "slate" | "emerald" | "amber" | "rose" {
   if (status === "green") return "emerald";
   if (status === "yellow" || status === "orange") return "amber";
@@ -539,29 +605,39 @@ function EnvironmentMetricCard({
 
   return (
     <Card
-      className="h-full"
+      className="h-full min-w-0 overflow-hidden"
       style={{
         borderColor: threshold ? `${thresholdColor}66` : MT_COLORS.border,
       }}
     >
       <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-3">
-          <SectionTitle title={title} subtitle={helper} />
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="break-words text-sm font-semibold tracking-normal" style={{ color: MAIN_COLORS.aColorBlack }}>
+              {title}
+            </p>
+            <p className="mt-1 break-words text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
+              {helper}
+            </p>
+          </div>
           <div className="flex flex-col items-end gap-2">
             <Icon className="h-5 w-5 shrink-0" style={{ color: thresholdColor }} />
             {threshold && threshold.status !== "unavailable" ? <Pill tone={thresholdTone || "slate"}>{threshold.label}</Pill> : null}
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="min-w-0 space-y-3">
         {value ? (
-          <p className="text-3xl font-semibold tracking-tight" style={{ color: MAIN_COLORS.aColorBlack }}>
+          <p
+            className={`${value === "Incomplete data" ? "text-[2.1rem]" : "text-[1.8rem]"} break-words font-semibold leading-tight tracking-tight`}
+            style={{ color: MAIN_COLORS.aColorBlack }}
+          >
             {value}
           </p>
         ) : null}
         {threshold ? (
           <div
-            className="rounded-xl border px-3 py-2 text-sm"
+            className="rounded-xl border px-3 py-2 text-sm break-words"
             style={{
               borderColor: `${thresholdColor}44`,
               backgroundColor: threshold.status === "unavailable" ? "#edf4f8" : `${thresholdColor}14`,
@@ -576,11 +652,11 @@ function EnvironmentMetricCard({
             {stats.map((stat) => (
               <div
                 key={stat.label}
-                className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm"
+                className="flex min-w-0 items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm"
                 style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
               >
-                <span style={{ color: MAIN_COLORS.aColorGray }}>{stat.label}</span>
-                <span className="font-semibold text-right" style={{ color: MAIN_COLORS.aColorBlack }}>{stat.value}</span>
+                <span className="min-w-0 break-words" style={{ color: MAIN_COLORS.aColorGray }}>{stat.label}</span>
+                <span className="shrink-0 text-right font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>{stat.value}</span>
               </div>
             ))}
           </div>
@@ -625,7 +701,9 @@ function EnvironmentTrendCard({ data }: { data: EnvironmentTrendPoint[] }) {
                 />
                 <Tooltip
                   formatter={(value, name) => {
-                    if (name === "Visitors" || name === "visitors") return [`${formatMetricNumber(Number(value))}`, "Visitors"];
+                    if (name === "Boardwalk visitors & swimmers" || name === "visitors") {
+                      return [`${formatMetricNumber(Number(value))}`, "Boardwalk visitors & swimmers"];
+                    }
                     if (name === "Water temperature" || name === "waterTemperature") return [`${Number(value).toFixed(1)} C`, "Water temperature"];
                     return [`${Number(value).toFixed(1)} C`, "Air temperature"];
                   }}
@@ -633,7 +711,7 @@ function EnvironmentTrendCard({ data }: { data: EnvironmentTrendPoint[] }) {
                 <Legend />
                 <Line yAxisId="temp" type="monotone" dataKey="waterTemperature" name="Water temperature" stroke={MT_COLORS.teal} strokeWidth={3} dot={{ r: 3 }} connectNulls />
                 <Line yAxisId="temp" type="monotone" dataKey="airTemperature" name="Air temperature" stroke={MT_COLORS.coral} strokeWidth={3} dot={{ r: 3 }} connectNulls />
-                <Line yAxisId="visitors" type="monotone" dataKey="visitors" name="Visitors" stroke={MT_COLORS.blue} strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                <Line yAxisId="visitors" type="monotone" dataKey="visitors" name="Boardwalk visitors & swimmers" stroke={MT_COLORS.blue} strokeWidth={2} strokeDasharray="5 5" dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -655,21 +733,65 @@ function HusenseMovementSummaryCard({
   summary: HusenseDashboardSummary | null;
   error?: string | null;
 }) {
+  const inColor = "#15803d";
+  const outColor = "#dc2626";
   const totals = summary?.totals || {};
   const movementRows = [
     { label: "People", value: Number(totals.person || 0), color: MT_COLORS.cyan },
     { label: "Runners", value: Number(totals.runner || 0), color: MT_COLORS.blue },
     { label: "Bikes", value: Number(totals.bike || 0), color: MT_COLORS.teal },
-    { label: "Cars", value: Number(totals.car || 0), color: MT_COLORS.coral },
-    { label: "Buses", value: Number(totals.bus || 0), color: MT_COLORS.burgundy },
   ];
   const totalMovement = movementRows.reduce((sum, row) => sum + row.value, 0);
   const dominant = movementRows
     .filter((row) => row.value > 0)
     .sort((left, right) => right.value - left.value)[0];
-  const busiestGate = (summary?.gates || [])
-    .filter((gate) => Number(gate.totalCount || 0) > 0)
-    .sort((left, right) => Number(right.totalCount || 0) - Number(left.totalCount || 0))[0];
+  const personArrivals = (gate: NonNullable<HusenseDashboardSummary["gates"]>[number]) =>
+    Number(gate.modeCounts?.person?.arrivals ?? 0);
+  const personDepartures = (gate: NonNullable<HusenseDashboardSummary["gates"]>[number]) =>
+    Number(gate.modeCounts?.person?.departures ?? 0);
+  const labelGate = (gateName: string, index: number) => {
+    const normalized = gateName.toLowerCase();
+    if (normalized.includes("hoofd") || normalized.includes("main")) return "Main Gate";
+    if (normalized.includes("oude") || normalized.includes("old")) return "Old Port";
+    if (normalized.includes("brug") || normalized.includes("bridge")) return "Bridge";
+    return ["Main Gate", "Old Port", "Bridge"][index] || gateName || `Gate ${index + 1}`;
+  };
+  const gateDirectionRows = [...(summary?.gates || []).reduce((rows, gate, index) => {
+    const label = labelGate(gate.gateName, index);
+    const current = rows.get(label) || { label, arrivals: 0, departures: 0 };
+    current.arrivals += personArrivals(gate);
+    current.departures += personDepartures(gate);
+    rows.set(label, current);
+    return rows;
+  }, new Map<string, { label: string; arrivals: number; departures: number }>()).values()];
+  const totalEntering = gateDirectionRows.reduce((sum, row) => sum + row.arrivals, 0);
+  const totalLeaving = gateDirectionRows.reduce((sum, row) => sum + row.departures, 0);
+  const hasDirectionCounts = gateDirectionRows.length > 0;
+  const totalPeopleInMt = hasDirectionCounts
+    ? totalEntering - totalLeaving
+    : Number(totals.person || summary?.currentPresence || 0);
+  const directionTotals: Array<{
+    label: string;
+    value: number;
+    note: string;
+    color: string;
+    icon: LucideIcon;
+  }> = [
+    {
+      label: "Ins",
+      value: totalEntering,
+      note: "HuSense person IN counts across the configured gates",
+      color: inColor,
+      icon: ArrowDownLeft,
+    },
+    {
+      label: "Outs",
+      value: totalLeaving,
+      note: "HuSense person OUT counts across the configured gates",
+      color: outColor,
+      icon: ArrowUpRight,
+    },
+  ];
 
   return (
     <Card>
@@ -683,41 +805,51 @@ function HusenseMovementSummaryCard({
         {summary ? (
           <>
             <div className="grid gap-3 lg:grid-cols-3">
-              {[
-                {
-                  label: "Movement now",
-                  value: formatMetricNumber(totalMovement),
-                  note: `Latest HuSense update ${formatLocalDateTime(summary.observedAt)}`,
-                },
-                {
-                  label: "Current presence",
-                  value: formatMetricNumber(Number(summary.currentPresence || 0)),
-                  note: "Current HuSense presence across the configured spaces",
-                },
-                {
-                  label: "Active gates",
-                  value: formatMetricNumber(Number(summary.activeGateCount || 0)),
-                  note: busiestGate
-                    ? `${busiestGate.gateName} has the strongest movement right now.`
-                    : "No active classified gate movement in the latest HuSense payload.",
-                },
-              ].map((item) => (
+              <div
+                className="rounded-2xl border p-4"
+                style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+              >
+                <p className="text-[11px] font-medium uppercase tracking-[0.12em]" style={{ color: MAIN_COLORS.aColorGray }}>
+                  Total people in MT
+                </p>
+                <p className="mt-2 text-[2rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
+                  {formatMetricNumber(totalPeopleInMt)}
+                </p>
+                <p className="mt-1 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
+                  {hasDirectionCounts ? "HuSense net people today, IN minus OUT" : `HuSense person class, latest update ${formatLocalDateTime(summary.observedAt)}`}
+                </p>
+              </div>
+
+              {directionTotals.map((item) => {
+                const Icon = item.icon;
+
+                return (
                 <div
                   key={item.label}
                   className="rounded-2xl border p-4"
                   style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
                 >
-                  <p className="text-[11px] font-medium uppercase tracking-[0.12em]" style={{ color: MAIN_COLORS.aColorGray }}>
-                    {item.label}
-                  </p>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.12em]" style={{ color: MAIN_COLORS.aColorGray }}>
+                      {item.label}
+                    </p>
+                    <span
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full"
+                      style={{ backgroundColor: `${item.color}18`, color: item.color }}
+                      title={item.label === "Ins" ? "Incoming visitors" : "Outgoing visitors"}
+                    >
+                      <Icon className="h-5 w-5" strokeWidth={2.5} />
+                    </span>
+                  </div>
                   <p className="mt-2 text-[2rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
-                    {item.value}
+                    {formatMetricNumber(item.value)}
                   </p>
                   <p className="mt-1 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
                     {item.note}
                   </p>
                 </div>
-              ))}
+              );
+              })}
             </div>
 
             <div className="rounded-2xl border p-4" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}>
@@ -727,10 +859,10 @@ function HusenseMovementSummaryCard({
                     Current HuSense movement mix
                   </p>
                   <p className="mt-1 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
-                    {dominant ? `${dominant.label} are the main movement type right now.` : "No classified movement stands out right now."}
+                    {dominant ? `${dominant.label} are the main movement type in the selected range.` : "No classified movement stands out in the selected range."}
                   </p>
                 </div>
-                <Pill tone={totalMovement > 0 ? "emerald" : "slate"}>HuSense live</Pill>
+                <Pill tone={totalMovement > 0 ? "emerald" : "slate"}>Selected range</Pill>
               </div>
 
               <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-slate-200/70">
@@ -760,10 +892,59 @@ function HusenseMovementSummaryCard({
                       {formatMetricNumber(row.value)}
                     </p>
                     <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                      {totalMovement > 0 ? `${formatMetricNumber((row.value / totalMovement) * 100, 1)}% of movement now` : "No current share"}
+                      {totalMovement > 0 ? `${formatMetricNumber((row.value / totalMovement) * 100, 1)}% of selected movement` : "No current share"}
                     </p>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div
+              className="rounded-2xl border p-4"
+              style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                  Gate direction counts
+                </p>
+                <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                  <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ backgroundColor: `${inColor}14`, color: inColor }}>
+                    <ArrowDownLeft className="h-3.5 w-3.5" strokeWidth={2.6} />
+                    IN
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ backgroundColor: `${outColor}14`, color: outColor }}>
+                    <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2.6} />
+                    OUT
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {gateDirectionRows.length ? (
+                  gateDirectionRows.map((row) => (
+                    <div
+                      key={row.label}
+                      className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-xl border px-3 py-2 text-sm"
+                      style={{ borderColor: `${MAIN_COLORS.aColor1}1f`, backgroundColor: "rgba(255, 255, 255, 0.74)" }}
+                    >
+                      <span className="min-w-0 truncate" style={{ color: MAIN_COLORS.aColorGray }}>
+                        {row.label}
+                      </span>
+                      <span className="inline-flex min-w-[4.5rem] items-center justify-end gap-1.5 font-semibold" style={{ color: inColor }}>
+                        <ArrowDownLeft className="h-4 w-4" strokeWidth={2.6} />
+                        {formatMetricNumber(row.arrivals)}
+                      </span>
+                      <span className="inline-flex min-w-[4.5rem] items-center justify-end gap-1.5 font-semibold" style={{ color: outColor }}>
+                        <ArrowUpRight className="h-4 w-4" strokeWidth={2.6} />
+                        {formatMetricNumber(row.departures)}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="rounded-xl border px-3 py-2 text-sm" style={{ borderColor: `${MAIN_COLORS.aColor1}1f`, color: MAIN_COLORS.aColorGray }}>
+                    No HuSense gate direction counts are available in the latest summary.
+                  </p>
+                )}
               </div>
             </div>
           </>
@@ -775,6 +956,397 @@ function HusenseMovementSummaryCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+type SoundHourlyChartPoint = {
+  time: string;
+  average: number | null;
+  min: number | null;
+  max: number | null;
+};
+
+function buildSoundHourlyChart(points: SoundHourlyPoint[]): SoundHourlyChartPoint[] {
+  return points.map((point) => {
+    const bucket = new Date(point.bucket);
+
+    return {
+      time: Number.isNaN(bucket.getTime())
+        ? point.bucket
+        : bucket.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit" }),
+      average: point.averageSoundLevelDb,
+      min: point.minSoundLevelDb,
+      max: point.maxSoundLevelDb,
+    };
+  });
+}
+
+function SoundHourlyCard({
+  points,
+  error,
+  rangeLabel,
+}: {
+  points: SoundHourlyPoint[];
+  error: string | null;
+  rangeLabel: string;
+}) {
+  const chartData = useMemo(() => buildSoundHourlyChart(points), [points]);
+  const hasSoundData = chartData.some((point) => point.average !== null);
+
+  return (
+    <Card>
+      <CardHeader>
+        <SectionTitle
+          title="Hourly sound"
+          subtitle={`Average decibels by hour for ${rangeLabel.toLowerCase()}.`}
+        />
+      </CardHeader>
+      <CardContent>
+        {hasSoundData ? (
+          <div className="h-[220px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData} margin={{ top: 10, right: 18, left: 0, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
+                <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis
+                  label={{ value: "dB", angle: -90, position: "insideLeft", fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                  tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  formatter={(value, name) => [
+                    value === null ? "No reading" : `${Number(value).toFixed(1)} dB`,
+                    name === "average" ? "Average" : name === "min" ? "Minimum" : "Maximum",
+                  ]}
+                />
+                <Legend />
+                <Line type="monotone" dataKey="average" name="Average" stroke={MT_COLORS.teal} strokeWidth={3} dot={{ r: 2 }} connectNulls />
+                <Line type="monotone" dataKey="min" name="Minimum" stroke={MT_COLORS.cyan} strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls />
+                <Line type="monotone" dataKey="max" name="Maximum" stroke={MT_COLORS.coral} strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <ChartPlaceholder
+            title="Hourly sound data not available yet"
+            detail={error || "The sound MQTT store has not returned hourly decibel observations for the selected range."}
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ExternalSensorMapCard() {
+  const sensors = getSensorCatalogItems();
+  const shortCategory = (category: string) => {
+    if (category.toLowerCase().includes("crowd")) return "Crowd";
+    if (category.toLowerCase().includes("environment")) return "Environment";
+    if (category.toLowerCase().includes("water")) return "Water";
+    if (category.toLowerCase().includes("mobility")) return "Mobility";
+    return category;
+  };
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader>
+        <SectionTitle
+          title="Sensor map"
+          subtitle="Marineterrein sensor map"
+        />
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-hidden rounded-2xl border" style={{ borderColor: `${MAIN_COLORS.aColor1}26` }}>
+          <iframe
+            title="Marineterrein sensor map"
+            src="https://tomvanarman.github.io/marineterrein-sensors/"
+            className="h-[640px] w-full border-0"
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+        </div>
+        <div className="mt-4 space-y-3">
+          {(["installed", "planned"] as const).map((state) => {
+            const group = sensors.filter((s) => s.installState === state);
+            if (!group.length) return null;
+            return (
+              <div key={state}>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: MAIN_COLORS.aColorGray }}>
+                  {state === "installed" ? "Active sensors" : "Planned"}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {group.map((sensor) => (
+                    <div
+                      key={sensor.id}
+                      className="flex items-center gap-2.5 rounded-xl border px-3 py-2.5"
+                      style={{
+                        borderColor: state === "installed" ? `${MT_COLORS.teal}44` : `${MAIN_COLORS.aColor1}1a`,
+                        backgroundColor: state === "installed" ? `${MT_COLORS.teal}0d` : "rgba(255,255,255,0.6)",
+                      }}
+                    >
+                      <span
+                        className="inline-block h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: state === "installed" ? MT_COLORS.teal : MT_COLORS.muted }}
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
+                          {sensor.name}
+                        </p>
+                        <p className="text-[11px]" style={{ color: MAIN_COLORS.aColorGray }}>
+                          {shortCategory(sensor.category)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ExportPdfTool({ onExport }: { onExport: () => void }) {
+  return (
+    <div className="flex justify-center pb-8 print:hidden">
+      <button
+        type="button"
+        onClick={onExport}
+        className="inline-flex items-center gap-2 rounded-lg border px-4 py-3 text-sm font-semibold shadow-sm transition hover:-translate-y-0.5"
+        style={{
+          borderColor: `${MT_COLORS.teal}55`,
+          backgroundColor: "#ffffff",
+          color: MT_COLORS.darkTeal,
+        }}
+      >
+        <Download className="h-4 w-4" />
+        Export as PDF
+      </button>
+    </div>
+  );
+}
+
+function VehicleSummaryCard({
+  chartData,
+  categoryCards,
+  error,
+  rangeLabel,
+}: {
+  chartData: VehicleChartPoint[];
+  categoryCards: VehicleCategoryCard[];
+  error?: string | null;
+  rangeLabel: string;
+}) {
+  const hasVehicleData = chartData.some(
+    (point) => VEHICLE_CATEGORIES.some((category) => Number(point[category.dataKey] || 0) > 0),
+  );
+  const hasCategoryBreakdown = categoryCards.some((card) => card.count !== null);
+  const visibleCategoryCards = hasCategoryBreakdown
+    ? categoryCards
+    : [
+        {
+          key: "vehicles",
+          label: "Vehicles",
+          count: chartData.reduce((sum, point) => sum + point.vehicles, 0),
+        },
+      ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <SectionTitle
+          title="Vehicle summary"
+          subtitle={`Telraam vehicle category shares for ${rangeLabel.toLowerCase()}.`}
+        />
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {hasVehicleData ? (
+          <>
+            <div className="h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
+                  <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    domain={[0, 100]}
+                    ticks={[0, 25, 50, 75, 100]}
+                    tickFormatter={(value) => `${value}%`}
+                    tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    formatter={(value, name) => [`${formatMetricNumber(Number(value), 1)}%`, String(name)]}
+                    labelFormatter={(label, payload) => {
+                      const total = Number(payload?.[0]?.payload?.total || 0);
+                      return `${label} / ${formatMetricNumber(total)} vehicles`;
+                    }}
+                  />
+                  {hasCategoryBreakdown ? (
+                    VEHICLE_CATEGORIES.map((category) => (
+                      <Bar
+                        key={category.key}
+                        dataKey={category.dataKey}
+                        name={category.label}
+                        stackId="vehicles"
+                        fill={category.color}
+                      />
+                    ))
+                  ) : (
+                    <Bar dataKey="vehicles" name="Vehicles" fill={MT_COLORS.teal} />
+                  )}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {VEHICLE_CATEGORIES.map((category) => (
+                <div key={category.key} className="flex min-w-0 items-center gap-2 text-sm">
+                  <VehicleTypeIcon iconFile={category.iconFile} color={category.color} />
+                  <span className="min-w-0 truncate" style={{ color: category.color }}>
+                    {category.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {visibleCategoryCards.map((card) => (
+                (() => {
+                  const category = VEHICLE_CATEGORIES.find((item) => item.key === card.key);
+
+                  return (
+                <div
+                  key={card.key}
+                  className="rounded-2xl border p-4"
+                  style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    {category ? <VehicleTypeIcon iconFile={category.iconFile} color={category.color} /> : null}
+                    <p className="min-w-0 truncate text-sm" style={{ color: category?.color || MAIN_COLORS.aColorGray }}>
+                      {card.label}
+                    </p>
+                  </div>
+                  <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                    {card.count === null ? "Unavailable" : `${formatMetricNumber(card.count, 1)}%`}
+                  </p>
+                  <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                    Share of selected-range Telraam vehicles
+                  </p>
+                </div>
+                  );
+                })()
+              ))}
+            </div>
+          </>
+        ) : (
+          <ChartPlaceholder
+            title="Vehicle summary not available yet"
+            detail={error || "Telraam vehicle summary data has not returned category counts for the selected range yet."}
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function VisitorBusynessRows({ cards }: { cards: OccupancyCardModel[] }) {
+  const labels = ["Boardwalk", "Picnic", "Terrace"];
+  const rows = labels.map((label, index) => ({ label, value: cards[index]?.visitors ?? null }));
+  const maxValue = Math.max(1, ...rows.map((row) => row.value ?? 0));
+
+  if (!cards.length) {
+    return (
+      <div className="mt-3 rounded-xl border px-3 py-2 text-xs" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, color: MAIN_COLORS.aColorGray }}>
+        Busyness values unavailable
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-2">
+      {rows.map((row) => (
+        <div key={row.label} className="space-y-1">
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <span style={{ color: MAIN_COLORS.aColorGray }}>{row.label}</span>
+            <span className="font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+              {row.value === null ? "Unavailable" : formatMetricNumber(row.value)}
+            </span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: row.value === null ? "0%" : `${Math.min(100, (row.value / maxValue) * 100)}%`,
+                backgroundColor: MT_COLORS.teal,
+              }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BusiestVisitorCountSummary({ summary }: { summary: HusenseDashboardSummary | null }) {
+  const observedTimes = (summary?.gates || [])
+    .map((gate) => gate.observedAt)
+    .filter((value): value is string => Boolean(value))
+    .sort();
+  const latestObservedAt = observedTimes.length ? observedTimes[observedTimes.length - 1] : summary?.observedAt || null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <SectionTitle
+          title="Busiest visitor count summary"
+          subtitle="Historical busiest-period tracking needs stored HuSense snapshots, not only the latest live payload."
+        />
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <ChartPlaceholder
+          title="Busiest visitor history not available yet"
+          detail="Right now the dashboard only receives the latest HuSense classified gate data. To calculate busiest days or hours, we need either a HuSense historical endpoint or a local job that stores snapshots over time."
+        />
+        {latestObservedAt ? (
+          <div
+            className="rounded-2xl border px-4 py-3 text-sm"
+            style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8`, color: MAIN_COLORS.aColorGray }}
+          >
+            Latest available HuSense visitor payload: {formatLocalDateTime(latestObservedAt)}.
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function VehicleTypeIcon({ iconFile, color }: { iconFile: string; color: string }) {
+  const iconUrl = assetUrlByFileName[iconFile];
+
+  if (!iconUrl) {
+    return <span className="h-5 w-5 shrink-0 rounded-full" style={{ backgroundColor: color }} />;
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      className="h-5 w-5 shrink-0"
+      style={{
+        backgroundColor: color,
+        WebkitMaskImage: `url(${iconUrl})`,
+        maskImage: `url(${iconUrl})`,
+        WebkitMaskRepeat: "no-repeat",
+        maskRepeat: "no-repeat",
+        WebkitMaskPosition: "center",
+        maskPosition: "center",
+        WebkitMaskSize: "contain",
+        maskSize: "contain",
+      }}
+    />
   );
 }
 
@@ -945,32 +1517,79 @@ function readPresenceCount(zone: PresenceZone) {
   );
 }
 
-function buildOccupancyCards(zones: PresenceZone[]): OccupancyCardModel[] {
-  const totalVisitors = zones.reduce((sum, zone) => sum + readPresenceCount(zone), 0);
+function normalizeLookupLabel(value: string | null | undefined) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
 
-  return zones
-    .map((zone, index) => {
-      const visitors = readPresenceCount(zone);
-      const capacity = parseOptionalNumber(zone.capacity);
-      const density = totalVisitors > 0 ? Math.round((visitors / totalVisitors) * 1000) / 10 : 0;
-      const id = String(zone.id ?? zone.name ?? zone.zone ?? `zone-${index + 1}`);
+function buildHusenseDirectionBySpace(summary: HusenseDashboardSummary | null) {
+  const bySpaceId = new Map<string, { ins: number; outs: number }>();
+  const bySpaceName = new Map<string, { ins: number; outs: number }>();
 
-      return {
-        id,
-        zone: zone.name || zone.zone || zone.label || `Zone ${index + 1}`,
-        visitors,
-        capacity,
-        density,
-      };
-    })
+  for (const gate of summary?.gates || []) {
+    const ins = Number(gate.modeCounts?.person?.arrivals ?? 0);
+    const outs = Number(gate.modeCounts?.person?.departures ?? 0);
+    const spaceId = gate.spaceId ? String(gate.spaceId) : null;
+    const spaceName = normalizeLookupLabel(gate.spaceName);
+
+    if (spaceId) {
+      const current = bySpaceId.get(spaceId) || { ins: 0, outs: 0 };
+      current.ins += ins;
+      current.outs += outs;
+      bySpaceId.set(spaceId, current);
+    }
+
+    if (spaceName) {
+      const current = bySpaceName.get(spaceName) || { ins: 0, outs: 0 };
+      current.ins += ins;
+      current.outs += outs;
+      bySpaceName.set(spaceName, current);
+    }
+  }
+
+  return { bySpaceId, bySpaceName };
+}
+
+function buildOccupancyCards(zones: PresenceZone[], summary: HusenseDashboardSummary | null): OccupancyCardModel[] {
+  const directions = buildHusenseDirectionBySpace(summary);
+  const mapped = zones.map((zone, index) => {
+    const capacity = parseOptionalNumber(zone.capacity);
+    const id = String(zone.id ?? zone.name ?? zone.zone ?? `zone-${index + 1}`);
+    const zoneLabel = zone.name || zone.zone || zone.label || `Zone ${index + 1}`;
+    const direction =
+      directions.bySpaceId.get(id) ||
+      directions.bySpaceName.get(normalizeLookupLabel(zoneLabel)) ||
+      { ins: 0, outs: 0 };
+    const dayNetVisitors = direction.ins - direction.outs;
+
+    return {
+      id,
+      zone: zoneLabel,
+      visitors: dayNetVisitors || readPresenceCount(zone),
+      dayIns: direction.ins,
+      dayOuts: direction.outs,
+      dayNetVisitors,
+      capacity,
+      density: 0,
+    };
+  });
+  const totalNetVisitors = mapped.reduce((sum, zone) => sum + Math.max(0, zone.dayNetVisitors), 0);
+
+  return mapped
+    .map((zone) => ({
+      ...zone,
+      density: totalNetVisitors > 0 ? Math.round((Math.max(0, zone.dayNetVisitors) / totalNetVisitors) * 1000) / 10 : 0,
+    }))
     .sort((left, right) => right.density - left.density || right.visitors - left.visitors || left.zone.localeCompare(right.zone));
 }
 
 function buildOccupancyInsight(zones: OccupancyCardModel[], error: string | null) {
   if (!zones.length) {
     return error
-      ? "Crowd density is unavailable because the Husense backend feed could not be loaded."
-      : "Crowd density will appear when the Husense backend returns live zone readings.";
+      ? "Visitor summary is unavailable because the Husense backend feed could not be loaded."
+      : "Visitor summary will appear when the Husense backend returns live zone readings.";
   }
 
   const busiest = [...zones].sort((left, right) => right.density - left.density || right.visitors - left.visitors)[0];
@@ -988,32 +1607,207 @@ function totalTelraamMovement(point: TelraamTrafficPoint) {
   );
 }
 
-function buildDailyMovementTrend(points: TelraamTrafficPoint[]): DailyMovementPoint[] {
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const todayKey = formatDateKey(today);
-  const yesterdayKey = formatDateKey(yesterday);
-  const todayByHour = new Map<number, number>();
-  const yesterdayByHour = new Map<number, number>();
+function startOfLocalWeek(date: Date) {
+  const start = new Date(date);
+  const day = start.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + mondayOffset);
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function resolveDashboardTimeRange(range: string): DashboardTimeRange {
+  const end = new Date();
+  const start = new Date(end);
+
+  if (range === "Average of past weeks") {
+    start.setDate(end.getDate() - 28);
+  } else if (range === "Last week") {
+    const thisWeekStart = startOfLocalWeek(end);
+    start.setTime(thisWeekStart.getTime());
+    start.setDate(start.getDate() - 7);
+    end.setTime(thisWeekStart.getTime());
+  } else if (range === "This week") {
+    start.setTime(startOfLocalWeek(end).getTime());
+  } else if (range === "Today") {
+    start.setHours(0, 0, 0, 0);
+  } else {
+    start.setHours(start.getHours() - 3);
+  }
+
+  const lookbackHours = Math.max(0.5, (end.getTime() - start.getTime()) / (60 * 60 * 1000));
+  return {
+    label: range,
+    start,
+    end,
+    lookbackHours,
+  };
+}
+
+function buildTrafficRangeRequest(range: DashboardTimeRange): TrafficRangeRequest {
+  if (range.label === "Past 3 hours") {
+    return {
+      lookbackHours: range.lookbackHours,
+    };
+  }
+
+  return {
+    lookbackHours: range.lookbackHours,
+    start: range.start.toISOString(),
+    end: range.end.toISOString(),
+  };
+}
+
+function formatRangeWindow(range: DashboardTimeRange) {
+  const sameDay = formatDateKey(range.start) === formatDateKey(range.end);
+  const options: Intl.DateTimeFormatOptions = sameDay
+    ? { hour: "2-digit", minute: "2-digit" }
+    : { month: "short", day: "numeric", hour: "2-digit" };
+
+  return `${range.start.toLocaleString([], options)} to ${range.end.toLocaleString([], options)}`;
+}
+
+function vehicleCategoryValue(point: TelraamTrafficPoint, key: VehicleCategoryKey) {
+  const record = point as TelraamTrafficPoint & Record<string, unknown>;
+  const value = record[`${key}_count`];
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function buildVehicleChart(points: TelraamTrafficPoint[]): VehicleChartPoint[] {
+  const byDay = new Map<
+    string,
+    {
+      label: string;
+      cars: number;
+      buses: number;
+      lightTrucks: number;
+      trucks: number;
+      motorcycles: number;
+      tractors: number;
+      trailers: number;
+      vehicles: number;
+    }
+  >();
 
   for (const point of points) {
     const recordedAt = new Date(point.recorded_at);
     if (Number.isNaN(recordedAt.getTime())) continue;
 
-    const dayKey = formatDateKey(recordedAt);
-    const hour = recordedAt.getHours();
-    const target = dayKey === todayKey ? todayByHour : dayKey === yesterdayKey ? yesterdayByHour : null;
-    if (!target) continue;
+    const key = formatDateKey(recordedAt);
+    const current = byDay.get(key) || {
+      label: recordedAt.toLocaleDateString([], { month: "short", day: "numeric" }),
+      cars: 0,
+      buses: 0,
+      lightTrucks: 0,
+      trucks: 0,
+      motorcycles: 0,
+      tractors: 0,
+      trailers: 0,
+      vehicles: 0,
+    };
 
-    target.set(hour, (target.get(hour) || 0) + totalTelraamMovement(point));
+    current.cars += vehicleCategoryValue(point, "car") ?? 0;
+    current.buses += vehicleCategoryValue(point, "bus") ?? 0;
+    current.lightTrucks += vehicleCategoryValue(point, "light_truck") ?? 0;
+    current.trucks += vehicleCategoryValue(point, "truck") ?? 0;
+    current.motorcycles += vehicleCategoryValue(point, "motorcycle") ?? 0;
+    current.tractors += vehicleCategoryValue(point, "tractor") ?? 0;
+    current.trailers += vehicleCategoryValue(point, "trailer") ?? 0;
+    current.vehicles += Number(point.vehicle_count || 0);
+    byDay.set(key, current);
   }
 
-  return Array.from({ length: 24 }, (_, hour) => ({
-    hour: formatHourLabel(hour),
-    today: todayByHour.has(hour) ? todayByHour.get(hour)! : null,
-    yesterday: yesterdayByHour.has(hour) ? yesterdayByHour.get(hour)! : null,
-  })).filter((point) => point.today !== null || point.yesterday !== null);
+  return [...byDay.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, day]) => {
+      const categoryTotal =
+        day.cars +
+        day.buses +
+        day.lightTrucks +
+        day.trucks +
+        day.motorcycles +
+        day.tractors +
+        day.trailers;
+      const total = categoryTotal || day.vehicles;
+      const share = (value: number) => (total > 0 ? Number(((value / total) * 100).toFixed(1)) : 0);
+
+      return {
+        time: day.label,
+        total,
+        cars: share(day.cars),
+        buses: share(day.buses),
+        lightTrucks: share(day.lightTrucks),
+        trucks: share(day.trucks),
+        motorcycles: share(day.motorcycles),
+        tractors: share(day.tractors),
+        trailers: share(day.trailers),
+        vehicles: total,
+      };
+    });
+}
+
+function buildVehicleCategoryCards(points: TelraamTrafficPoint[]): VehicleCategoryCard[] {
+  const totals = VEHICLE_CATEGORIES.reduce<Record<VehicleCategoryKey, number>>(
+    (summary, category) => {
+      summary[category.key] = 0;
+      return summary;
+    },
+    {} as Record<VehicleCategoryKey, number>,
+  );
+  let total = 0;
+
+  for (const point of points) {
+    for (const category of VEHICLE_CATEGORIES) {
+      const value = vehicleCategoryValue(point, category.key) ?? 0;
+      totals[category.key] += value;
+      total += value;
+    }
+  }
+
+  return VEHICLE_CATEGORIES.map((category) => {
+    const share = total > 0 ? (totals[category.key] / total) * 100 : null;
+
+    return {
+      key: category.key,
+      label: category.label,
+      count: share === null ? null : Number(share.toFixed(1)),
+    };
+  });
+}
+
+function buildSafeDensitySummary(totalVisitors: number): SafeDensitySummary | null {
+  const { areaSquareMeters, safeDensityPeoplePerSquareMeter } = VISITOR_DENSITY_CONFIG;
+  if (!areaSquareMeters || !safeDensityPeoplePerSquareMeter) return null;
+
+  const capacity = areaSquareMeters * safeDensityPeoplePerSquareMeter;
+  return {
+    capacity,
+    density: totalVisitors / areaSquareMeters,
+    sharePct: capacity > 0 ? (totalVisitors / capacity) * 100 : 0,
+  };
+}
+
+function buildDailyMovementTrend(points: TelraamTrafficPoint[], range: DashboardTimeRange): DailyMovementPoint[] {
+  const selectedByBucket = new Map<string, number>();
+  const rangeMs = range.end.getTime() - range.start.getTime();
+  const useDailyBuckets = rangeMs > 48 * 60 * 60 * 1000;
+
+  for (const point of points) {
+    const recordedAt = new Date(point.recorded_at);
+    if (Number.isNaN(recordedAt.getTime())) continue;
+
+    const label = useDailyBuckets
+      ? recordedAt.toLocaleDateString([], { month: "short", day: "numeric" })
+      : recordedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    selectedByBucket.set(label, (selectedByBucket.get(label) || 0) + totalTelraamMovement(point));
+  }
+
+  return [...selectedByBucket.entries()].map(([hour, value]) => ({
+    hour,
+    today: value,
+    yesterday: null,
+  }));
 }
 
 function buildEnvironmentTrend(
@@ -1194,7 +1988,7 @@ export function OperationsDashboard() {
   const [zone, setZone] = useState("All locations");
   const [category, setCategory] = useState(sensorCategories[0]);
   const [severity, setSeverity] = useState("All severities");
-  const [range, setRange] = useState("Last 2 hrs");
+  const [range, setRange] = useState("Past 3 hours");
   const [mode, setMode] = useState("Live");
   const [flowThreshold, setFlowThreshold] = useState(150);
   const [anomalyThreshold, setAnomalyThreshold] = useState(20);
@@ -1208,6 +2002,10 @@ export function OperationsDashboard() {
   const [husenseError, setHusenseError] = useState<string | null>(null);
   const [husenseSummary, setHusenseSummary] = useState<HusenseDashboardSummary | null>(null);
   const [husenseSummaryError, setHusenseSummaryError] = useState<string | null>(null);
+  const [soundHourly, setSoundHourly] = useState<SoundHourlyPoint[]>([]);
+  const [soundHourlyError, setSoundHourlyError] = useState<string | null>(null);
+  const selectedTimeRange = useMemo(() => resolveDashboardTimeRange(range), [range]);
+  const trafficRangeRequest = useMemo(() => buildTrafficRangeRequest(selectedTimeRange), [selectedTimeRange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1241,7 +2039,7 @@ export function OperationsDashboard() {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, []);
+  }, [range]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1269,10 +2067,38 @@ export function OperationsDashboard() {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, []);
+  }, [range]);
 
   const { overview, health, loading: opsLoading, error: opsError } = useOpsLiveData();
-  const { points: telraamHistory, error: telraamHistoryError } = useTelraamTraffic();
+  const { points: telraamHistory, error: telraamHistoryError } = useTelraamTraffic(trafficRangeRequest);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSoundHourly() {
+      try {
+        const rows = await fetchSoundHourly(selectedTimeRange.lookbackHours);
+        if (!cancelled) {
+          setSoundHourly(rows);
+          setSoundHourlyError(null);
+        }
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) {
+          setSoundHourly([]);
+          setSoundHourlyError("Unable to load hourly sound data.");
+        }
+      }
+    }
+
+    loadSoundHourly();
+    const intervalId = window.setInterval(loadSoundHourly, 5 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [selectedTimeRange.lookbackHours]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1344,15 +2170,35 @@ export function OperationsDashboard() {
   );
   const husenseLoading = !husenseError && !occupancyData.length;
   const husenseGateCount = occupancyData.length;
+  const husenseDirectionCounts = useMemo(() => {
+    if (!husenseSummary?.gates?.length) return null;
+
+    return husenseSummary.gates.reduce(
+      (totals, gate) => ({
+        ins: totals.ins + Number(gate.modeCounts?.person?.arrivals ?? 0),
+        outs: totals.outs + Number(gate.modeCounts?.person?.departures ?? 0),
+      }),
+      { ins: 0, outs: 0 },
+    );
+  }, [husenseSummary]);
   const liveKpis = useMemo(
-    () => deriveLiveKpis(overview, health, opsLoading, husenseCurrentPresence, husenseLoading, husenseGateCount),
-    [overview, health, opsLoading, husenseCurrentPresence, husenseLoading, husenseGateCount],
+    () =>
+      deriveLiveKpis(
+        overview,
+        health,
+        opsLoading,
+        husenseCurrentPresence,
+        husenseLoading,
+        husenseGateCount,
+        husenseDirectionCounts,
+      ),
+    [overview, health, opsLoading, husenseCurrentPresence, husenseLoading, husenseGateCount, husenseDirectionCounts],
   );
   const liveWeatherWidget = useMemo(() => deriveWeatherWidgetModel(overview, health), [overview, health]);
   const liveMetaSummary = useMemo(() => deriveLiveMetaSummary(overview, health), [overview, health]);
   const waterSummary = useMemo(() => deriveWaterSummary(overview, health), [overview, health]);
   const soundSummary = useMemo(() => deriveSoundSummary(overview, health), [overview, health]);
-  const dailyMovementTrend = useMemo(() => buildDailyMovementTrend(telraamHistory), [telraamHistory]);
+  const dailyMovementTrend = useMemo(() => buildDailyMovementTrend(telraamHistory, selectedTimeRange), [telraamHistory, selectedTimeRange]);
   const environmentTrend = useMemo(() => buildEnvironmentTrend(overview, dailyMovementTrend), [overview, dailyMovementTrend]);
   const waterHistoryStats = useMemo(() => getWaterHistoryStats(overview), [overview]);
   const waterTemperatureValues = environmentTrend.map((point) => point.waterTemperature);
@@ -1376,51 +2222,56 @@ export function OperationsDashboard() {
   const airTemperatureRecord = getRecord(overview, "weather", "temperature_c");
   const airTemperatureValue = numberFromRecord(airTemperatureRecord);
   const airTemperatureThreshold = getEnvironmentThreshold("temperature", airTemperatureValue);
+  const humidityRecord = getMetricRecord(overview, ["humidity", "relative_humidity", "humidity_pct"]);
+  const humidityValue = numberFromRecord(humidityRecord);
+  const humidityThreshold = getEnvironmentThreshold("humidity", humidityValue);
   const no2Record = getMetricRecord(overview, ["no2", "no2_ug_m3", "nitrogen_dioxide"]);
   const no2Value = numberFromRecord(no2Record);
   const no2Threshold = getEnvironmentThreshold("no2", no2Value);
+  const aqiRecord = getMetricRecord(overview, ["aqi", "air_quality_index"]);
+  const aqiValue = numberFromRecord(aqiRecord);
+  const aqiThreshold = getEnvironmentThreshold("aqi", aqiValue);
   const co2Record = getMetricRecord(overview, ["co2", "co2_ppm", "carbon_dioxide"]);
   const co2Value = numberFromRecord(co2Record);
-  const hasAirQualityReading = no2Value !== null && no2Value !== 0;
-  const soundStats = soundFeedConnected ? [{ label: "Comfort", value: soundSummary.helper }, ...(soundSummary.stats || [])] : [];
+  const hasAirQualityReading = (aqiValue !== null && aqiValue !== 0) || (no2Value !== null && no2Value !== 0);
+  const soundStats = soundFeedConnected ? soundSummary.stats || [] : [];
+  const humidityStats = humidityValue !== null ? [{ label: "Status", value: humidityThreshold.label }] : [];
   const airQualityStats = [
-    hasAirQualityReading ? { label: "NO2", value: `${no2Value!.toFixed(0)} ${no2Record?.unit || "ug/m3"}` } : null,
+    aqiValue !== null ? { label: "AQI", value: aqiValue.toFixed(0) } : null,
+    no2Value !== null && no2Value !== 0 && aqiValue === null
+      ? { label: "NO2", value: `${no2Value.toFixed(0)} ${no2Record?.unit || "ug/m3"}` }
+      : null,
     co2Value !== null ? { label: "CO2 context", value: `${co2Value.toFixed(0)} ${co2Record?.unit || "ppm"}` } : null,
   ].filter((item): item is { label: string; value: string } => Boolean(item));
-  const airQualityValue = hasAirQualityReading ? `${no2Value!.toFixed(0)} ${no2Record?.unit || "ug/m3"}` : "Unavailable";
+  const airQualityValue =
+    aqiValue !== null
+      ? aqiValue.toFixed(0)
+      : hasAirQualityReading
+        ? `${no2Value!.toFixed(0)} ${no2Record?.unit || "ug/m3"}`
+        : "Unavailable";
   const airQualityHelper =
-    hasAirQualityReading
+    aqiValue !== null
+      ? aqiThreshold.label
+      : hasAirQualityReading
       ? "NO2 pollutant-specific threshold"
       : co2Value !== null
         ? getEnvironmentThreshold("co2", co2Value).message
         : "Sensor feed not connected yet";
-  const currentModalityChart = useMemo(() => deriveCurrentModalityChart(overview), [overview]);
-  const telraamLiveModeSplitChart = useMemo(() => deriveTelraamLiveModeSplitChart(overview), [overview]);
   const anomalyChart = useMemo(() => deriveAnomalyChart(telraamHistory), [telraamHistory]);
   const telraamTrendChart = useMemo(() => deriveTelraamTrendChart(telraamHistory), [telraamHistory]);
+  const vehicleChart = useMemo(() => buildVehicleChart(telraamHistory), [telraamHistory]);
+  const vehicleCategoryCards = useMemo(() => buildVehicleCategoryCards(telraamHistory), [telraamHistory]);
   const visibleOccupancyZones = useMemo(
     () => occupancyData.filter((zone) => !HIDDEN_OCCUPANCY_ZONE_IDS.has(String(zone?.id ?? ""))),
     [occupancyData],
   );
-  const occupancyCards = useMemo(() => buildOccupancyCards(visibleOccupancyZones), [visibleOccupancyZones]);
+  const occupancyCards = useMemo(() => buildOccupancyCards(visibleOccupancyZones, husenseSummary), [visibleOccupancyZones, husenseSummary]);
   const occupancyInsight = useMemo(() => buildOccupancyInsight(occupancyCards, husenseError), [occupancyCards, husenseError]);
-
-  const chartPalette = [
-    MT_COLORS.cyan,
-    MT_COLORS.blue,
-    MT_COLORS.teal,
-    MT_COLORS.yellow,
-    MT_COLORS.paleBlue,
-    MT_COLORS.coral,
-    MT_COLORS.green,
-    MT_COLORS.burgundy,
-    MT_COLORS.darkTeal,
-    MT_COLORS.muted,
-  ];
+  const safeDensitySummary = useMemo(
+    () => buildSafeDensitySummary(occupancyCards.reduce((sum, card) => sum + card.visitors, 0)),
+    [occupancyCards],
+  );
   const latestAnomaly = anomalyChart.length ? anomalyChart[anomalyChart.length - 1] : undefined;
-  const anomalyStatus = latestAnomaly
-    ? describeAnomaly(latestAnomaly.deviationPct, anomalyThreshold)
-    : { label: "Normal", tone: "emerald" as const, detail: "Movement is within the expected baseline range." };
   const latestTelraamPoint = telraamTrendChart.length ? telraamTrendChart[telraamTrendChart.length - 1] : null;
   const thresholdAlerts = useMemo<AlertItem[]>(() => {
     const alerts: AlertItem[] = [];
@@ -1571,6 +2422,15 @@ export function OperationsDashboard() {
     };
   }, []);
 
+  function handleExportPdf() {
+    const previousTitle = document.title;
+    document.title = `Marineterrein Operations - ${range}`;
+    window.requestAnimationFrame(() => {
+      window.print();
+      document.title = previousTitle;
+    });
+  }
+
   return (
     <div
       className="min-h-screen px-4 py-5 md:px-6 md:py-6"
@@ -1656,48 +2516,29 @@ export function OperationsDashboard() {
                   {liveKpis.map((kpi) => {
                     const Icon = typeof kpi.icon === "string" ? null : kpi.icon;
                     const definition =
-                      kpi.label === "Current visitors at Marineterrein"
-                        ? "Live count at the Kattenburgerstraat gate."
+                      kpi.label === "Current visitors"
+                        ? "Net HuSense visitor count from incoming minus outgoing person counts."
                         : kpi.label === "Sound level"
-                          ? "Current decibel level with a simple comfort reading."
-                        : kpi.label === "Crowd density"
-                          ? "Crowd level shown as share of comfortable capacity."
-                            : kpi.label === "Public conditions"
-                              ? "Weather and crowd context matching the public dashboard."
+                          ? "Current decibel level with the main detected sound categories when available."
+                        : kpi.label === "Visitor busyness"
+                          ? "HuSense busyness monitor values by location."
+                            : kpi.label === "Weather"
+                              ? "Current weather feed for Marineterrein."
                               : kpi.label === "Air quality"
                                 ? "Environmental context for operators; detailed air readings appear when available."
                             : undefined;
-                    const [primaryHelper, secondaryHelper] = kpi.helper.split(" | ");
 
                     return (
                       <Card key={kpi.label} className="h-full overflow-visible">
-                        <CardContent className="p-[1.1rem]">
-                          <div className="flex items-start gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
+                        <CardContent className="flex h-full flex-col p-[1.1rem]">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5">
                                 <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
                                   {kpi.label}
                                 </p>
                                 {definition ? <InfoHint label={definition} /> : null}
                               </div>
-                              {definition && kpi.label === "Crowd density" ? (
-                                <p className="mt-1 text-[11px] leading-4" style={{ color: MAIN_COLORS.aColorGray }}>
-                                  capacity-based density estimate
-                                </p>
-                              ) : null}
-                              <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                                <p className="text-[1.75rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
-                                  {kpi.value}
-                                </p>
-                              </div>
-                              <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                                {primaryHelper}
-                              </p>
-                              {secondaryHelper ? (
-                                <p className="mt-0.5 text-[11px]" style={{ color: MAIN_COLORS.aColorGray }}>
-                                  {secondaryHelper}
-                                </p>
-                              ) : null}
                             </div>
 
                             {Icon ? (
@@ -1712,6 +2553,37 @@ export function OperationsDashboard() {
                                 <Icon className="h-5 w-5" />
                               </div>
                             ) : null}
+                          </div>
+
+                          <div className="mt-4 min-w-0">
+                            <p
+                              className={`${kpi.label === "Current visitors" ? "text-[2.15rem]" : "text-[1.75rem]"} font-semibold leading-none tracking-[-0.04em]`}
+                              style={{ color: MAIN_COLORS.aColorBlack }}
+                            >
+                              {kpi.value}
+                            </p>
+                            {kpi.directionCounts?.length ? (
+                              <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+                                {kpi.directionCounts.map((direction) => {
+                                  const DirectionIcon = direction.label === "IN" ? ArrowDownLeft : ArrowUpRight;
+
+                                  return (
+                                    <span
+                                      key={direction.label}
+                                      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1"
+                                      style={{ backgroundColor: `${direction.color}14`, color: direction.color }}
+                                    >
+                                      <DirectionIcon className="h-3.5 w-3.5" strokeWidth={2.6} />
+                                      {direction.label} {formatMetricNumber(direction.value)}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
+                            <p className="mt-3 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
+                              {kpi.helper}
+                            </p>
+                            {kpi.label === "Visitor busyness" ? <VisitorBusynessRows cards={occupancyCards} /> : null}
                           </div>
                         </CardContent>
                       </Card>
@@ -1739,8 +2611,7 @@ export function OperationsDashboard() {
                       </p>
                       <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em]">Filter the current operational view</h2>
                       <p className="mt-1.5 text-sm leading-6" style={{ color: MAIN_COLORS.aColorGray }}>
-                        Telraam remains the site-edge movement counter, while the broader sensor network appears later in the
-                        infrastructure section where operators expect to inspect source health and coverage.
+                        This filter sets the absolute time range for all graphs and summaries below it where the connected source exposes range data.
                       </p>
                     </div>
 
@@ -1758,6 +2629,10 @@ export function OperationsDashboard() {
                       {zone} | {category} | {severity} | {range} | {mode}
                     </div>
                   </div>
+
+                  <p className="mt-3 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                    Active graph window: {formatRangeWindow(selectedTimeRange)}
+                  </p>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                     <SelectLike dark label="Time range" value={range} onChange={setRange} options={timeRangeOptions} />
@@ -1778,26 +2653,26 @@ export function OperationsDashboard() {
             <section id="crowd" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
               <CategoryHeader
                 title="Crowd"
-                description="Movement and occupancy signals grouped together to read current pressure, mode mix, and change versus normal."
+                description="Visitor and vehicle signals grouped together to read current pressure within the selected range."
               />
 
               <div id="crowd-occupancy" style={ANCHOR_SCROLL_STYLE}>
                 <Card>
                   <CardHeader>
                     <SectionTitle
-                      title="Crowd density"
-                      subtitle="Live zone estimate compared with comfortable capacity. Shown as a capacity-based density score rather than exact people per square meter."
+                      title="Visitor summary"
+                      subtitle="Visitor summary based on busyness monitor and HuSense visitor data for the selected time range."
                     />
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {husenseError ? (
                       <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-700">
-                        Crowd density feed degraded: using the latest available zone estimate.
+                        Visitor summary feed degraded: using the latest available zone estimate.
                       </div>
                     ) : null}
 
                     {occupancyCards.length ? (
-                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <div className="grid gap-4 md:grid-cols-3">
                         {occupancyCards.map((occupancyZone, index) => {
                         const density = occupancyZone.density;
                         const status = getOccupancyStatusByRank(index, occupancyCards.length);
@@ -1818,10 +2693,23 @@ export function OperationsDashboard() {
                               <Pill tone={status.tone}>{status.label}</Pill>
                             </div>
 
-                            <p className="mt-2 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                              {formatMetricNumber(occupancyZone.visitors)} detected
-                              {occupancyZone.capacity ? ` / ${formatMetricNumber(occupancyZone.capacity)} capacity reference` : ""}
+                            <p className="mt-4 text-[2rem] font-semibold leading-none tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
+                              {formatMetricNumber(occupancyZone.dayNetVisitors)}
                             </p>
+                            <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                              Latest HuSense net visitors, IN minus OUT
+                            </p>
+
+                            <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+                              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ backgroundColor: "rgba(21, 128, 61, 0.08)", color: "#15803d" }}>
+                                <ArrowDownLeft className="h-3.5 w-3.5" strokeWidth={2.6} />
+                                IN {formatMetricNumber(occupancyZone.dayIns)}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ backgroundColor: "rgba(220, 38, 38, 0.08)", color: "#dc2626" }}>
+                                <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2.6} />
+                                OUT {formatMetricNumber(occupancyZone.dayOuts)}
+                              </span>
+                            </div>
 
                             <div className="mt-4">
                               <div className="mb-1.5 flex items-end justify-between gap-3">
@@ -1848,8 +2736,26 @@ export function OperationsDashboard() {
                       </div>
                     ) : (
                       <ChartPlaceholder
-                        title="Crowd density not available yet"
+                        title="Visitor summary not available yet"
                         detail={husenseError || "The Husense backend has not returned live zone readings yet."}
+                      />
+                    )}
+
+                    {safeDensitySummary ? (
+                      <div
+                        className="rounded-2xl border px-4 py-3 text-sm leading-6"
+                        style={{
+                          borderColor: `${MAIN_COLORS.aColor1}26`,
+                          backgroundColor: "rgba(0, 173, 239, 0.08)",
+                          color: MAIN_COLORS.aColorBlack,
+                        }}
+                      >
+                        Safe density: {formatMetricNumber(safeDensitySummary.density, 2)} people/m2, {formatMetricNumber(safeDensitySummary.sharePct, 1)}% of configured safe capacity ({formatMetricNumber(safeDensitySummary.capacity)} people).
+                      </div>
+                    ) : (
+                      <ChartPlaceholder
+                        title="Safe density calculation unavailable"
+                        detail="Area in m2 and the safe density threshold are not configured yet."
                       />
                     )}
 
@@ -1868,65 +2774,12 @@ export function OperationsDashboard() {
               </div>
 
               <div id="crowd-mobility-split" style={ANCHOR_SCROLL_STYLE}>
-                <TelraamLiveCard data={telraamLiveModeSplitChart} chartPalette={chartPalette} />
-              </div>
-
-              <div id="crowd-traffic" style={ANCHOR_SCROLL_STYLE}>
-                <Card>
-                    <CardHeader>
-                      <SectionTitle
-                        title="Movement over time"
-                        subtitle="Trend across the loaded Telraam period. Telraam night-mode counts are included in pedestrians so evening and overnight movement stays visible."
-                      />
-                    </CardHeader>
-                  <CardContent className="space-y-4">
-                    {telraamTrendChart.length ? (
-                      <div className="h-[260px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={telraamTrendChart}>
-                            <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
-                            <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                            <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                            <Tooltip />
-                            <Area type="monotone" dataKey="pedestrians" stackId="1" stroke={MT_COLORS.cyan} fill={MT_COLORS.cyan} fillOpacity={0.85} />
-                            <Area type="monotone" dataKey="bicycles" stackId="1" stroke={MT_COLORS.blue} fill={MT_COLORS.blue} fillOpacity={0.78} />
-                            <Area type="monotone" dataKey="vehicles" stackId="1" stroke={MT_COLORS.teal} fill={MT_COLORS.teal} fillOpacity={0.75} />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <ChartPlaceholder
-                        title="Movement trend not available yet"
-                        detail={telraamHistoryError || "Recent movement history is not available yet."}
-                      />
-                    )}
-
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      {currentModalityChart.map((item, index) => {
-                        const Icon =
-                          item.label === "Pedestrians" ? Users : item.label === "Bicycles" ? Bike : Car;
-
-                        return (
-                          <div
-                            key={item.label}
-                            className="rounded-2xl border p-4"
-                            style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
-                          >
-                            <div className="flex items-center gap-2">
-                              <Icon className="h-4 w-4" style={{ color: chartPalette[index] }} />
-                              <p className="text-sm" style={{ color: chartPalette[index] }}>
-                                {item.label}
-                              </p>
-                            </div>
-                            <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                              {item.value}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
+                <VehicleSummaryCard
+                  chartData={vehicleChart}
+                  categoryCards={vehicleCategoryCards}
+                  error={telraamHistoryError}
+                  rangeLabel={range}
+                />
               </div>
 
               <div className="grid gap-5">
@@ -1935,104 +2788,15 @@ export function OperationsDashboard() {
                 </div>
 
                 <div id="crowd-baseline" style={ANCHOR_SCROLL_STYLE}>
-                  <Card>
-                    <CardHeader>
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <SectionTitle
-                          title="Movement vs normal pattern"
-                          subtitle="Current movement compared with the expected recent pattern from the Telraam hourly window."
-                        />
-                        {anomalyChart.length ? <Pill tone={anomalyStatus.tone}>{anomalyStatus.label}</Pill> : null}
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {anomalyChart.length ? (
-                        <>
-                          <div className="h-[228px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <ComposedChart data={anomalyChart}>
-                                <CartesianGrid strokeDasharray="3 3" stroke={`${MAIN_COLORS.aColorGray}33`} />
-                                <XAxis dataKey="time" tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                                <YAxis tick={{ fill: MAIN_COLORS.aColorGray, fontSize: 12 }} axisLine={false} tickLine={false} />
-                                <Tooltip />
-                                <Area type="monotone" dataKey="expected" stroke={MT_COLORS.cyan} fill={MT_COLORS.cyan} fillOpacity={0.16} />
-                                <Line type="monotone" dataKey="actual" stroke={MT_COLORS.coral} strokeWidth={3} dot={false} />
-                              </ComposedChart>
-                            </ResponsiveContainer>
-                          </div>
-                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                            {[
-                              {
-                                label: "Latest actual",
-                                value: formatMetricNumber(latestAnomaly?.actual ?? 0),
-                                note: "Current total movements in the latest row",
-                              },
-                              {
-                                label: "Expected baseline",
-                                value: formatMetricNumber(latestAnomaly?.expected ?? 0, 1),
-                                note: "Rolling expectation from nearby rows",
-                              },
-                              {
-                                label: "Deviation",
-                                value: latestAnomaly ? formatSignedPercent(latestAnomaly.deviationPct) : "0%",
-                                note: "Difference between actual and expected flow",
-                              },
-                              {
-                                label: "Pattern status",
-                                value: anomalyStatus.label,
-                                note: anomalyStatus.detail,
-                              },
-                            ].map((item, index) => (
-                              <div
-                                key={item.label}
-                                className="rounded-2xl border p-4"
-                                style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
-                              >
-                                <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
-                                  {item.label}
-                                </p>
-                                <p
-                                  className="mt-2 text-2xl font-semibold"
-                                  style={{
-                                    color: index === 3
-                                      ? anomalyStatus.tone === "rose"
-                                      ? MT_COLORS.coral
-                                        : anomalyStatus.tone === "amber"
-                                          ? MT_COLORS.darkTeal
-                                          : anomalyStatus.tone === "sky"
-                                            ? MT_COLORS.blue
-                                            : MT_COLORS.teal
-                                      : MAIN_COLORS.aColorBlack,
-                                  }}
-                                >
-                                  {item.value}
-                                </p>
-                                <p className="mt-1 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
-                                  {item.note}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      ) : (
-                        <ChartPlaceholder
-                          title="No normal pattern available yet"
-                          detail={
-                            telraamHistoryError ||
-                            "Recent movement history is needed before normal-pattern tracking can be calculated."
-                          }
-                        />
-                      )}
-                    </CardContent>
-                  </Card>
+                  <BusiestVisitorCountSummary summary={husenseSummary} />
                 </div>
 
                 <div id="crowd-daily-visitors" style={ANCHOR_SCROLL_STYLE}>
                   <Card>
                     <CardHeader>
                       <SectionTitle
-                        title="Daily movement"
-                        subtitle="Live Telraam movement compared hour by hour between yesterday and today."
+                        title="Selected movement"
+                        subtitle={`Telraam movement inside the active ${range.toLowerCase()} filter.`}
                       />
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -2071,9 +2835,8 @@ export function OperationsDashboard() {
                                   dataKey={zoneItem.key}
                                   name={zoneItem.label}
                                   stroke={zoneItem.color}
-                                  strokeWidth={zoneItem.key === "today" ? 3 : 2}
-                                  strokeDasharray={zoneItem.key === "yesterday" ? "5 5" : undefined}
-                                  dot={{ r: zoneItem.key === "today" ? 3 : 2, fill: zoneItem.color }}
+                                  strokeWidth={3}
+                                  dot={{ r: 3, fill: zoneItem.color }}
                                   connectNulls={false}
                                 />
                               ))}
@@ -2098,7 +2861,7 @@ export function OperationsDashboard() {
                 description="Water, air temperature, air quality, and sound context in one readable block."
               />
 
-              <div id="environment-summary" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" style={ANCHOR_SCROLL_STYLE}>
+              <div id="environment-summary" className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-[repeat(5,minmax(0,1fr))]" style={ANCHOR_SCROLL_STYLE}>
                 <EnvironmentMetricCard
                   title="Water temperature"
                   value={waterSummary.value}
@@ -2120,17 +2883,75 @@ export function OperationsDashboard() {
                   helper={airQualityHelper}
                   icon={CloudSun}
                   stats={airQualityStats}
-                  threshold={hasAirQualityReading ? no2Threshold : undefined}
+                  threshold={aqiValue !== null ? aqiThreshold : hasAirQualityReading ? no2Threshold : undefined}
+                />
+                <EnvironmentMetricCard
+                  title="Humidity"
+                  value={humidityValue !== null ? `${humidityValue.toFixed(0)}%` : "Unavailable"}
+                  helper={humidityValue !== null ? "Relative humidity" : "Humidity feed not connected yet"}
+                  icon={Droplets}
+                  stats={humidityStats}
+                  threshold={humidityValue !== null ? humidityThreshold : undefined}
                 />
                 <EnvironmentMetricCard
                   title="Sound level"
                   value={soundFeedConnected ? soundSummary.value : ""}
                   helper={soundFeedConnected ? soundSummary.helper : "Sensor feed not connected yet"}
                   icon={Volume2}
-                  stats={soundStats}
+                  stats={[]}
                   threshold={soundThreshold}
                 />
               </div>
+
+              <Card>
+                <CardHeader>
+                  <SectionTitle
+                    title="Sound summary"
+                    subtitle="Current sound level and requested classifier categories only."
+                  />
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {soundFeedConnected ? (
+                    <>
+                      <div className="flex flex-wrap items-end justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-[0.14em]" style={{ color: MAIN_COLORS.aColorGray }}>
+                            Current
+                          </p>
+                          <p className="mt-1 text-3xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                            {soundSummary.value}
+                          </p>
+                          <p className="mt-1 text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
+                            {soundSummary.helper}
+                          </p>
+                        </div>
+                        <Volume2 className="h-6 w-6" style={{ color: MT_COLORS.teal }} />
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        {soundStats.map((stat) => (
+                          <div
+                            key={stat.label}
+                            className="rounded-2xl border p-3"
+                            style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+                          >
+                            <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
+                              {stat.label}
+                            </p>
+                            <Pill tone={stat.value === "Detected" ? "emerald" : "slate"}>{stat.value}</Pill>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <ChartPlaceholder
+                      title="Sound summary not available yet"
+                      detail="The sound feed has not returned the current level or requested classifier categories yet."
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
+              <SoundHourlyCard points={soundHourly} error={soundHourlyError} rangeLabel={range} />
 
               <div id="environment-temperature" style={ANCHOR_SCROLL_STYLE}>
                 <EnvironmentTrendCard data={environmentTrend} />
@@ -2161,9 +2982,11 @@ export function OperationsDashboard() {
               />
 
               <div id="map-operational" style={ANCHOR_SCROLL_STYLE}>
-                <LiveOperationsMapSection sourceHealthId="map-source-health" />
+                <ExternalSensorMapCard />
               </div>
             </section>
+
+            <ExportPdfTool onExport={handleExportPdf} />
           </div>
         </div>
       </div>

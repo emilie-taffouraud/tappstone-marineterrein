@@ -1,12 +1,17 @@
 import pg from "pg";
 import { getZoneById } from "../config/zones.js";
 import { getOrSetCache } from "../lib/cache.js";
+import { fetchJson } from "../lib/http.js";
 import { createUnifiedRecord } from "../lib/normalize.js";
 
 let waterPool;
 
 function hasWaterDatabaseConfig(env) {
   return Boolean(env.waterDatabaseUrl || (env.waterDbHost && env.waterDbName && env.waterDbUser));
+}
+
+function hasWaterTemperatureApiConfig(env) {
+  return Boolean(env.waterTemperatureApiUrl);
 }
 
 function getWaterPool(env) {
@@ -44,6 +49,75 @@ function waterStatus(value) {
   if (value === null) return "unknown";
   if (value < 8 || value > 26) return "warning";
   return "ok";
+}
+
+function firstFiniteNumber(...values) {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function firstText(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function normalizeWaterTemperaturePayload(payload) {
+  const entry = Array.isArray(payload)
+    ? payload[0]
+    : Array.isArray(payload?.data)
+      ? payload.data[0]
+      : Array.isArray(payload?.results)
+        ? payload.results[0]
+        : payload?.current && typeof payload.current === "object"
+          ? payload.current
+          : payload;
+
+  if (!entry || typeof entry !== "object") return null;
+
+  const value = firstFiniteNumber(
+    entry.temp_c1,
+    entry.water_temperature_c,
+    entry.water_temperature,
+    entry.temperature_c,
+    entry.temperature,
+    entry.temp_c,
+    entry.value,
+  );
+  if (value === null) return null;
+
+  return {
+    value,
+    observedAt: firstText(entry.received_at, entry.recorded_at, entry.observed_at, entry.timestamp, entry.time) || null,
+    sourceName: "water-temperature-api",
+    deviceId: firstText(entry.device_id, entry.sensor_id, entry.id, entry.name),
+    batteryV: firstFiniteNumber(entry.battery_v, entry.battery, entry.voltage),
+    raw: entry,
+  };
+}
+
+async function readWaterTemperatureFromApi(env) {
+  if (!hasWaterTemperatureApiConfig(env)) return null;
+
+  const headers = {
+    Accept: "application/json",
+    ...(env.waterTemperatureApiKey
+      ? {
+          Authorization: `Bearer ${env.waterTemperatureApiKey}`,
+          "X-Api-Key": env.waterTemperatureApiKey,
+        }
+      : {}),
+  };
+  const payload = await fetchJson(env.waterTemperatureApiUrl, {
+    timeoutMs: env.opsHttpTimeoutMs,
+    headers,
+  });
+
+  return normalizeWaterTemperaturePayload(payload);
 }
 
 async function readWaterTemperatureFromDatabase(env) {
@@ -170,23 +244,25 @@ export async function getWaterTemperatureLiveData(env) {
 
   return getOrSetCache("ops:water-temperature:v2", env.opsCacheTtlMs, async () => {
     try {
-      if (!hasWaterDatabaseConfig(env)) {
-        throw new Error("Water temperature database is not configured.");
+      if (!hasWaterDatabaseConfig(env) && !hasWaterTemperatureApiConfig(env)) {
+        throw new Error("Water temperature database or API URL is not configured.");
       }
 
-      const [dbReading, dbStats, dailyHistory] = await Promise.all([
-        readWaterTemperatureFromDatabase(env),
-        readWaterTemperatureStatsFromDatabase(env),
-        readWaterTemperatureDailyHistoryFromDatabase(env),
+      const [apiReading, dbReading, dbStats, dailyHistory] = await Promise.all([
+        readWaterTemperatureFromApi(env).catch(() => null),
+        readWaterTemperatureFromDatabase(env).catch(() => null),
+        readWaterTemperatureStatsFromDatabase(env).catch(() => null),
+        readWaterTemperatureDailyHistoryFromDatabase(env).catch(() => []),
       ]);
+      const reading = apiReading || dbReading;
 
-      if (!dbReading) {
-        throw new Error("No water temperature rows were found in temperature_readings.");
+      if (!reading) {
+        throw new Error("No water temperature reading was found from the configured API or temperature_readings table.");
       }
 
       return {
         source: "water",
-        status: waterStatus(dbReading.value),
+        status: waterStatus(reading.value),
         fetchedAt,
         lastSuccessAt: fetchedAt,
         records: [
@@ -196,31 +272,33 @@ export async function getWaterTemperatureLiveData(env) {
             category: "recreation",
             metric: "water_temperature_c",
             label: "Binnenhaven water temperature",
-            value: dbReading.value,
+            value: reading.value,
             unit: "C",
-            status: waterStatus(dbReading.value),
+            status: waterStatus(reading.value),
             confidence: "high",
-            observedAt: dbReading.observedAt || fetchedAt,
+            observedAt: reading.observedAt || fetchedAt,
             fetchedAt,
             lat: zone.lat,
             lon: zone.lon,
             zoneId: zone.id,
             zone: zone.label,
             raw: {
-              source: dbReading.sourceName,
-              deviceId: dbReading.deviceId,
-              batteryV: Number.isFinite(dbReading.batteryV) ? dbReading.batteryV : null,
+              source: reading.sourceName,
+              deviceId: reading.deviceId,
+              batteryV: Number.isFinite(reading.batteryV) ? reading.batteryV : null,
               history: dbStats,
               dailyHistory,
+              api: apiReading ? reading.raw : null,
             },
           }),
         ],
         raw: {
-          source: dbReading.sourceName,
-          deviceId: dbReading.deviceId,
-          batteryV: Number.isFinite(dbReading.batteryV) ? dbReading.batteryV : null,
+          source: reading.sourceName,
+          deviceId: reading.deviceId,
+          batteryV: Number.isFinite(reading.batteryV) ? reading.batteryV : null,
           history: dbStats,
           dailyHistory,
+          api: apiReading ? reading.raw : null,
         },
         error: null,
       };

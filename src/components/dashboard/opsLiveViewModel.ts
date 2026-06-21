@@ -234,6 +234,7 @@ export function deriveLiveKpis(
   husenseCurrentPresence: number | null,
   husenseLoading: boolean,
   husenseGateCount: number,
+  husenseDirectionCounts?: { ins: number; outs: number } | null,
 ): Kpi[] {
   const waterTemp = findRecord(overview, "water", "water_temperature_c");
   const weatherCondition = findRecord(overview, "weather", "condition_text");
@@ -246,7 +247,7 @@ export function deriveLiveKpis(
   if (loading && !overview.generatedAt) {
     return [
       {
-        label: "Current presence",
+        label: "Current visitors",
         value: "Loading...",
         delta: "",
         trend: "up",
@@ -259,7 +260,7 @@ export function deriveLiveKpis(
   if (husenseLoading) {
     return [
       {
-        label: "Current presence",
+        label: "Current visitors",
         value: "Loading...",
         delta: "",
         trend: "up",
@@ -276,49 +277,90 @@ export function deriveLiveKpis(
   const averageSound = soundLevels.length
     ? soundLevels.reduce((sum, value) => sum + value, 0) / soundLevels.length
     : null;
-  const soundComfort =
-    averageSound === null
-      ? "Sound data not available yet."
-      : getEnvironmentThreshold("noise", averageSound).label;
+  const latestSound = soundLevels.length ? soundLevels[soundLevels.length - 1] : null;
+  const soundLabels = [
+    findRecord(overview, "sound", "sound_classification_current_top")?.value,
+    findRecord(overview, "sound", "sound_classification_7d_top")?.value,
+    findRecord(overview, "sound", "sound_classification")?.value,
+  ]
+    .flatMap((value) => (typeof value === "string" ? value.split(/[,/|]+/) : []))
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .reduce<string[]>((labels, label) => {
+      if (!labels.some((existing) => existing.toLowerCase() === label.toLowerCase())) {
+        labels.push(label);
+      }
+      return labels;
+    }, [])
+    .slice(0, 3);
   const no2Record = findMetricRecord(overview, ["no2", "no2_ug_m3", "nitrogen_dioxide"]);
   const no2Value = asNumber(no2Record?.value ?? null);
   const no2Threshold = getEnvironmentThreshold("no2", no2Value);
   const hasAirQualityReading = no2Value !== null && no2Value !== 0;
+  const hasHusenseDirections = Boolean(husenseDirectionCounts);
+  const netHusenseVisitors = hasHusenseDirections
+    ? Math.round((husenseDirectionCounts?.ins ?? 0) - (husenseDirectionCounts?.outs ?? 0))
+    : null;
 
   return [
     {
-      label: "Current presence",
-      value: husenseCurrentPresence !== null ? String(Math.round(husenseCurrentPresence || 0)) : "Unavailable",
+      label: "Current visitors",
+      value:
+        netHusenseVisitors !== null
+          ? String(netHusenseVisitors)
+          : husenseCurrentPresence !== null
+            ? String(Math.round(husenseCurrentPresence || 0))
+            : "Unavailable",
       delta: "",
       trend: "up",
-      helper: husenseCurrentPresence !== null ? "HuSense person count across the three Marineterrein captors" : "HuSense person count unavailable",
+      helper:
+        netHusenseVisitors !== null
+          ? "HuSense net visitors from IN minus OUT counts"
+          : husenseCurrentPresence !== null
+            ? "HuSense person count across the three Marineterrein captors"
+            : "HuSense person count unavailable",
       icon: TrafficCone,
+      directionCounts: hasHusenseDirections
+        ? [
+            { label: "IN", value: Math.round(husenseDirectionCounts?.ins ?? 0), color: "#15803d" },
+            { label: "OUT", value: Math.round(husenseDirectionCounts?.outs ?? 0), color: "#dc2626" },
+          ]
+        : undefined,
     },
     {
       label: "Sound level",
-      value: averageSound === null ? "Unavailable" : `${averageSound.toFixed(0)} dB`,
+      value: latestSound === null ? "Unavailable" : `${latestSound.toFixed(0)} dB`,
       delta: "",
       trend: "up",
-      helper: soundComfort,
+      helper:
+        latestSound === null
+          ? "Sound data not available yet."
+          : soundLabels.length
+            ? `Main sounds: ${soundLabels.join(", ")}`
+            : averageSound !== null
+              ? `Current | average ${averageSound.toFixed(0)} dB for selected range`
+              : getEnvironmentThreshold("noise", latestSound).label,
       icon: Volume2,
     },
     {
-      label: "Tracked HuSense gates",
-      value: String(husenseGateCount),
+      label: "Visitor busyness",
+      value: husenseCurrentPresence !== null ? String(Math.round(husenseCurrentPresence || 0)) : String(husenseGateCount),
       delta: "",
       trend: "up",
-      helper: "Latest classified gate rows loaded",
+      helper: "Busyness monitor values by location",
       icon: Radar,
     },
     {
-      label: "Public conditions",
+      label: "Weather",
       value: weatherCondition?.value ? String(weatherCondition.value) : weatherTemp ? formatValue(weatherTemp) : "Limited",
       delta: "",
       trend: "up",
       helper:
         weatherCondition || weatherTemp
-          ? `Public dashboard context: ${husenseCurrentPresence !== null ? `${Math.round(husenseCurrentPresence || 0)} visitors` : "crowd unavailable"} | ${weatherTemp ? formatValue(weatherTemp) : "weather limited"}`
-          : "Public dashboard conditions are limited until weather and crowd feeds return",
+          ? weatherTemp
+            ? formatValue(weatherTemp)
+            : "Weather feed connected"
+          : "Weather source currently unavailable",
       icon: CloudSun,
     },
     {
@@ -549,6 +591,18 @@ export function deriveSoundSummary(
   const currentClass = typeof classRecord?.value === "string" ? classRecord.value : null;
   const currentClasses = typeof currentClassesRecord?.value === "string" ? currentClassesRecord.value : null;
   const commonClasses = typeof commonClassesRecord?.value === "string" ? commonClassesRecord.value : null;
+  const allowedClasses = ["Birds", "Helicopter", "Talking", "Music"];
+  const requestedClasses = [currentClasses, commonClasses, currentClass]
+    .flatMap((value) => (value ? value.split(/[,/|]+/) : []))
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .reduce<string[]>((labels, label) => {
+      const allowed = allowedClasses.find((allowedLabel) => allowedLabel.toLowerCase() === label.toLowerCase());
+      if (allowed && !labels.some((existing) => existing.toLowerCase() === allowed.toLowerCase())) {
+        labels.push(allowed);
+      }
+      return labels;
+    }, []);
   const comfort =
     current === null
       ? "Sound data not available yet."
@@ -560,13 +614,16 @@ export function deriveSoundSummary(
     helper: comfort,
     tone: statusTone(health?.sources.sound?.status || "unknown"),
     detail: [
-      currentClasses || commonClasses || currentClass ? `Categories now: ${currentClasses || commonClasses || currentClass}` : "Categories now: awaiting classification labels",
+      requestedClasses.length
+        ? `Categories now: ${requestedClasses.join(", ")}`
+        : "Categories now: awaiting requested classification labels",
     ],
-    stats: [
-      currentClass ? { label: "Dominant sound", value: currentClass } : null,
-      currentClasses ? { label: "Categories now", value: currentClasses } : null,
-      commonClasses ? { label: "Common sounds", value: commonClasses } : null,
-    ].filter((item): item is { label: string; value: string } => Boolean(item)),
+    stats: allowedClasses.map((label) => ({
+      label,
+      value: requestedClasses.some((currentLabel) => currentLabel.toLowerCase() === label.toLowerCase())
+        ? "Detected"
+        : "Not detected",
+    })),
   };
 }
 

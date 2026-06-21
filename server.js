@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import fs from "fs";
 import path from "path";
 import { Pool } from "pg";
 import dotenv from "dotenv";
@@ -11,7 +12,7 @@ import { getWeatherLiveData } from "./server/ops/adapters/weatherAdapter.js";
 import { getTelraamLiveData } from "./server/ops/adapters/telraamAdapter.js";
 import { getOpsEnv } from "./server/ops/config/env.js";
 import { startSoundMqttClient } from "./server/ops/adapters/soundMqttClient.js";
-import { persistSoundObservation } from "./server/ops/services/soundObservationStore.js";
+import { getHourlySoundObservations, persistSoundObservation } from "./server/ops/services/soundObservationStore.js";
 
 dotenv.config({ path: [".env.local", ".env"] });
 startSoundMqttClient(getOpsEnv(), { onMessage: persistSoundObservation });
@@ -23,6 +24,9 @@ app.use(express.json());
 // fix __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const publicDir = path.join(__dirname, "public");
+const distDir = path.join(__dirname, "dist");
+const distIndex = path.join(distDir, "index.html");
 
 // UpCloud PostgreSQL connection
 const pool = process.env.DATABASE_URL
@@ -70,15 +74,80 @@ function telraamLiveCount(row, fields) {
   }, 0);
 }
 
+async function hasTrafficVehicleBreakdownColumn() {
+  const result = await pool.query(
+    `
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'traffic_observations'
+        AND column_name = 'vehicle_type_breakdown'
+      LIMIT 1
+    `,
+  );
+
+  return result.rowCount > 0;
+}
+
+function parseDateQuery(value) {
+  if (!value) return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function buildVehicleBreakdownSelect(hasVehicleBreakdown) {
+  const fallback = `
+    NULL::int AS car_count,
+    NULL::int AS bus_count,
+    NULL::int AS light_truck_count,
+    NULL::int AS truck_count,
+    NULL::int AS motorcycle_count,
+    NULL::int AS tractor_count,
+    NULL::int AS trailer_count
+  `;
+
+  if (!hasVehicleBreakdown) return fallback;
+
+  const fields = [
+    ["car", "car_count"],
+    ["bus", "bus_count"],
+    ["light_truck", "light_truck_count"],
+    ["truck", "truck_count"],
+    ["motorcycle", "motorcycle_count"],
+    ["tractor", "tractor_count"],
+    ["trailer", "trailer_count"],
+  ];
+
+  return fields
+    .map(
+      ([jsonKey, alias]) => `
+        CASE
+          WHEN vehicle_type_breakdown ? '${jsonKey}'
+           AND (vehicle_type_breakdown->>'${jsonKey}') ~ '^-?[0-9]+(\\.[0-9]+)?$'
+          THEN ((vehicle_type_breakdown->>'${jsonKey}')::numeric)::int
+          ELSE NULL::int
+        END AS ${alias}
+      `,
+    )
+    .join(",");
+}
+
+function telraamModeCount(row, directionalFields, fallbackFields = []) {
+  const directionalCount = telraamLiveCount(row, directionalFields);
+  if (directionalCount > 0) return directionalCount;
+
+  return telraamLiveCount(row, fallbackFields);
+}
+
 function normalizeTelraamLiveTrafficPoint(row, segmentId) {
   const recordedAt = row?.date || row?.recorded_at || row?.time || row?.timestamp;
-  const busCount = telraamLiveCount(row, ["mode_bus_lft", "mode_bus_rgt"]);
-  const carCount = telraamLiveCount(row, ["mode_car_lft", "mode_car_rgt"]);
-  const lightTruckCount = telraamLiveCount(row, ["mode_lighttruck_lft", "mode_lighttruck_rgt"]);
-  const motorcycleCount = telraamLiveCount(row, ["mode_motorcycle_lft", "mode_motorcycle_rgt"]);
-  const tractorCount = telraamLiveCount(row, ["mode_tractor_lft", "mode_tractor_rgt"]);
-  const trailerCount = telraamLiveCount(row, ["mode_trailer_lft", "mode_trailer_rgt"]);
-  const truckCount = telraamLiveCount(row, ["mode_truck_lft", "mode_truck_rgt"]);
+  const busCount = telraamModeCount(row, ["mode_bus_lft", "mode_bus_rgt"], ["bus", "bus_count"]);
+  const carCount = telraamModeCount(row, ["mode_car_lft", "mode_car_rgt"], ["car", "car_count"]);
+  const lightTruckCount = telraamModeCount(row, ["mode_lighttruck_lft", "mode_lighttruck_rgt"], ["lighttruck", "light_truck", "lighttruck_count", "light_truck_count"]);
+  const motorcycleCount = telraamModeCount(row, ["mode_motorcycle_lft", "mode_motorcycle_rgt"], ["motorcycle", "motorcycle_count"]);
+  const tractorCount = telraamModeCount(row, ["mode_tractor_lft", "mode_tractor_rgt"], ["tractor", "tractor_count"]);
+  const trailerCount = telraamModeCount(row, ["mode_trailer_lft", "mode_trailer_rgt"], ["trailer", "trailer_count"]);
+  const truckCount = telraamModeCount(row, ["mode_truck_lft", "mode_truck_rgt"], ["truck", "truck_count"]);
 
   return {
     segment_id: row?.segment_id || segmentId,
@@ -87,6 +156,13 @@ function normalizeTelraamLiveTrafficPoint(row, segmentId) {
     bicycle_count: telraamLiveCount(row, ["mode_bicycle_lft", "mode_bicycle_rgt"]),
     vehicle_count: busCount + carCount + lightTruckCount + motorcycleCount + tractorCount + trailerCount + truckCount,
     night_count: telraamLiveCount(row, ["mode_night_lft", "mode_night_rgt"]),
+    car_count: carCount,
+    bus_count: busCount,
+    light_truck_count: lightTruckCount,
+    truck_count: truckCount,
+    motorcycle_count: motorcycleCount,
+    tractor_count: tractorCount,
+    trailer_count: trailerCount,
   };
 }
 
@@ -97,8 +173,10 @@ function latestTrafficTimestamp(rows) {
   }, 0);
 }
 
-// Serve static dashboard files
-app.use(express.static(path.join(__dirname, "public")));
+// Serve static dashboard files. In production, nginx can proxy all requests to
+// this server and the built Vite app will be served from dist/.
+app.use(express.static(publicDir));
+app.use(express.static(distDir));
 
 const KNMI_OPEN_DATA_API_KEY = process.env.KNMI_OPEN_DATA_API_KEY;
 const HUSENSE_DEFAULT_SPACES = [
@@ -667,6 +745,22 @@ app.get("/api/health", async (req, res) => {
   }
 });
 
+app.get("/api/ops/db-tables", async (req, res) => {
+  try {
+    const env = getOpsEnv();
+    const ssl = env.waterDbSsl ? { rejectUnauthorized: false } : false;
+    const cfg = env.waterDatabaseUrl
+      ? { connectionString: env.waterDatabaseUrl, ssl }
+      : { host: env.waterDbHost, port: env.waterDbPort, database: env.waterDbName, user: env.waterDbUser, password: env.waterDbPassword, ssl };
+    const tmpPool = new Pool({ ...cfg, connectionTimeoutMillis: 8000 });
+    const result = await tmpPool.query(`SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name`);
+    await tmpPool.end();
+    res.json({ tables: result.rows.map(r => r.table_name) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/ops/health", async (req, res) => {
   try {
     const health = await getOpsHealth();
@@ -719,6 +813,50 @@ app.get("/api/traffic/latest", async (req, res) => {
   try {
     const segmentId = req.query.segment_id || 9000006266;
     const lookbackHours = Number(req.query.lookback_hours || 48);
+    const rangeStart = parseDateQuery(req.query.start);
+    const rangeEnd = parseDateQuery(req.query.end) || new Date();
+    const shouldUseStoredRange = Boolean(rangeStart);
+    const canFallbackToLive = rangeEnd.getTime() >= Date.now() - 15 * 60 * 1000;
+
+    if (shouldUseStoredRange) {
+      try {
+        const nightCount = await getTrafficNightCountSql();
+        const categoryColumns = buildVehicleBreakdownSelect(await hasTrafficVehicleBreakdownColumn());
+
+        const sql = `
+          SELECT
+            segment_id,
+            recorded_at,
+            pedestrian_count,
+            bicycle_count,
+            vehicle_count,
+            ${nightCount.row} AS night_count,
+            ${categoryColumns}
+          FROM traffic_observations
+          WHERE segment_id = $1
+            AND recorded_at >= $2
+            AND recorded_at <= $3
+          ORDER BY recorded_at ASC
+        `;
+
+        const result = await pool.query(sql, [segmentId, rangeStart, rangeEnd]);
+        if (result.rows.length || !canFallbackToLive) {
+          return res.json(result.rows);
+        }
+
+        console.warn("Stored traffic range returned no rows; falling back to live Telraam lookback for current window.");
+      } catch (storedError) {
+        if (!canFallbackToLive) {
+          throw storedError;
+        }
+
+        console.warn(
+          "Stored traffic range failed; falling back to live Telraam lookback for current window:",
+          storedError.message || storedError,
+        );
+      }
+    }
+
     const liveTraffic = await getTelraamLiveData({
       ...getOpsEnv(),
       telraamSegmentId: String(segmentId),
@@ -737,33 +875,39 @@ app.get("/api/traffic/latest", async (req, res) => {
       return res.json(liveRows);
     }
 
-    if (req.query.fallback !== "stored") {
+    // Live data is stale or unavailable — automatically fall back to stored DB for the same window.
+    {
+      const nightCount = await getTrafficNightCountSql();
+      const categoryColumns = buildVehicleBreakdownSelect(await hasTrafficVehicleBreakdownColumn());
+      const lookbackStart = new Date(Date.now() - lookbackHours * 60 * 60 * 1000);
+
+      const storedSql = `
+        SELECT
+          segment_id,
+          recorded_at,
+          pedestrian_count,
+          bicycle_count,
+          vehicle_count,
+          ${nightCount.row} AS night_count,
+          ${categoryColumns}
+        FROM traffic_observations
+        WHERE segment_id = $1
+          AND recorded_at >= $2
+        ORDER BY recorded_at ASC
+      `;
+
+      const storedResult = await pool.query(storedSql, [segmentId, lookbackStart]);
+
+      if (storedResult.rows.length) {
+        return res.json(storedResult.rows);
+      }
+
       return res.status(503).json({
         error: liveRows.length
-          ? `Live Telraam rows are stale; latest row is ${new Date(latestLiveTimestamp).toISOString()}.`
-          : liveTraffic.error || "No live Telraam rows were returned for the requested lookback window.",
+          ? `Live Telraam rows are stale (latest: ${new Date(latestLiveTimestamp).toISOString()}) and no stored rows found for the last ${lookbackHours}h.`
+          : liveTraffic.error || `No Telraam rows found for the last ${lookbackHours}h.`,
       });
     }
-
-    const nightCount = await getTrafficNightCountSql();
-    const limit = Number(req.query.limit || 72);
-
-    const sql = `
-      SELECT
-        segment_id,
-        recorded_at,
-        pedestrian_count,
-        bicycle_count,
-        vehicle_count,
-        ${nightCount.row} AS night_count
-      FROM traffic_observations
-      WHERE segment_id = $1
-      ORDER BY recorded_at DESC
-      LIMIT $2
-    `;
-
-    const result = await pool.query(sql, [segmentId, Number.isFinite(limit) ? limit : 72]);
-    res.json(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -820,6 +964,24 @@ app.get("/api/dashboard/busiest-hour", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/sound/hourly", async (req, res) => {
+  try {
+    const sinceHours = Number(req.query.since_hours || 24);
+    const deviceId = typeof req.query.device_id === "string" && req.query.device_id.trim()
+      ? req.query.device_id.trim()
+      : undefined;
+    const rows = await getHourlySoundObservations({ deviceId, sinceHours });
+
+    res.json({
+      rows,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("Sound hourly API error:", err);
+    res.json({ error: err.message, rows: [], generatedAt: new Date().toISOString() });
   }
 });
 
@@ -1263,9 +1425,14 @@ app.get("/api/public/best-time", async (req, res) => {
   }
 });
 
-// fallback route
-app.get("/", (req, res) => {
-  res.send("Telraam + KNMI + Calendar API running");
+// Frontend fallback for direct visits and client-side routes.
+app.get(/^(?!\/api\/).*/, (req, res) => {
+  if (fs.existsSync(distIndex)) {
+    res.sendFile(distIndex);
+    return;
+  }
+
+  res.send("Telraam + KNMI + Calendar API running. Run npm run build to serve the dashboard.");
 });
 
 const PORT = process.env.PORT || 3000;

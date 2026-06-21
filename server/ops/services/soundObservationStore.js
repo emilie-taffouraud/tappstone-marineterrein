@@ -150,3 +150,35 @@ export async function getLatestSoundObservation({ deviceId } = {}) {
     raw: row.raw_payload || {},
   };
 }
+
+export async function getHourlySoundObservations({ deviceId, sinceHours = 24 } = {}) {
+  const safeSinceHours = Math.max(1, Math.min(24 * 14, Number(sinceHours) || 24));
+  const params = [safeSinceHours];
+  const deviceFilter = deviceId ? "AND device_id = $2" : "";
+  if (deviceId) params.push(deviceId);
+
+  const sql = `
+    SELECT
+      date_trunc('hour', observed_at) AS bucket,
+      AVG(sound_level_db)::float AS average_sound_level_db,
+      MIN(sound_level_db)::float AS min_sound_level_db,
+      MAX(sound_level_db)::float AS max_sound_level_db,
+      COUNT(*)::int AS sample_count
+    FROM sound_observations
+    WHERE observed_at >= now() - ($1::int * interval '1 hour')
+      AND sound_level_db IS NOT NULL
+      ${deviceFilter}
+    GROUP BY date_trunc('hour', observed_at)
+    ORDER BY bucket ASC
+  `;
+
+  const result = await getPool().query(sql, params);
+
+  return result.rows.map((row) => ({
+    bucket: row.bucket instanceof Date ? row.bucket.toISOString() : new Date(row.bucket).toISOString(),
+    averageSoundLevelDb: row.average_sound_level_db === null ? null : Number(row.average_sound_level_db),
+    minSoundLevelDb: row.min_sound_level_db === null ? null : Number(row.min_sound_level_db),
+    maxSoundLevelDb: row.max_sound_level_db === null ? null : Number(row.max_sound_level_db),
+    sampleCount: Number(row.sample_count || 0),
+  }));
+}
