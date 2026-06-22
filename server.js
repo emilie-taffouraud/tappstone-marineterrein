@@ -109,24 +109,30 @@ function buildVehicleBreakdownSelect(hasVehicleBreakdown) {
   if (!hasVehicleBreakdown) return fallback;
 
   const fields = [
-    ["car", "car_count"],
-    ["bus", "bus_count"],
-    ["light_truck", "light_truck_count"],
-    ["truck", "truck_count"],
-    ["motorcycle", "motorcycle_count"],
-    ["tractor", "tractor_count"],
-    ["trailer", "trailer_count"],
+    [["car"], "car_count"],
+    [["bus"], "bus_count"],
+    [["light_truck", "lightTruck", "lighttruck"], "light_truck_count"],
+    [["truck"], "truck_count"],
+    [["motorcycle"], "motorcycle_count"],
+    [["tractor"], "tractor_count"],
+    [["trailer"], "trailer_count"],
   ];
 
   return fields
     .map(
-      ([jsonKey, alias]) => `
-        CASE
-          WHEN vehicle_type_breakdown ? '${jsonKey}'
-           AND (vehicle_type_breakdown->>'${jsonKey}') ~ '^-?[0-9]+(\\.[0-9]+)?$'
-          THEN ((vehicle_type_breakdown->>'${jsonKey}')::numeric)::int
-          ELSE NULL::int
-        END AS ${alias}
+      ([jsonKeys, alias]) => `
+        COALESCE(
+          ${jsonKeys
+            .map(
+              (jsonKey) => `CASE
+            WHEN vehicle_type_breakdown ? '${jsonKey}'
+             AND (vehicle_type_breakdown->>'${jsonKey}') ~ '^-?[0-9]+(\\.[0-9]+)?$'
+            THEN ((vehicle_type_breakdown->>'${jsonKey}')::numeric)::int
+            ELSE NULL::int
+          END`,
+            )
+            .join(",\n          ")}
+        ) AS ${alias}
       `,
     )
     .join(",");
@@ -982,6 +988,38 @@ app.get("/api/sound/hourly", async (req, res) => {
   } catch (err) {
     console.error("Sound hourly API error:", err);
     res.json({ error: err.message, rows: [], generatedAt: new Date().toISOString() });
+  }
+});
+
+app.get("/api/ops/visitors/history", async (req, res) => {
+  try {
+    const segmentId = req.query.segment_id || 9000006266;
+    const period = req.query.period === "30d" ? "30d" : "7d";
+    const nightCount = await getTrafficNightCountSql();
+    const interval = period === "30d" ? "29 days" : "6 days";
+
+    const sql = `
+      SELECT
+        date_trunc('day', recorded_at)::date AS bucket,
+        COALESCE(SUM(pedestrian_count + bicycle_count + ${nightCount.value}), 0)::int AS visitors
+      FROM traffic_observations
+      WHERE segment_id = $1
+        AND recorded_at >= date_trunc('day', NOW() - INTERVAL '${interval}')
+      GROUP BY date_trunc('day', recorded_at)::date
+      ORDER BY 1 ASC
+    `;
+
+    const result = await pool.query(sql, [segmentId]);
+
+    res.json({
+      period,
+      resolution: "daily",
+      source: "telraam",
+      rows: result.rows,
+    });
+  } catch (err) {
+    console.error("Visitor history error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 

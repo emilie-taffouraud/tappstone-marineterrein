@@ -1,3 +1,5 @@
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, "") ?? "";
+
 export type UnifiedLiveRecord = {
   id: string;
   source: "telraam" | "knmi" | "weather" | "husense" | "sound" | "water" | "air";
@@ -79,6 +81,18 @@ export type SoundHourlyPoint = {
   sampleCount: number;
 };
 
+export type VisitorHistoryPoint = {
+  bucket: string;
+  visitors: number;
+};
+
+export type VisitorHistoryResponse = {
+  period: "7d" | "30d";
+  resolution: "daily";
+  source: "telraam" | "husense" | null;
+  rows: VisitorHistoryPoint[];
+};
+
 export type AgendaItem = {
   id: string;
   title: string;
@@ -151,7 +165,7 @@ export type HusenseHeatmapRequest = {
 };
 
 export async function fetchOpsOverview() {
-  const response = await fetch("/api/ops/live/overview");
+  const response = await fetch(`${API_BASE}/api/ops/live/overview`);
   if (!response.ok) {
     throw new Error("Failed to fetch /api/ops/live/overview");
   }
@@ -160,7 +174,7 @@ export async function fetchOpsOverview() {
 }
 
 export async function fetchOpsHealth() {
-  const response = await fetch("/api/ops/health");
+  const response = await fetch(`${API_BASE}/api/ops/health`);
   const json = (await response.json()) as OpsHealthResponse;
 
   return {
@@ -176,7 +190,7 @@ export async function fetchTelraamTrafficLatest(request: number | TrafficRangeRe
   if (normalized.start) params.set("start", normalized.start);
   if (normalized.end) params.set("end", normalized.end);
 
-  const response = await fetch(`/api/traffic/latest?${params.toString()}`);
+  const response = await fetch(`${API_BASE}/api/traffic/latest?${params.toString()}`);
   if (!response.ok) {
     throw new Error("Failed to fetch /api/traffic/latest");
   }
@@ -188,7 +202,7 @@ export async function fetchSoundHourly(sinceHours = 24) {
   const params = new URLSearchParams({
     since_hours: String(sinceHours),
   });
-  const response = await fetch(`/api/sound/hourly?${params.toString()}`);
+  const response = await fetch(`${API_BASE}/api/sound/hourly?${params.toString()}`);
   if (!response.ok) {
     throw new Error("Failed to fetch /api/sound/hourly");
   }
@@ -197,8 +211,18 @@ export async function fetchSoundHourly(sinceHours = 24) {
   return Array.isArray(payload.rows) ? payload.rows : [];
 }
 
+export async function fetchVisitorHistory(period: "7d" | "30d" = "7d") {
+  const params = new URLSearchParams({ period });
+  const response = await fetch(`${API_BASE}/api/ops/visitors/history?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch /api/ops/visitors/history");
+  }
+
+  return response.json() as Promise<VisitorHistoryResponse>;
+}
+
 export async function fetchHusenseDashboardSummary() {
-  const response = await fetch("/api/husense/dashboard-summary");
+  const response = await fetch(`${API_BASE}/api/husense/dashboard-summary`);
   if (!response.ok) {
     throw new Error("Failed to fetch /api/husense/dashboard-summary");
   }
@@ -207,7 +231,7 @@ export async function fetchHusenseDashboardSummary() {
 }
 
 export async function fetchOpsAgenda(limit = 4) {
-  const response = await fetch(`/api/ops/agenda?limit=${limit}`);
+  const response = await fetch(`${API_BASE}/api/ops/agenda?limit=${limit}`);
   if (!response.ok) {
     throw new Error("Failed to fetch /api/ops/agenda");
   }

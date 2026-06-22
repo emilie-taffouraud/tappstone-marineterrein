@@ -11,6 +11,12 @@ const AIR_QUALITY_TABLE_CANDIDATES = [
   "air_quality_mqtt",
   "air_quality_readings",
   "mqtt_readings",
+  "mqtt_sensor_data",
+  "mqtt_data",
+  "mqtt_measurements",
+  "air_mqtt",
+  "airquality",
+  "air_quality",
 ];
 
 const AIR_QUALITY_METRICS = [

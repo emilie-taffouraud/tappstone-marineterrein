@@ -641,7 +641,11 @@ export function deriveWaterSummary(
         health?.sources.water?.error ||
         "Recommendation paused until water temperature data returns.",
       tone: statusTone(health?.sources.water?.status || "unknown"),
-      detail: ["Water temperature sensor offline", "Crowd: moderate", "Air: good", "Weather: sunny"],
+      detail: [
+        "Water temperature unavailable",
+        "Crowd context unavailable for this decision",
+        "Air and weather context unavailable for this decision",
+      ],
       stats: [
         { label: "Yesterday avg", value: "Unavailable" },
         { label: "7-day avg", value: "Unavailable" },

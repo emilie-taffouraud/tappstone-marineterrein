@@ -59,6 +59,18 @@ function firstFiniteNumber(...values) {
   return null;
 }
 
+// Handles strings like "19°C", "19.5 C", "19" — strips unit suffix before parsing.
+function parseTemperatureString(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/\s*[°℃℉]?\s*[cCfF]?\s*$/, "").trim();
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 function firstText(...values) {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
@@ -79,23 +91,47 @@ function normalizeWaterTemperaturePayload(payload) {
 
   if (!entry || typeof entry !== "object") return null;
 
-  const value = firstFiniteNumber(
-    entry.temp_c1,
-    entry.water_temperature_c,
-    entry.water_temperature,
-    entry.temperature_c,
-    entry.temperature,
-    entry.temp_c,
-    entry.value,
-  );
+  // Try numeric fields first, then string fields that may carry a unit suffix (e.g. "19°C" from Metabase).
+  const value =
+    firstFiniteNumber(
+      entry.temp_c1,
+      entry.water_temperature_c,
+      entry.water_temperature,
+      entry.temperature_c,
+      entry.temperature,
+      entry.temp_c,
+      entry.value,
+    ) ??
+    parseTemperatureString(
+      entry["Temp C1"] ?? entry["temp c1"] ?? entry["TEMP C1"] ?? entry["Temp_C1"],
+    );
+
   if (value === null) return null;
 
   return {
     value,
-    observedAt: firstText(entry.received_at, entry.recorded_at, entry.observed_at, entry.timestamp, entry.time) || null,
+    observedAt:
+      firstText(
+        entry.received_at,
+        entry.recorded_at,
+        entry.observed_at,
+        entry.timestamp,
+        entry.time,
+        entry["Received At"],
+        entry["received at"],
+      ) || null,
     sourceName: "water-temperature-api",
-    deviceId: firstText(entry.device_id, entry.sensor_id, entry.id, entry.name),
-    batteryV: firstFiniteNumber(entry.battery_v, entry.battery, entry.voltage),
+    deviceId: firstText(
+      entry.device_id,
+      entry.sensor_id,
+      entry.id,
+      entry.name,
+      entry["Device ID"],
+      entry["device id"],
+    ),
+    batteryV:
+      firstFiniteNumber(entry.battery_v, entry.battery, entry.voltage) ??
+      parseTemperatureString(entry["Battery V"] ?? entry["battery v"]),
     raw: entry,
   };
 }
