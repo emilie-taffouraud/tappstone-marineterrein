@@ -195,7 +195,9 @@ export async function fetchTelraamTrafficLatest(request: number | TrafficRangeRe
     throw new Error("Failed to fetch /api/traffic/latest");
   }
 
-  return response.json() as Promise<TelraamTrafficPoint[]>;
+  const json = await response.json();
+  // Handle both flat array (current server) and wrapped { rows: [...] } (older server format)
+  return (Array.isArray(json) ? json : (Array.isArray(json?.rows) ? json.rows : [])) as TelraamTrafficPoint[];
 }
 
 export async function fetchSoundHourly(sinceHours = 24) {

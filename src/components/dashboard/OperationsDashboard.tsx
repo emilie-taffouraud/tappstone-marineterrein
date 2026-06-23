@@ -16,6 +16,8 @@ import { useOpsLiveData } from "../../hooks/useOpsLiveData";
 import { useTelraamTraffic } from "../../hooks/useTelraamTraffic";
 import { DASHBOARD_HEADER_THEME, MAIN_COLORS, MT_COLORS } from "../../styles/theme";
 import mt_down from "../../assets/mt_down.jpg";
+import TelraamDetailsCard from "./TelraamDetailsCard";
+import TelraamLiveCard from "./TelraamLiveCard";
 import UpcomingAgendaCard from "./UpcomingAgendaCard";
 import { getSensorCatalogItems } from "./live-map/sensorCatalog";
 import {
@@ -42,12 +44,26 @@ import {
   deriveLiveKpis,
   deriveLiveMetaSummary,
   deriveSoundSummary,
+  deriveTelraamLiveModeSplitChart,
   deriveTelraamTrendChart,
   deriveWaterSummary,
   deriveWeatherWidgetModel,
 } from "./opsLiveViewModel";
 import { Card, CardContent, CardHeader, Pill, SectionTitle, SelectLike } from "./ui";
 import type { AlertItem } from "./types";
+
+const TELRAAM_CHART_PALETTE = [
+  MAIN_COLORS.aColor1,
+  MAIN_COLORS.aColor2,
+  "#0f766e",
+  "#f59e0b",
+  "#94a3b8",
+  "#ef4444",
+  "#22c55e",
+  "#f97316",
+  "#14b8a6",
+  "#64748b",
+];
 
 const locationOptions = ["All locations", "Portiersloge", "TAPP", "CODAM", "AHK MakerSpace", "Swim area"];
 const sensorCategories = ["busyness", "water temp", "vehicle classification", "air quality", "sound"];
@@ -84,6 +100,7 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
     description: "Visitor and vehicle signals grouped together to read current pressure within the selected range.",
     items: [
       { id: "crowd-occupancy", label: "Visitor summary" },
+      { id: "crowd-gate-snapshot", label: "Gate flow" },
       { id: "crowd-mobility-split", label: "Vehicle summary" },
       { id: "crowd-history", label: "Movement summary" },
       { id: "crowd-baseline", label: "Busiest visitors" },
@@ -2300,6 +2317,7 @@ export function OperationsDashboard() {
         : "Sensor feed not connected yet";
   const anomalyChart = useMemo(() => deriveAnomalyChart(telraamHistory), [telraamHistory]);
   const telraamTrendChart = useMemo(() => deriveTelraamTrendChart(telraamHistory), [telraamHistory]);
+  const telraamLiveModeSplitChart = useMemo(() => deriveTelraamLiveModeSplitChart(overview), [overview]);
   const vehicleChart = useMemo(() => buildVehicleChart(telraamHistory), [telraamHistory]);
   const vehicleCategoryCards = useMemo(() => buildVehicleCategoryCards(telraamHistory), [telraamHistory]);
   const visibleOccupancyZones = useMemo(
@@ -2812,6 +2830,11 @@ export function OperationsDashboard() {
                     </div>
                   </CardContent>
                 </Card>
+              </div>
+
+              <div id="crowd-gate-snapshot" className="grid gap-5 xl:grid-cols-2" style={ANCHOR_SCROLL_STYLE}>
+                <TelraamDetailsCard overview={overview} />
+                <TelraamLiveCard data={telraamLiveModeSplitChart} chartPalette={TELRAAM_CHART_PALETTE} />
               </div>
 
               <div id="crowd-mobility-split" style={ANCHOR_SCROLL_STYLE}>
