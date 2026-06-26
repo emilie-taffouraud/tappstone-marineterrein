@@ -21,8 +21,8 @@ const AIR_QUALITY_TABLE_CANDIDATES = [
 ];
 
 const AIR_QUALITY_METRICS = [
-  { metric: "pm25", label: "PM2.5", unit: "ug/m3", columns: ["pm25", "pm2_5", "pm_25", "pm2_5_ug_m3", "pm2p5", "pm2_5_atm", "pm2_5_cf_1"] },
-  { metric: "pm10", label: "PM10", unit: "ug/m3", columns: ["pm10", "pm_10", "pm10_ug_m3", "pm10_atm", "pm10_cf_1"] },
+  { metric: "pm25", label: "PM2.5", unit: "ug/m3", columns: ["pm25", "pm2_5", "pm_25", "pm2_5_ug_m3", "pm2p5", "pm2_5_atm", "pm2_5_cf_1", "mc_2p0", "mc_2p5"] },
+  { metric: "pm10", label: "PM10", unit: "ug/m3", columns: ["pm10", "pm_10", "pm10_ug_m3", "pm10_atm", "pm10_cf_1", "mc_10p0"] },
   { metric: "no2", label: "NO2", unit: "ug/m3", columns: ["no2", "no2_ug_m3", "nitrogen_dioxide"] },
   { metric: "co2", label: "CO2", unit: "ppm", columns: ["co2", "co2_ppm", "carbon_dioxide", "co2eq"] },
   { metric: "humidity", label: "Humidity", unit: "%", columns: ["humidity", "relative_humidity", "humidity_pct", "relativeHumidity", "relativehumidity", "relative_humidity_pct", "rh", "hum"] },
@@ -203,6 +203,7 @@ function existingColumns(columns, candidates) {
 
 function firstFiniteNumber(...values) {
   for (const value of values) {
+    if (value === null || value === undefined || value === "") continue;
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;
   }
@@ -336,7 +337,21 @@ function statusForMetric(metric, value) {
   return "ok";
 }
 
-async function readLatestAirQuality(db, tableName, env) {
+function candidateMatchesDevicePrefix(candidate, deviceColumns, prefix) {
+  if (!prefix) return true;
+
+  return (
+    matchesDevicePrefix(candidate.deviceId, prefix) ||
+    deviceColumns.some((column) => matchesDevicePrefix(candidate.row[column], prefix)) ||
+    payloadContainsDevicePrefix(candidate.payload, prefix)
+  );
+}
+
+function metricValueFromCandidate(candidate, definition) {
+  return valueFromRow(candidate.row, definition.columns) ?? valueFromPayload(candidate.payload, definition.columns);
+}
+
+async function readAirQualitySnapshot(db, tableName, env) {
   const columns = await readColumns(db, tableName);
   const observedColumn = firstExisting(columns, AIR_QUALITY_OBSERVED_COLUMNS);
   const payloadColumns = existingColumns(columns, AIR_QUALITY_PAYLOAD_COLUMNS);
@@ -365,11 +380,13 @@ async function readLatestAirQuality(db, tableName, env) {
   const sql = `
     SELECT ${selectColumns.map(quoteIdentifier).join(", ")}
     FROM ${quoteIdentifier(tableName)}
+    WHERE ${quoteIdentifier(observedColumn)} IS NULL
+       OR ${quoteIdentifier(observedColumn)} < NOW() + INTERVAL '1 day'
     ORDER BY ${quoteIdentifier(observedColumn)} DESC
     LIMIT $1
   `;
   const result = await db.query(sql, [env.airQualityLookbackRows]);
-  const candidates = result.rows.map((row) => {
+  const allCandidates = result.rows.map((row) => {
     const payload = mergePayloadSources(row, payloadColumns);
     const deviceId =
       deviceColumns.map((column) => safeText(row[column])).find(Boolean) ??
@@ -382,21 +399,28 @@ async function readLatestAirQuality(db, tableName, env) {
       deviceId,
     };
   });
-  const latest = devicePrefix
-    ? candidates.find(
-        (candidate) =>
-          matchesDevicePrefix(candidate.deviceId, devicePrefix) ||
-          deviceColumns.some((column) => matchesDevicePrefix(candidate.row[column], devicePrefix)) ||
-          payloadContainsDevicePrefix(candidate.payload, devicePrefix),
-      )
-    : candidates[0];
-  if (!latest) return null;
+  const candidates = allCandidates.filter((candidate) => candidateMatchesDevicePrefix(candidate, deviceColumns, devicePrefix));
+  const latestByMetric = new Map();
+
+  for (const candidate of candidates) {
+    for (const definition of AIR_QUALITY_METRICS) {
+      if (latestByMetric.has(definition.metric)) continue;
+
+      const value = metricValueFromCandidate(candidate, definition);
+      if (value !== null) {
+        latestByMetric.set(definition.metric, {
+          definition,
+          value,
+          candidate,
+        });
+      }
+    }
+  }
 
   return {
-    row: latest.row,
-    payload: latest.payload,
-    observedAt: latest.observedAt,
-    deviceId: latest.deviceId,
+    columns,
+    latest: candidates[0] || null,
+    latestByMetric,
   };
 }
 
@@ -422,32 +446,33 @@ export async function inspectAirQualityMqtt(env) {
       };
     }
 
-    const columns = await readColumns(db, tableName);
-    const latest = await readLatestAirQuality(db, tableName, env);
-    const metrics = latest
+    const snapshot = await readAirQualitySnapshot(db, tableName, env);
+    const metrics = snapshot.latestByMetric.size
       ? AIR_QUALITY_METRICS.map((definition) => {
-          const value = valueFromRow(latest.row, definition.columns) ?? valueFromPayload(latest.payload, definition.columns);
+          const reading = snapshot.latestByMetric.get(definition.metric);
           return {
             metric: definition.metric,
             label: definition.label,
-            hasValue: value !== null,
-            value,
+            hasValue: Boolean(reading),
+            value: reading?.value ?? null,
             unit: definition.unit,
+            observedAt: reading?.candidate.observedAt ?? null,
+            deviceId: reading?.candidate.deviceId ?? null,
           };
         })
       : [];
 
     return {
-      status: latest && metrics.some((metric) => metric.hasValue) ? "ok" : "unknown",
+      status: snapshot.latest && metrics.some((metric) => metric.hasValue) ? "ok" : "unknown",
       databaseSource: dbConfig.source,
       tableName,
       configuredTable: env.airQualityMqttTable || null,
       devicePrefix: env.airQualityDevicePrefix || null,
-      selectedDeviceId: latest?.deviceId || null,
-      selectedObservedAt: latest?.observedAt || null,
-      columns: [...columns].sort(),
+      selectedDeviceId: snapshot.latest?.deviceId || null,
+      selectedObservedAt: snapshot.latest?.observedAt || null,
+      columns: [...snapshot.columns].sort(),
       metrics,
-      error: latest ? null : "No matching MQTT row was found for the configured air-quality device prefix.",
+      error: snapshot.latest ? null : "No matching MQTT row was found for the configured air-quality device prefix.",
     };
   } catch (error) {
     return {
@@ -475,8 +500,8 @@ export async function getAirQualityMqttLiveData(env) {
         throw new Error("No MQTT air-quality table found. Set AIR_QUALITY_MQTT_TABLE to the table name in the air-quality database.");
       }
 
-      const latest = await readLatestAirQuality(db, tableName, env);
-      if (!latest) {
+      const snapshot = await readAirQualitySnapshot(db, tableName, env);
+      if (!snapshot.latest) {
         throw new Error(
           env.airQualityDevicePrefix
             ? `No rows were found in ${tableName} for camera/device prefix ${env.airQualityDevicePrefix}.`
@@ -486,9 +511,8 @@ export async function getAirQualityMqttLiveData(env) {
 
       const zone = getZoneById("general");
       const records = AIR_QUALITY_METRICS.map((definition) => {
-        const directValue = valueFromRow(latest.row, definition.columns);
-        const value = directValue ?? valueFromPayload(latest.payload, definition.columns);
-        if (value === null) return null;
+        const reading = snapshot.latestByMetric.get(definition.metric);
+        if (!reading) return null;
 
         return createUnifiedRecord({
           id: `air-${definition.metric}`,
@@ -496,11 +520,11 @@ export async function getAirQualityMqttLiveData(env) {
           category: "weather",
           metric: definition.metric,
           label: definition.label,
-          value,
+          value: reading.value,
           unit: definition.unit,
-          status: statusForMetric(definition.metric, value),
+          status: statusForMetric(definition.metric, reading.value),
           confidence: "medium",
-          observedAt: latest.observedAt || fetchedAt,
+          observedAt: reading.candidate.observedAt || fetchedAt,
           fetchedAt,
           lat: zone.lat,
           lon: zone.lon,
@@ -508,7 +532,7 @@ export async function getAirQualityMqttLiveData(env) {
           zone: zone.label,
           raw: {
             tableName,
-            deviceId: latest.deviceId,
+            deviceId: reading.candidate.deviceId,
           },
         });
       }).filter(Boolean);
@@ -521,7 +545,7 @@ export async function getAirQualityMqttLiveData(env) {
         records,
         raw: {
           tableName,
-          deviceId: latest.deviceId,
+          deviceId: snapshot.latest.deviceId,
         },
         error: records.length ? null : `No supported air-quality metrics were found in ${tableName}.`,
       };
