@@ -151,11 +151,22 @@ export async function getLatestSoundObservation({ deviceId } = {}) {
   };
 }
 
-export async function getHourlySoundObservations({ deviceId, sinceHours = 24 } = {}) {
+export async function getHourlySoundObservations({ deviceId, sinceHours = 24, start, end } = {}) {
   const safeSinceHours = Math.max(1, Math.min(24 * 14, Number(sinceHours) || 24));
-  const params = [safeSinceHours];
-  const deviceFilter = deviceId ? "AND device_id = $2" : "";
+  const rangeStart = start ? new Date(start) : null;
+  const rangeEnd = end ? new Date(end) : null;
+  const hasExplicitRange =
+    rangeStart instanceof Date &&
+    rangeEnd instanceof Date &&
+    !Number.isNaN(rangeStart.getTime()) &&
+    !Number.isNaN(rangeEnd.getTime());
+  const params = hasExplicitRange ? [rangeStart, rangeEnd] : [safeSinceHours];
+  const deviceParamIndex = params.length + 1;
+  const deviceFilter = deviceId ? `AND device_id = $${deviceParamIndex}` : "";
   if (deviceId) params.push(deviceId);
+  const rangeFilter = hasExplicitRange
+    ? "observed_at >= $1 AND observed_at <= $2"
+    : "observed_at >= now() - ($1::int * interval '1 hour')";
 
   const sql = `
     SELECT
@@ -165,7 +176,7 @@ export async function getHourlySoundObservations({ deviceId, sinceHours = 24 } =
       MAX(sound_level_db)::float AS max_sound_level_db,
       COUNT(*)::int AS sample_count
     FROM sound_observations
-    WHERE observed_at >= now() - ($1::int * interval '1 hour')
+    WHERE ${rangeFilter}
       AND sound_level_db IS NOT NULL
       ${deviceFilter}
     GROUP BY date_trunc('hour', observed_at)

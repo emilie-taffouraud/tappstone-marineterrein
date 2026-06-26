@@ -14,6 +14,7 @@ export type SensorPoint = {
   name: string;
   category: string;
   center: [number, number];
+  backendSource?: SensorSeed["backendSource"];
   installState: "installed" | "planned";
   state: "live" | "awaiting-data" | "broken" | "installed" | "planned";
   stateLabel: string;
@@ -37,10 +38,11 @@ const SENSOR_SEEDS: SensorSeed[] = [
 ];
 
 export function getSensorCatalogItems() {
-  return SENSOR_SEEDS.map(({ id, name, category, installState }) => ({
+  return SENSOR_SEEDS.map(({ id, name, category, backendSource, installState }) => ({
     id,
     name,
     category,
+    backendSource,
     installState,
   }));
 }

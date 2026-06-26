@@ -200,10 +200,13 @@ export async function fetchTelraamTrafficLatest(request: number | TrafficRangeRe
   return (Array.isArray(json) ? json : (Array.isArray(json?.rows) ? json.rows : [])) as TelraamTrafficPoint[];
 }
 
-export async function fetchSoundHourly(sinceHours = 24) {
-  const params = new URLSearchParams({
-    since_hours: String(sinceHours),
-  });
+export async function fetchSoundHourly(request: number | TrafficRangeRequest = 24) {
+  const normalized = typeof request === "number" ? { lookbackHours: request } : request;
+  const params = new URLSearchParams();
+  if (normalized.lookbackHours !== undefined) params.set("since_hours", String(normalized.lookbackHours));
+  if (normalized.start) params.set("start", normalized.start);
+  if (normalized.end) params.set("end", normalized.end);
+
   const response = await fetch(`${API_BASE}/api/sound/hourly?${params.toString()}`);
   if (!response.ok) {
     throw new Error("Failed to fetch /api/sound/hourly");
@@ -213,8 +216,16 @@ export async function fetchSoundHourly(sinceHours = 24) {
   return Array.isArray(payload.rows) ? payload.rows : [];
 }
 
-export async function fetchVisitorHistory(period: "7d" | "30d" = "7d") {
-  const params = new URLSearchParams({ period });
+export async function fetchVisitorHistory(request: "7d" | "30d" | TrafficRangeRequest = "7d") {
+  const params = new URLSearchParams();
+  if (typeof request === "string") {
+    params.set("period", request);
+  } else {
+    if (request.lookbackHours !== undefined) params.set("lookback_hours", String(request.lookbackHours));
+    if (request.start) params.set("start", request.start);
+    if (request.end) params.set("end", request.end);
+  }
+
   const response = await fetch(`${API_BASE}/api/ops/visitors/history?${params.toString()}`);
   if (!response.ok) {
     throw new Error("Failed to fetch /api/ops/visitors/history");

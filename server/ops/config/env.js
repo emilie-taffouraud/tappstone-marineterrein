@@ -7,6 +7,11 @@ function cleanText(value, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function toBoolean(value, fallback = false) {
+  if (typeof value !== "string") return fallback;
+  return ["true", "1", "yes", "require"].includes(value.trim().toLowerCase());
+}
+
 export function getOpsEnv() {
   return {
     knmiOpenDataApiKey: process.env.KNMI_OPEN_DATA_API_KEY || "",
@@ -31,10 +36,19 @@ export function getOpsEnv() {
     waterDbName: process.env.WATER_DB_NAME || "",
     waterDbUser: process.env.WATER_DB_USER || "",
     waterDbPassword: process.env.WATER_DB_PASSWORD || "",
-    waterDbSsl: process.env.WATER_DB_SSL === "true",
+    waterDbSsl: toBoolean(process.env.WATER_DB_SSL),
     waterTemperatureApiUrl: process.env.WATER_TEMPERATURE_API_URL || "",
     waterTemperatureApiKey: process.env.WATER_TEMPERATURE_API_KEY || "",
+    airQualityDatabaseUrl: cleanText(process.env.AIR_QUALITY_DATABASE_URL || process.env.AIR_QUALITY_DB_URL),
+    airQualityDbHost: cleanText(process.env.AIR_QUALITY_DB_HOST),
+    airQualityDbPort: toNumber(process.env.AIR_QUALITY_DB_PORT, 5432),
+    airQualityDbName: cleanText(process.env.AIR_QUALITY_DB_NAME),
+    airQualityDbUser: cleanText(process.env.AIR_QUALITY_DB_USER),
+    airQualityDbPassword: process.env.AIR_QUALITY_DB_PASSWORD || "",
+    airQualityDbSsl: toBoolean(process.env.AIR_QUALITY_DB_SSL),
     airQualityMqttTable: cleanText(process.env.AIR_QUALITY_MQTT_TABLE || process.env.MQTT_AIR_QUALITY_TABLE),
+    airQualityDevicePrefix: cleanText(process.env.AIR_QUALITY_DEVICE_PREFIX, "MT"),
+    airQualityLookbackRows: toNumber(process.env.AIR_QUALITY_LOOKBACK_ROWS, 500),
     opsCacheTtlMs: toNumber(process.env.OPS_CACHE_TTL_MS, 300000),
     opsHttpTimeoutMs: toNumber(process.env.OPS_HTTP_TIMEOUT_MS, 8000),
     knmiDataset: process.env.KNMI_WARNING_DATASET || "waarschuwingen_nederland_48h",

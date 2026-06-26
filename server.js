@@ -10,6 +10,7 @@ import { getAgendaFeed } from "./server/ops/services/agendaService.js";
 import { getKnmiLiveData } from "./server/ops/adapters/knmiAdapter.js";
 import { getWeatherLiveData } from "./server/ops/adapters/weatherAdapter.js";
 import { getTelraamLiveData } from "./server/ops/adapters/telraamAdapter.js";
+import { inspectAirQualityMqtt } from "./server/ops/adapters/airQualityMqttAdapter.js";
 import { getOpsEnv } from "./server/ops/config/env.js";
 import { startSoundMqttClient } from "./server/ops/adapters/soundMqttClient.js";
 import { getHourlySoundObservations, persistSoundObservation } from "./server/ops/services/soundObservationStore.js";
@@ -797,6 +798,16 @@ app.get("/api/ops/live/raw", async (req, res) => {
   }
 });
 
+app.get("/api/ops/air-quality/debug", async (req, res) => {
+  try {
+    const inspection = await inspectAirQualityMqtt(getOpsEnv());
+    res.json(inspection);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ status: "error", error: err.message });
+  }
+});
+
 app.get("/api/ops/agenda", async (req, res) => {
   try {
     const limit = Number(req.query.limit || 4);
@@ -976,10 +987,17 @@ app.get("/api/dashboard/busiest-hour", async (req, res) => {
 app.get("/api/sound/hourly", async (req, res) => {
   try {
     const sinceHours = Number(req.query.since_hours || 24);
+    const rangeStart = parseDateQuery(req.query.start);
+    const rangeEnd = parseDateQuery(req.query.end);
     const deviceId = typeof req.query.device_id === "string" && req.query.device_id.trim()
       ? req.query.device_id.trim()
       : undefined;
-    const rows = await getHourlySoundObservations({ deviceId, sinceHours });
+    const rows = await getHourlySoundObservations({
+      deviceId,
+      sinceHours,
+      start: rangeStart,
+      end: rangeEnd,
+    });
 
     res.json({
       rows,
@@ -997,6 +1015,13 @@ app.get("/api/ops/visitors/history", async (req, res) => {
     const period = req.query.period === "30d" ? "30d" : "7d";
     const nightCount = await getTrafficNightCountSql();
     const interval = period === "30d" ? "29 days" : "6 days";
+    const rangeStart = parseDateQuery(req.query.start);
+    const rangeEnd = parseDateQuery(req.query.end) || new Date();
+    const hasExplicitRange = Boolean(rangeStart);
+    const params = hasExplicitRange ? [segmentId, rangeStart, rangeEnd] : [segmentId];
+    const rangeWhere = hasExplicitRange
+      ? "recorded_at >= $2 AND recorded_at <= $3"
+      : `recorded_at >= date_trunc('day', NOW() - INTERVAL '${interval}')`;
 
     const sql = `
       SELECT
@@ -1004,12 +1029,12 @@ app.get("/api/ops/visitors/history", async (req, res) => {
         COALESCE(SUM(pedestrian_count + bicycle_count + ${nightCount.value}), 0)::int AS visitors
       FROM traffic_observations
       WHERE segment_id = $1
-        AND recorded_at >= date_trunc('day', NOW() - INTERVAL '${interval}')
+        AND ${rangeWhere}
       GROUP BY date_trunc('day', recorded_at)::date
       ORDER BY 1 ASC
     `;
 
-    const result = await pool.query(sql, [segmentId]);
+    const result = await pool.query(sql, params);
 
     res.json({
       period,

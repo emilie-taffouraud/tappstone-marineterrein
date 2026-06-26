@@ -27,6 +27,7 @@ import {
   fetchVisitorHistory,
   type AgendaItem,
   type HusenseDashboardSummary,
+  type OpsHealthResponse,
   type OpsLiveOverviewResponse,
   type SoundHourlyPoint,
   type TelraamTrafficPoint,
@@ -39,18 +40,14 @@ import {
   type EnvironmentThresholdStatus,
 } from "../../utils/environmentThresholds";
 import {
-  deriveAnomalyChart,
-  deriveLiveAlerts,
   deriveLiveKpis,
   deriveLiveMetaSummary,
   deriveSoundSummary,
-  deriveTelraamLiveModeSplitChart,
-  deriveTelraamTrendChart,
+  type BreakdownChartPoint,
   deriveWaterSummary,
   deriveWeatherWidgetModel,
 } from "./opsLiveViewModel";
 import { Card, CardContent, CardHeader, Pill, SectionTitle, SelectLike } from "./ui";
-import type { AlertItem } from "./types";
 
 const TELRAAM_CHART_PALETTE = [
   MAIN_COLORS.aColor1,
@@ -65,11 +62,8 @@ const TELRAAM_CHART_PALETTE = [
   "#64748b",
 ];
 
-const locationOptions = ["All locations", "Portiersloge", "TAPP", "CODAM", "AHK MakerSpace", "Swim area"];
-const sensorCategories = ["busyness", "water temp", "vehicle classification", "air quality", "sound"];
-const severityOptions = ["All severities", "info", "warning", "critical"];
 const timeRangeOptions = ["Average of past weeks", "Last week", "This week", "Today", "Past 3 hours"];
-const modeOptions = ["Live", "Incident mode"];
+const EMPTY_RANGE_MESSAGE = "No data available for the selected time range.";
 const ANCHOR_SCROLL_STYLE = { scrollMarginTop: "2rem" } as const;
 
 type DashboardNavItem = {
@@ -87,11 +81,10 @@ type DashboardNavSection = {
 const DASHBOARD_NAV: DashboardNavSection[] = [
   {
     id: "overview",
-    label: "Overview",
+    label: "Live Snapshot",
     description: "Immediate live metrics and operator controls.",
     items: [
       { id: "overview-site-summary", label: "Site summary" },
-      { id: "overview-controls", label: "Controls" },
     ],
   },
   {
@@ -99,11 +92,12 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
     label: "Crowd",
     description: "Visitor and vehicle signals grouped together to read current pressure within the selected range.",
     items: [
-      { id: "crowd-occupancy", label: "Visitor summary" },
+      { id: "crowd-occupancy", label: "Live Visitor Flow" },
+      { id: "crowd-history", label: "Movement summary" },
+      { id: "overview-controls", label: "Time range" },
       { id: "crowd-gate-snapshot", label: "Gate flow" },
       { id: "crowd-mobility-split", label: "Vehicle summary" },
-      { id: "crowd-history", label: "Movement summary" },
-      { id: "crowd-baseline", label: "Busiest visitors" },
+      { id: "crowd-baseline", label: "Peak Moments" },
       { id: "crowd-daily-visitors", label: "Daily visitors" },
     ],
   },
@@ -117,20 +111,20 @@ const DASHBOARD_NAV: DashboardNavSection[] = [
     ],
   },
   {
+    id: "map",
+    label: "Map",
+    description: "Sensor locations and status across Marineterrein.",
+    items: [
+      { id: "map-operational", label: "Operational map" },
+    ],
+  },
+  {
     id: "events",
     label: "Events",
     description: "Planning context from the agenda and public calendar.",
     items: [
       { id: "events-agenda", label: "Agenda" },
       { id: "events-holidays", label: "Holidays" },
-    ],
-  },
-  {
-    id: "map",
-    label: "Map",
-    description: "Sensor locations and status across Marineterrein.",
-    items: [
-      { id: "map-operational", label: "Operational map" },
     ],
   },
 ];
@@ -157,6 +151,8 @@ type EnvironmentTrendPoint = {
   waterTemperature: number | null;
   airTemperature: number | null;
   visitors: number | null;
+  boardwalkVisitors: number | null;
+  picnicVisitors: number | null;
 };
 
 type PresenceZone = {
@@ -192,7 +188,7 @@ type DailyMovementPoint = {
   night: number;
 };
 
-type VehicleCategoryKey = "car" | "bus" | "light_truck" | "truck" | "motorcycle" | "tractor" | "trailer";
+type VehicleCategoryKey = "walking" | "biking" | "running" | "cars" | "heavy_vehicles";
 
 type VehicleCategoryCard = {
   key: string;
@@ -203,14 +199,11 @@ type VehicleCategoryCard = {
 type VehicleChartPoint = {
   time: string;
   total: number;
+  walking: number;
+  biking: number;
+  running: number;
   cars: number;
-  buses: number;
-  lightTrucks: number;
-  trucks: number;
-  motorcycles: number;
-  tractors: number;
-  trailers: number;
-  vehicles: number;
+  heavyVehicles: number;
 };
 
 type SafeDensitySummary = {
@@ -233,13 +226,11 @@ const VEHICLE_CATEGORIES: Array<{
   color: string;
   iconFile: string;
 }> = [
-  { key: "car", dataKey: "cars", label: "Cars", color: MT_COLORS.cyan, iconFile: "Car - Clolor@2x.png" },
-  { key: "bus", dataKey: "buses", label: "Buses", color: MT_COLORS.blue, iconFile: "Bus - Color.png" },
-  { key: "light_truck", dataKey: "lightTrucks", label: "Light trucks", color: MT_COLORS.teal, iconFile: "img_LightTruck.png" },
-  { key: "truck", dataKey: "trucks", label: "Trucks", color: MT_COLORS.coral, iconFile: "img_Truck.png" },
-  { key: "motorcycle", dataKey: "motorcycles", label: "Motorcycles", color: MT_COLORS.yellow, iconFile: "img_Motorcycle.png" },
-  { key: "tractor", dataKey: "tractors", label: "Tractors", color: MT_COLORS.green, iconFile: "img_Tractor.png" },
-  { key: "trailer", dataKey: "trailers", label: "Trailers", color: MT_COLORS.burgundy, iconFile: "img_Trailer.png" },
+  { key: "walking", dataKey: "walking", label: "Walking", color: MT_COLORS.cyan, iconFile: "People - Crossing - Color@2x.png" },
+  { key: "biking", dataKey: "biking", label: "Biking", color: MT_COLORS.teal, iconFile: "People - Bike - Color.png" },
+  { key: "running", dataKey: "running", label: "Running", color: MT_COLORS.blue, iconFile: "People - CrowdSize - Color.png" },
+  { key: "cars", dataKey: "cars", label: "Cars", color: MT_COLORS.coral, iconFile: "Car - Clolor@2x.png" },
+  { key: "heavy_vehicles", dataKey: "heavyVehicles", label: "Heavy vehicles", color: MT_COLORS.burgundy, iconFile: "img_Truck.png" },
 ];
 
 const assetModules = import.meta.glob("../../assets/*.{png,jpg,jpeg,svg,webp,gif,avif}", {
@@ -256,7 +247,15 @@ const assetUrlByFileName = Object.fromEntries(
     .filter((entry): entry is [string, string] => Boolean(entry)),
 );
 
-const VISITOR_DENSITY_CONFIG = {
+// TODO: Provide areaSquareMeters for Boardwalk, Picnic, Terrace, and AMS-Inst to calculate visitor density per m2.
+const VISITOR_DENSITY_CONFIG: Record<string, { areaSquareMeters: number | null }> = {
+  Boardwalk: { areaSquareMeters: null },
+  Picnic: { areaSquareMeters: null },
+  Terrace: { areaSquareMeters: null },
+  "AMS-Inst": { areaSquareMeters: null },
+};
+
+const SAFE_DENSITY_CONFIG = {
   areaSquareMeters: null as number | null,
   safeDensityPeoplePerSquareMeter: null as number | null,
 };
@@ -558,22 +557,6 @@ function SignalCard({
   );
 }
 
-function average(values: Array<number | null>) {
-  const numericValues = values.filter((value): value is number => value !== null);
-  if (!numericValues.length) return null;
-  return numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length;
-}
-
-function minMax(values: Array<number | null>) {
-  const numericValues = values.filter((value): value is number => value !== null);
-  if (!numericValues.length) return { min: null, max: null };
-  return { min: Math.min(...numericValues), max: Math.max(...numericValues) };
-}
-
-function formatTemperature(value: number | null) {
-  return value === null ? "Unavailable" : `${value.toFixed(1)} C`;
-}
-
 function formatLocalDateTime(value: string | null | undefined) {
   if (!value) return "Unavailable";
   const date = new Date(value);
@@ -601,12 +584,6 @@ function environmentStatusColor(status: EnvironmentThresholdStatus) {
   if (status === "orange") return MT_COLORS.coral;
   if (status === "red" || status === "darkRed") return MT_COLORS.burgundy;
   return MT_COLORS.paleBlue;
-}
-
-function alertSeverityFromEnvironmentStatus(status: EnvironmentThresholdStatus): AlertItem["severity"] | null {
-  if (status === "red" || status === "darkRed") return "critical";
-  if (status === "orange" || status === "yellow") return "warning";
-  return null;
 }
 
 function EnvironmentMetricCard({
@@ -690,19 +667,51 @@ function EnvironmentMetricCard({
   );
 }
 
-function EnvironmentTrendCard({ data, visitorError }: { data: EnvironmentTrendPoint[]; visitorError?: string | null }) {
+function EnvironmentTrendCard({
+  data,
+  visitorError,
+  rangeLabel,
+}: {
+  data: EnvironmentTrendPoint[];
+  visitorError?: string | null;
+  rangeLabel: string;
+}) {
   const hasTemperatureData = data.some((point) => point.waterTemperature !== null || point.airTemperature !== null);
   const hasVisitorData = data.some((point) => point.visitors !== null);
+  const boardwalkTotal = data.reduce((sum, point) => sum + (point.boardwalkVisitors ?? 0), 0);
+  const picnicTotal = data.reduce((sum, point) => sum + (point.picnicVisitors ?? 0), 0);
+  const hasBoardwalkTotal = data.some((point) => point.boardwalkVisitors !== null);
+  const hasPicnicTotal = data.some((point) => point.picnicVisitors !== null);
 
   return (
     <Card>
       <CardHeader>
         <SectionTitle
-          title="7-day temperature and visitors"
-          subtitle="Water temperature and air temperature shown together, with stored visitor counts as a secondary line for context."
+          title="Temperature and visitors"
+          subtitle={`Water temperature, air temperature, and visitor context for ${rangeLabel.toLowerCase()}.`}
         />
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[
+            { label: "Boardwalk totals", value: hasBoardwalkTotal ? formatMetricNumber(boardwalkTotal, 0) : "Unavailable" },
+            { label: "Picnic totals", value: hasPicnicTotal ? formatMetricNumber(picnicTotal, 0) : "Unavailable" },
+          ].map((item) => (
+            <div
+              key={item.label}
+              className="rounded-2xl border px-4 py-3"
+              style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+            >
+              <p className="text-[11px] font-medium uppercase tracking-[0.12em]" style={{ color: MAIN_COLORS.aColorGray }}>
+                {item.label}
+              </p>
+              <p className="mt-1 text-lg font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                {item.value}
+              </p>
+            </div>
+          ))}
+        </div>
+        {/* TODO: Provide selected-range HuSense Boardwalk and Picnic visitor time-series fields to populate the location totals above. */}
         {hasTemperatureData || hasVisitorData ? (
           <div className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -729,6 +738,12 @@ function EnvironmentTrendCard({ data, visitorError }: { data: EnvironmentTrendPo
                     if (name === "Visitors" || name === "visitors") {
                       return [`${formatMetricNumber(Number(value))}`, "Visitors"];
                     }
+                    if (name === "Boardwalk totals" || name === "boardwalkVisitors") {
+                      return [`${formatMetricNumber(Number(value))}`, "Boardwalk totals"];
+                    }
+                    if (name === "Picnic totals" || name === "picnicVisitors") {
+                      return [`${formatMetricNumber(Number(value))}`, "Picnic totals"];
+                    }
                     if (name === "Water temperature" || name === "waterTemperature") return [`${Number(value).toFixed(1)} C`, "Water temperature"];
                     return [`${Number(value).toFixed(1)} C`, "Air temperature"];
                   }}
@@ -737,13 +752,15 @@ function EnvironmentTrendCard({ data, visitorError }: { data: EnvironmentTrendPo
                 <Line yAxisId="temp" type="monotone" dataKey="waterTemperature" name="Water temperature" stroke={MT_COLORS.teal} strokeWidth={3} dot={{ r: 3 }} connectNulls />
                 <Line yAxisId="temp" type="monotone" dataKey="airTemperature" name="Air temperature" stroke={MT_COLORS.coral} strokeWidth={3} dot={{ r: 3 }} connectNulls />
                 <Line yAxisId="visitors" type="monotone" dataKey="visitors" name="Visitors" stroke={MT_COLORS.blue} strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls={false} />
+                <Line yAxisId="visitors" type="monotone" dataKey="boardwalkVisitors" name="Boardwalk totals" stroke={MT_COLORS.green} strokeWidth={2} strokeDasharray="3 5" dot={false} connectNulls={false} />
+                <Line yAxisId="visitors" type="monotone" dataKey="picnicVisitors" name="Picnic totals" stroke={MT_COLORS.yellow} strokeWidth={2} strokeDasharray="3 5" dot={false} connectNulls={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
         ) : (
           <ChartPlaceholder
-            title="Temperature trend not available yet"
-            detail={visitorError || "Water and air temperature lines will appear once at least one connected feed returns temperature data."}
+            title="Temperature trend not available"
+            detail={visitorError ? `${EMPTY_RANGE_MESSAGE} ${visitorError}` : EMPTY_RANGE_MESSAGE}
           />
         )}
       </CardContent>
@@ -754,18 +771,35 @@ function EnvironmentTrendCard({ data, visitorError }: { data: EnvironmentTrendPo
 function HusenseMovementSummaryCard({
   summary,
   error,
+  rangeLabel,
+  trafficPoints,
 }: {
   summary: HusenseDashboardSummary | null;
   error?: string | null;
+  rangeLabel: string;
+  trafficPoints: TelraamTrafficPoint[];
 }) {
   const inColor = "#15803d";
   const outColor = "#dc2626";
   const totals = summary?.totals || {};
-  const movementRows = [
-    { label: "People", value: Number(totals.person || 0), color: MT_COLORS.cyan },
-    { label: "Runners", value: Number(totals.runner || 0), color: MT_COLORS.blue },
-    { label: "Bikes", value: Number(totals.bike || 0), color: MT_COLORS.teal },
+  const selectedRangeMovementRows = buildVehicleCategoryCards(trafficPoints).map((card) => {
+    const category = VEHICLE_CATEGORIES.find((item) => item.key === card.key);
+    return {
+      label: card.label,
+      value: card.count ?? 0,
+      color: category?.color || MAIN_COLORS.aColorGray,
+      available: card.count !== null,
+    };
+  });
+  const liveMovementRows = [
+    { label: "Walking", value: Number(totals.person || 0), color: MT_COLORS.cyan, available: summary !== null },
+    { label: "Biking", value: Number(totals.bike || 0), color: MT_COLORS.teal, available: summary !== null },
+    { label: "Running", value: Number(totals.runner || 0), color: MT_COLORS.blue, available: summary !== null },
+    { label: "Cars", value: Number(totals.car || 0), color: MT_COLORS.coral, available: summary !== null && "car" in totals },
+    { label: "Heavy vehicles", value: Number(totals.bus || 0), color: MT_COLORS.burgundy, available: summary !== null && "bus" in totals },
   ];
+  const hasSelectedRangeMovement = trafficPoints.length > 0;
+  const movementRows = hasSelectedRangeMovement ? selectedRangeMovementRows : liveMovementRows;
   const totalMovement = movementRows.reduce((sum, row) => sum + row.value, 0);
   const dominant = movementRows
     .filter((row) => row.value > 0)
@@ -792,7 +826,9 @@ function HusenseMovementSummaryCard({
   const totalEntering = gateDirectionRows.reduce((sum, row) => sum + row.arrivals, 0);
   const totalLeaving = gateDirectionRows.reduce((sum, row) => sum + row.departures, 0);
   const hasDirectionCounts = gateDirectionRows.length > 0;
-  const totalPeopleInMt = hasDirectionCounts
+  const totalPeopleInMt = hasSelectedRangeMovement
+    ? totalMovement
+    : hasDirectionCounts
     ? totalEntering - totalLeaving
     : Number(totals.person || summary?.currentPresence || 0);
   const directionTotals: Array<{
@@ -823,11 +859,11 @@ function HusenseMovementSummaryCard({
       <CardHeader>
         <SectionTitle
           title="Movement summary"
-          subtitle="HuSense classified gates across the Marineterrein captors, using the live gate counts instead of Telraam."
+          subtitle={`Movement categories calculated for ${rangeLabel.toLowerCase()} where historical traffic data is available.`}
         />
       </CardHeader>
       <CardContent className="space-y-4">
-        {summary ? (
+        {hasSelectedRangeMovement || summary ? (
           <>
             <div className="grid gap-3 lg:grid-cols-3">
               <div
@@ -835,13 +871,17 @@ function HusenseMovementSummaryCard({
                 style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
               >
                 <p className="text-[11px] font-medium uppercase tracking-[0.12em]" style={{ color: MAIN_COLORS.aColorGray }}>
-                  Total people in MT
+                  {hasSelectedRangeMovement ? "Selected-range movements" : "Total people in MT"}
                 </p>
                 <p className="mt-2 text-[2rem] font-semibold tracking-[-0.04em]" style={{ color: MAIN_COLORS.aColorBlack }}>
                   {formatMetricNumber(totalPeopleInMt)}
                 </p>
                 <p className="mt-1 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
-                  {hasDirectionCounts ? "HuSense net people today, IN minus OUT" : `HuSense person class, latest update ${formatLocalDateTime(summary.observedAt)}`}
+                  {hasSelectedRangeMovement
+                    ? `Telraam detections for ${rangeLabel.toLowerCase()}`
+                    : hasDirectionCounts
+                      ? "HuSense net people, IN minus OUT"
+                      : `HuSense person class, latest update ${formatLocalDateTime(summary?.observedAt)}`}
                 </p>
               </div>
 
@@ -881,10 +921,10 @@ function HusenseMovementSummaryCard({
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-sm font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                    Current HuSense movement mix
+                    {hasSelectedRangeMovement ? "Selected-range movement mix" : "HuSense movement mix"}
                   </p>
                   <p className="mt-1 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
-                    {dominant ? `${dominant.label} are the main movement type in the selected range.` : "No classified movement stands out in the selected range."}
+                    {dominant ? `${dominant.label} is the main movement type in ${rangeLabel.toLowerCase()}.` : "No movement type stands out in the selected range."}
                   </p>
                 </div>
                 <Pill tone={totalMovement > 0 ? "emerald" : "slate"}>Selected range</Pill>
@@ -914,14 +954,15 @@ function HusenseMovementSummaryCard({
                       {row.label}
                     </p>
                     <p className="mt-2 text-xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                      {formatMetricNumber(row.value)}
+                      {row.available ? formatMetricNumber(row.value) : "Unavailable"}
                     </p>
                     <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                      {totalMovement > 0 ? `${formatMetricNumber((row.value / totalMovement) * 100, 1)}% of selected movement` : "No current share"}
+                      {row.available && totalMovement > 0 ? `${formatMetricNumber((row.value / totalMovement) * 100, 1)}% of selected movement` : "No selected-range share"}
                     </p>
                   </div>
                 ))}
               </div>
+              {/* TODO: Replace the Telraam selected-range proxy with HuSense historical class totals once the API exposes person, bike, runner, car, and heavy vehicle history. */}
             </div>
 
             <div
@@ -975,8 +1016,8 @@ function HusenseMovementSummaryCard({
           </>
         ) : (
           <ChartPlaceholder
-            title="HuSense movement summary not available yet"
-            detail={error || "The HuSense dashboard summary endpoint has not returned live classified gate counts yet."}
+            title="Movement summary not available"
+            detail={error ? `${EMPTY_RANGE_MESSAGE} ${error}` : EMPTY_RANGE_MESSAGE}
           />
         )}
       </CardContent>
@@ -1022,7 +1063,7 @@ function SoundHourlyCard({
     <Card>
       <CardHeader>
         <SectionTitle
-          title="Hourly sound"
+          title="Hourly decibels"
           subtitle={`Average decibels by hour for ${rangeLabel.toLowerCase()}.`}
         />
       </CardHeader>
@@ -1054,8 +1095,8 @@ function SoundHourlyCard({
           </div>
         ) : (
           <ChartPlaceholder
-            title="Hourly sound data not available yet"
-            detail={error || "The sound MQTT store has not returned hourly decibel observations for the selected range."}
+            title="Hourly decibel data not available"
+            detail={error ? `${EMPTY_RANGE_MESSAGE} ${error}` : EMPTY_RANGE_MESSAGE}
           />
         )}
       </CardContent>
@@ -1063,8 +1104,99 @@ function SoundHourlyCard({
   );
 }
 
-function ExternalSensorMapCard() {
+function TimeRangeFilterPanel({
+  range,
+  onRangeChange,
+  selectedTimeRange,
+}: {
+  range: string;
+  onRangeChange: (value: string) => void;
+  selectedTimeRange: DashboardTimeRange;
+}) {
+  return (
+    <div
+      className="rounded-[24px] px-5 py-4 md:px-6 md:py-4"
+      style={{
+        border: "1px solid rgba(196, 210, 223, 0.94)",
+        backgroundImage:
+          `linear-gradient(rgba(249, 251, 253, 0.92), rgba(244, 248, 251, 0.95)), url(${mt_down})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        boxShadow: "0 18px 36px rgba(15, 23, 42, 0.075)",
+      }}
+    >
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "#48657f" }}>
+            Time Range Filter
+          </p>
+          <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em]">Filter the operational view</h2>
+          <p className="mt-1.5 text-sm leading-6" style={{ color: MAIN_COLORS.aColorGray }}>
+            This filter sets the absolute time range for all graphs and summaries below it where the connected source exposes range data.
+          </p>
+        </div>
+
+        <div className="w-full lg:max-w-xs">
+          <SelectLike dark label="Time range" value={range} onChange={onRangeChange} options={timeRangeOptions} />
+        </div>
+      </div>
+
+      <p className="mt-3 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+        Active graph window: {formatRangeWindow(selectedTimeRange)}
+      </p>
+    </div>
+  );
+}
+
+type SensorCatalogItem = ReturnType<typeof getSensorCatalogItems>[number];
+
+function formatSensorCurrentState(
+  sensor: SensorCatalogItem,
+  overview: OpsLiveOverviewResponse,
+  health: OpsHealthResponse | null,
+) {
+  const sourceRecord = sensor.backendSource
+    ? overview.records.find((record) => record.source === sensor.backendSource)
+    : null;
+  const raw = sourceRecord?.raw && typeof sourceRecord.raw === "object"
+    ? sourceRecord.raw as Record<string, unknown>
+    : null;
+  const sourceHealth = sensor.backendSource ? health?.sources[sensor.backendSource] : null;
+  const candidateValue =
+    raw?.state ??
+    raw?.status ??
+    raw?.value ??
+    raw?.currentValue ??
+    raw?.latestValue ??
+    raw?.reading ??
+    sourceRecord?.value ??
+    sourceRecord?.status ??
+    sourceHealth?.status ??
+    sensor.installState;
+
+  if (
+    candidateValue === null ||
+    candidateValue === undefined ||
+    candidateValue === "" ||
+    String(candidateValue).toLowerCase() === "unknown"
+  ) {
+    return "State: unavailable";
+  }
+  if (typeof candidateValue === "number") return sourceRecord?.unit ? `Value: ${candidateValue} ${sourceRecord.unit}` : `Value: ${candidateValue}`;
+  if (typeof candidateValue === "boolean") return `State: ${candidateValue ? "true" : "false"}`;
+  return `State: ${String(candidateValue)}`;
+}
+
+function ExternalSensorMapCard({
+  overview,
+  health,
+}: {
+  overview: OpsLiveOverviewResponse;
+  health: OpsHealthResponse | null;
+}) {
   const sensors = getSensorCatalogItems();
+  const [selectedSensorId, setSelectedSensorId] = useState<string | null>(sensors[0]?.id ?? null);
+  const selectedSensor = sensors.find((sensor) => sensor.id === selectedSensorId) ?? sensors[0] ?? null;
   const shortCategory = (category: string) => {
     if (category.toLowerCase().includes("crowd")) return "Crowd";
     if (category.toLowerCase().includes("environment")) return "Environment";
@@ -1091,9 +1223,25 @@ function ExternalSensorMapCard() {
             referrerPolicy="no-referrer-when-downgrade"
           />
         </div>
+        {selectedSensor ? (
+          <div
+            className="mt-4 rounded-2xl border px-4 py-3"
+            style={{
+              borderColor: `${MT_COLORS.teal}44`,
+              backgroundColor: `${MT_COLORS.teal}0d`,
+            }}
+          >
+            <p className="text-sm font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+              {selectedSensor.name}
+            </p>
+            <p className="mt-1 text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
+              {formatSensorCurrentState(selectedSensor, overview, health)}
+            </p>
+          </div>
+        ) : null}
         <div className="mt-4 space-y-3">
           {(["installed", "planned"] as const).map((state) => {
-            const group = sensors.filter((s) => s.installState === state);
+            const group = sensors.filter((sensor) => sensor.installState === state);
             if (!group.length) return null;
             return (
               <div key={state}>
@@ -1101,29 +1249,43 @@ function ExternalSensorMapCard() {
                   {state === "installed" ? "Active sensors" : "Planned"}
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  {group.map((sensor) => (
-                    <div
-                      key={sensor.id}
-                      className="flex items-center gap-2.5 rounded-xl border px-3 py-2.5"
-                      style={{
-                        borderColor: state === "installed" ? `${MT_COLORS.teal}44` : `${MAIN_COLORS.aColor1}1a`,
-                        backgroundColor: state === "installed" ? `${MT_COLORS.teal}0d` : "rgba(255,255,255,0.6)",
-                      }}
-                    >
-                      <span
-                        className="inline-block h-2 w-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: state === "installed" ? MT_COLORS.teal : MT_COLORS.muted }}
-                      />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
-                          {sensor.name}
-                        </p>
-                        <p className="text-[11px]" style={{ color: MAIN_COLORS.aColorGray }}>
-                          {shortCategory(sensor.category)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                  {group.map((sensor) => {
+                    const isSelected = sensor.id === selectedSensor?.id;
+
+                    return (
+                      <button
+                        key={sensor.id}
+                        type="button"
+                        onClick={() => setSelectedSensorId(sensor.id)}
+                        className="flex min-w-0 items-start gap-2.5 rounded-xl border px-3 py-2.5 text-left transition"
+                        style={{
+                          borderColor: isSelected
+                            ? `${MT_COLORS.teal}66`
+                            : state === "installed"
+                              ? `${MT_COLORS.teal}44`
+                              : `${MAIN_COLORS.aColor1}1a`,
+                          backgroundColor: isSelected
+                            ? `${MT_COLORS.teal}14`
+                            : state === "installed"
+                              ? `${MT_COLORS.teal}0d`
+                              : "rgba(255,255,255,0.6)",
+                        }}
+                      >
+                        <span
+                          className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: state === "installed" ? MT_COLORS.teal : MT_COLORS.muted }}
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
+                            {sensor.name}
+                          </span>
+                          <span className="mt-0.5 block text-[11px]" style={{ color: MAIN_COLORS.aColorGray }}>
+                            {isSelected ? formatSensorCurrentState(sensor, overview, health) : shortCategory(sensor.category)}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -1176,7 +1338,7 @@ function VehicleSummaryCard({
       <CardHeader>
         <SectionTitle
           title="Vehicle summary"
-          subtitle={`Telraam vehicle category shares for ${rangeLabel.toLowerCase()}.`}
+          subtitle={`Selected-range movement categories from Telraam for ${rangeLabel.toLowerCase()}.`}
         />
       </CardHeader>
       <CardContent className="space-y-4">
@@ -1199,7 +1361,7 @@ function VehicleSummaryCard({
                     formatter={(value, name) => [`${formatMetricNumber(Number(value), 1)}%`, String(name)]}
                     labelFormatter={(label, payload) => {
                       const total = Number(payload?.[0]?.payload?.total || 0);
-                      return `${label} / ${formatMetricNumber(total)} vehicles`;
+                      return `${label} / ${formatMetricNumber(total)} movements`;
                     }}
                   />
                   {hasCategoryBreakdown ? (
@@ -1219,7 +1381,7 @@ function VehicleSummaryCard({
               </ResponsiveContainer>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
               {VEHICLE_CATEGORIES.map((category) => (
                 <div key={category.key} className="flex min-w-0 items-center gap-2 text-sm">
                   <VehicleTypeIcon iconFile={category.iconFile} color={category.color} />
@@ -1230,7 +1392,7 @@ function VehicleSummaryCard({
               ))}
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               {visibleCategoryCards.map((card) => (
                 (() => {
                   const category = VEHICLE_CATEGORIES.find((item) => item.key === card.key);
@@ -1248,10 +1410,10 @@ function VehicleSummaryCard({
                     </p>
                   </div>
                   <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                    {card.count === null ? "Unavailable" : `${formatMetricNumber(card.count, 1)}%`}
+                    {card.count === null ? "Unavailable" : formatMetricNumber(card.count, 0)}
                   </p>
                   <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                    Share of selected-range Telraam vehicles
+                    Selected-range detections
                   </p>
                 </div>
                   );
@@ -1261,8 +1423,8 @@ function VehicleSummaryCard({
           </>
         ) : (
           <ChartPlaceholder
-            title="Vehicle summary not available yet"
-            detail={error || "Telraam vehicle summary data has not returned category counts for the selected range yet."}
+            title="Vehicle summary not available"
+            detail={error ? `${EMPTY_RANGE_MESSAGE} ${error}` : EMPTY_RANGE_MESSAGE}
           />
         )}
       </CardContent>
@@ -1272,13 +1434,23 @@ function VehicleSummaryCard({
 
 function VisitorBusynessRows({ cards }: { cards: OccupancyCardModel[] }) {
   const labels = ["Boardwalk", "Picnic", "Terrace"];
-  const rows = labels.map((label, index) => ({ label, value: cards[index]?.visitors ?? null }));
-  const maxValue = Math.max(1, ...rows.map((row) => row.value ?? 0));
+  const rows = labels.map((label) => {
+    const card = cards.find((item) => normalizeLookupLabel(item.zone).includes(normalizeLookupLabel(label)));
+    const areaSquareMeters = VISITOR_DENSITY_CONFIG[label]?.areaSquareMeters ?? null;
+    const visitors = card?.visitors ?? null;
+
+    return {
+      label,
+      visitors,
+      density: visitors !== null && areaSquareMeters ? visitors / areaSquareMeters : null,
+    };
+  });
+  const maxValue = Math.max(1, ...rows.map((row) => row.density ?? 0));
 
   if (!cards.length) {
     return (
       <div className="mt-3 rounded-xl border px-3 py-2 text-xs" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, color: MAIN_COLORS.aColorGray }}>
-        Busyness values unavailable
+        Density values unavailable
       </div>
     );
   }
@@ -1290,14 +1462,14 @@ function VisitorBusynessRows({ cards }: { cards: OccupancyCardModel[] }) {
           <div className="flex items-center justify-between gap-3 text-xs">
             <span style={{ color: MAIN_COLORS.aColorGray }}>{row.label}</span>
             <span className="font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-              {row.value === null ? "Unavailable" : formatMetricNumber(row.value)}
+              {row.density === null ? "Unavailable" : `${formatMetricNumber(row.density, 2)} / m²`}
             </span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
             <div
               className="h-full rounded-full"
               style={{
-                width: row.value === null ? "0%" : `${Math.min(100, (row.value / maxValue) * 100)}%`,
+                width: row.density === null ? "0%" : `${Math.min(100, (row.density / maxValue) * 100)}%`,
                 backgroundColor: MT_COLORS.teal,
               }}
             />
@@ -1308,34 +1480,63 @@ function VisitorBusynessRows({ cards }: { cards: OccupancyCardModel[] }) {
   );
 }
 
-function BusiestVisitorCountSummary({ summary }: { summary: HusenseDashboardSummary | null }) {
-  const observedTimes = (summary?.gates || [])
-    .map((gate) => gate.observedAt)
-    .filter((value): value is string => Boolean(value))
-    .sort();
-  const latestObservedAt = observedTimes.length ? observedTimes[observedTimes.length - 1] : summary?.observedAt || null;
+function BusiestVisitorCountSummary({
+  points,
+  error,
+  rangeLabel,
+}: {
+  points: TelraamTrafficPoint[];
+  error?: string | null;
+  rangeLabel: string;
+}) {
+  const peakRows = [...points]
+    .map((point) => ({
+      recordedAt: point.recorded_at,
+      visitors: Number(point.pedestrian_count || 0) + Number(point.bicycle_count || 0) + Number(point.night_count || 0),
+    }))
+    .filter((point) => Number.isFinite(point.visitors))
+    .sort((left, right) => right.visitors - left.visitors)
+    .slice(0, 3);
+  // TODO: Replace this Telraam visitor-flow proxy with stored HuSense visitor snapshots when a historical visitor time-series is available.
 
   return (
     <Card>
       <CardHeader>
-        <SectionTitle
-          title="Busiest visitor count summary"
-          subtitle="Historical busiest-period tracking needs stored HuSense snapshots, not only the latest live payload."
-        />
+        <div className="flex items-start justify-between gap-3">
+          <SectionTitle
+            title="Peak Moments"
+            subtitle={`The busiest visitor counts recorded within ${rangeLabel.toLowerCase()}, showing when the Marineterrein was at its most active.`}
+          />
+          <InfoHint label="The busiest visitor counts recorded within the selected time range, showing when the Marineterrein was at its most active." />
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <ChartPlaceholder
-          title="Busiest visitor history not available yet"
-          detail="Right now the dashboard only receives the latest HuSense classified gate data. To calculate busiest days or hours, we need either a HuSense historical endpoint or a local job that stores snapshots over time."
-        />
-        {latestObservedAt ? (
-          <div
-            className="rounded-2xl border px-4 py-3 text-sm"
-            style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8`, color: MAIN_COLORS.aColorGray }}
-          >
-            Latest available HuSense visitor payload: {formatLocalDateTime(latestObservedAt)}.
+        {peakRows.length ? (
+          <div className="grid gap-3 md:grid-cols-3">
+            {peakRows.map((row, index) => (
+              <div
+                key={`${row.recordedAt}-${index}`}
+                className="rounded-2xl border p-4"
+                style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
+              >
+                <p className="text-[11px] font-medium uppercase tracking-[0.12em]" style={{ color: MAIN_COLORS.aColorGray }}>
+                  Peak {index + 1}
+                </p>
+                <p className="mt-2 text-2xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
+                  {formatMetricNumber(row.visitors, 0)}
+                </p>
+                <p className="mt-1 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
+                  {formatLocalDateTime(row.recordedAt)}
+                </p>
+              </div>
+            ))}
           </div>
-        ) : null}
+        ) : (
+          <ChartPlaceholder
+            title="Peak moments not available"
+            detail={error ? `${EMPTY_RANGE_MESSAGE} ${error}` : EMPTY_RANGE_MESSAGE}
+          />
+        )}
       </CardContent>
     </Card>
   );
@@ -1605,14 +1806,14 @@ function buildOccupancyCards(zones: PresenceZone[], summary: HusenseDashboardSum
 function buildOccupancyInsight(zones: OccupancyCardModel[], error: string | null) {
   if (!zones.length) {
     return error
-      ? "Visitor summary is unavailable because the Husense backend feed could not be loaded."
-      : "Visitor summary will appear when the Husense backend returns live zone readings.";
+      ? "Live Visitor Flow is unavailable because the Husense backend feed could not be loaded."
+      : "Live Visitor Flow will appear when the Husense backend returns live zone readings.";
   }
 
   const busiest = [...zones].sort((left, right) => right.density - left.density || right.visitors - left.visitors)[0];
   const comparison = `${formatMetricNumber(busiest.density, 1)}% of detected people`;
 
-  return `${busiest.zone} is currently the busiest live Husense zone at ${comparison}.`;
+  return `${busiest.zone} has the highest HuSense zone share at ${comparison}.`;
 }
 
 function startOfLocalWeek(date: Date) {
@@ -1653,12 +1854,6 @@ function resolveDashboardTimeRange(range: string): DashboardTimeRange {
 }
 
 function buildTrafficRangeRequest(range: DashboardTimeRange): TrafficRangeRequest {
-  if (range.label === "Past 3 hours") {
-    return {
-      lookbackHours: range.lookbackHours,
-    };
-  }
-
   return {
     lookbackHours: range.lookbackHours,
     start: range.start.toISOString(),
@@ -1675,11 +1870,56 @@ function formatRangeWindow(range: DashboardTimeRange) {
   return `${range.start.toLocaleString([], options)} to ${range.end.toLocaleString([], options)}`;
 }
 
-function vehicleCategoryValue(point: TelraamTrafficPoint, key: VehicleCategoryKey) {
+function hasTrafficField(point: TelraamTrafficPoint, field: string) {
   const record = point as TelraamTrafficPoint & Record<string, unknown>;
-  const value = record[`${key}_count`];
+  return Object.prototype.hasOwnProperty.call(record, field);
+}
+
+function readTrafficField(point: TelraamTrafficPoint, field: string) {
+  const record = point as TelraamTrafficPoint & Record<string, unknown>;
+  const value = record[field];
   const numeric = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function sumTrafficFields(points: TelraamTrafficPoint[], fields: string[]) {
+  return points.reduce(
+    (sum, point) => sum + fields.reduce((fieldSum, field) => fieldSum + (readTrafficField(point, field) ?? 0), 0),
+    0,
+  );
+}
+
+function buildTelraamRangeModeSplit(points: TelraamTrafficPoint[]): BreakdownChartPoint[] {
+  const heavyVehicleTotal = sumTrafficFields(points, ["bus_count", "light_truck_count", "truck_count", "tractor_count", "trailer_count"]);
+  const rows: BreakdownChartPoint[] = [
+    { label: "Pedestrians", value: sumTrafficFields(points, ["pedestrian_count", "night_count"]) },
+    { label: "Bicycles", value: sumTrafficFields(points, ["bicycle_count"]) },
+    { label: "Cars", value: sumTrafficFields(points, ["car_count"]) },
+    { label: "Heavy vehicles", value: heavyVehicleTotal },
+  ];
+
+  return rows.sort((left, right) => right.value - left.value || left.label.localeCompare(right.label));
+}
+
+function vehicleCategoryValue(point: TelraamTrafficPoint, key: VehicleCategoryKey) {
+  if (key === "walking") return { value: Number(point.pedestrian_count || 0) + Number(point.night_count || 0), available: true };
+  if (key === "biking") return { value: Number(point.bicycle_count || 0), available: true };
+
+  // TODO: Add a running_count field to Telraam traffic rows or provide a HuSense historical running endpoint for the selected time range.
+  if (key === "running") return { value: 0, available: false };
+
+  if (key === "cars") {
+    return {
+      value: readTrafficField(point, "car_count") ?? 0,
+      available: hasTrafficField(point, "car_count"),
+    };
+  }
+
+  // TODO: Confirm which Telraam fields should define heavy vehicles if the backend adds more classes beyond bus/light_truck/truck/tractor/trailer.
+  const heavyFields = ["bus_count", "light_truck_count", "truck_count", "tractor_count", "trailer_count"];
+  const available = heavyFields.some((field) => hasTrafficField(point, field));
+  const value = heavyFields.reduce((sum, field) => sum + (readTrafficField(point, field) ?? 0), 0);
+  return { value, available };
 }
 
 function buildVehicleChart(points: TelraamTrafficPoint[]): VehicleChartPoint[] {
@@ -1687,14 +1927,11 @@ function buildVehicleChart(points: TelraamTrafficPoint[]): VehicleChartPoint[] {
     string,
     {
       label: string;
+      walking: number;
+      biking: number;
+      running: number;
       cars: number;
-      buses: number;
-      lightTrucks: number;
-      trucks: number;
-      motorcycles: number;
-      tractors: number;
-      trailers: number;
-      vehicles: number;
+      heavyVehicles: number;
     }
   >();
 
@@ -1705,87 +1942,69 @@ function buildVehicleChart(points: TelraamTrafficPoint[]): VehicleChartPoint[] {
     const key = formatDateKey(recordedAt);
     const current = byDay.get(key) || {
       label: recordedAt.toLocaleDateString([], { month: "short", day: "numeric" }),
+      walking: 0,
+      biking: 0,
+      running: 0,
       cars: 0,
-      buses: 0,
-      lightTrucks: 0,
-      trucks: 0,
-      motorcycles: 0,
-      tractors: 0,
-      trailers: 0,
-      vehicles: 0,
+      heavyVehicles: 0,
     };
 
-    current.cars += vehicleCategoryValue(point, "car") ?? 0;
-    current.buses += vehicleCategoryValue(point, "bus") ?? 0;
-    current.lightTrucks += vehicleCategoryValue(point, "light_truck") ?? 0;
-    current.trucks += vehicleCategoryValue(point, "truck") ?? 0;
-    current.motorcycles += vehicleCategoryValue(point, "motorcycle") ?? 0;
-    current.tractors += vehicleCategoryValue(point, "tractor") ?? 0;
-    current.trailers += vehicleCategoryValue(point, "trailer") ?? 0;
-    current.vehicles += Number(point.vehicle_count || 0);
+    current.walking += vehicleCategoryValue(point, "walking").value;
+    current.biking += vehicleCategoryValue(point, "biking").value;
+    current.running += vehicleCategoryValue(point, "running").value;
+    current.cars += vehicleCategoryValue(point, "cars").value;
+    current.heavyVehicles += vehicleCategoryValue(point, "heavy_vehicles").value;
     byDay.set(key, current);
   }
 
   return [...byDay.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([, day]) => {
-      const categoryTotal =
-        day.cars +
-        day.buses +
-        day.lightTrucks +
-        day.trucks +
-        day.motorcycles +
-        day.tractors +
-        day.trailers;
-      const total = categoryTotal || day.vehicles;
+      const total = day.walking + day.biking + day.running + day.cars + day.heavyVehicles;
       const share = (value: number) => (total > 0 ? Number(((value / total) * 100).toFixed(1)) : 0);
 
       return {
         time: day.label,
         total,
+        walking: share(day.walking),
+        biking: share(day.biking),
+        running: share(day.running),
         cars: share(day.cars),
-        buses: share(day.buses),
-        lightTrucks: share(day.lightTrucks),
-        trucks: share(day.trucks),
-        motorcycles: share(day.motorcycles),
-        tractors: share(day.tractors),
-        trailers: share(day.trailers),
-        vehicles: total,
+        heavyVehicles: share(day.heavyVehicles),
       };
     });
 }
 
 function buildVehicleCategoryCards(points: TelraamTrafficPoint[]): VehicleCategoryCard[] {
-  const totals = VEHICLE_CATEGORIES.reduce<Record<VehicleCategoryKey, number>>(
+  const totals = VEHICLE_CATEGORIES.reduce<Record<VehicleCategoryKey, { value: number; available: boolean }>>(
     (summary, category) => {
-      summary[category.key] = 0;
+      summary[category.key] = { value: 0, available: false };
       return summary;
     },
-    {} as Record<VehicleCategoryKey, number>,
+    {} as Record<VehicleCategoryKey, { value: number; available: boolean }>,
   );
-  let total = 0;
 
   for (const point of points) {
     for (const category of VEHICLE_CATEGORIES) {
-      const value = vehicleCategoryValue(point, category.key) ?? 0;
-      totals[category.key] += value;
-      total += value;
+      const reading = vehicleCategoryValue(point, category.key);
+      totals[category.key].value += reading.value;
+      totals[category.key].available ||= reading.available;
     }
   }
 
   return VEHICLE_CATEGORIES.map((category) => {
-    const share = total > 0 ? (totals[category.key] / total) * 100 : null;
+    const summary = totals[category.key];
 
     return {
       key: category.key,
       label: category.label,
-      count: share === null ? null : Number(share.toFixed(1)),
+      count: summary.available ? summary.value : null,
     };
   });
 }
 
 function buildSafeDensitySummary(totalVisitors: number): SafeDensitySummary | null {
-  const { areaSquareMeters, safeDensityPeoplePerSquareMeter } = VISITOR_DENSITY_CONFIG;
+  const { areaSquareMeters, safeDensityPeoplePerSquareMeter } = SAFE_DENSITY_CONFIG;
   if (!areaSquareMeters || !safeDensityPeoplePerSquareMeter) return null;
 
   const capacity = areaSquareMeters * safeDensityPeoplePerSquareMeter;
@@ -1829,18 +2048,12 @@ function buildDailyMovementTrend(points: TelraamTrafficPoint[], range: Dashboard
 function buildEnvironmentTrend(
   overview: OpsLiveOverviewResponse,
   visitorHistory: VisitorHistoryPoint[],
+  range: DashboardTimeRange,
 ): EnvironmentTrendPoint[] {
   const waterRecord = getRecord(overview, "water", "water_temperature_c");
   const airRecord = getRecord(overview, "weather", "temperature_c");
   const waterCurrent = numberFromRecord(waterRecord);
   const airCurrent = numberFromRecord(airRecord);
-  const waterHistory = (waterRecord?.raw &&
-    typeof waterRecord.raw === "object" &&
-    "history" in waterRecord.raw &&
-    waterRecord.raw.history &&
-    typeof waterRecord.raw.history === "object"
-      ? waterRecord.raw.history
-      : null) as { trailingWeekAvg?: number | null; yesterdayAvg?: number | null } | null;
   const waterDailyHistory = (waterRecord?.raw &&
     typeof waterRecord.raw === "object" &&
     "dailyHistory" in waterRecord.raw &&
@@ -1855,11 +2068,17 @@ function buildEnvironmentTrend(
       ? airRecord.raw.weeklyRange
       : null) as { min?: number | null; max?: number | null; days?: { date: string; avg?: number | null; min?: number | null; max?: number | null }[] } | null;
   const trend: EnvironmentTrendPoint[] = [];
+  const startKey = formatDateKey(range.start);
+  const endKey = formatDateKey(range.end);
+  const includeDailyHistory = range.lookbackHours >= 20;
+  const includesNow = Math.abs(range.end.getTime() - Date.now()) < 5 * 60 * 1000;
+  const dateKeyInRange = (dateKey: string) => dateKey >= startKey && dateKey <= endKey;
 
-  if ((Array.isArray(weeklyRange?.days) && weeklyRange.days.length) || waterDailyHistory.length || visitorHistory.length) {
+  if ((includeDailyHistory && Array.isArray(weeklyRange?.days) && weeklyRange.days.length) || (includeDailyHistory && waterDailyHistory.length) || visitorHistory.length) {
     const byDate = new Map<string, EnvironmentTrendPoint>();
 
     for (const day of weeklyRange?.days || []) {
+      if (!includeDailyHistory || !dateKeyInRange(day.date)) continue;
       byDate.set(day.date, {
         day: new Date(`${day.date}T00:00:00`).toLocaleDateString([], { month: "short", day: "numeric" }),
         waterTemperature: null,
@@ -1870,15 +2089,20 @@ function buildEnvironmentTrend(
               ? (day.min + day.max) / 2
               : null,
         visitors: null,
+        boardwalkVisitors: null,
+        picnicVisitors: null,
       });
     }
 
     for (const day of waterDailyHistory) {
+      if (!includeDailyHistory || !dateKeyInRange(day.date)) continue;
       const existing = byDate.get(day.date) || {
         day: new Date(`${day.date}T00:00:00`).toLocaleDateString([], { month: "short", day: "numeric" }),
         waterTemperature: null,
         airTemperature: null,
         visitors: null,
+        boardwalkVisitors: null,
+        picnicVisitors: null,
       };
 
       existing.waterTemperature =
@@ -1893,12 +2117,16 @@ function buildEnvironmentTrend(
     for (const day of visitorHistory) {
       const dateKey = String(day.bucket || "").slice(0, 10);
       if (!dateKey) continue;
+      const bucketDate = new Date(`${dateKey}T12:00:00`);
+      if (!Number.isNaN(bucketDate.getTime()) && (bucketDate < range.start || bucketDate > range.end)) continue;
 
       const existing = byDate.get(dateKey) || {
         day: new Date(`${dateKey}T00:00:00`).toLocaleDateString([], { month: "short", day: "numeric" }),
         waterTemperature: null,
         airTemperature: null,
         visitors: null,
+        boardwalkVisitors: null,
+        picnicVisitors: null,
       };
       const visitors = Number(day.visitors);
       existing.visitors = Number.isFinite(visitors) ? visitors : null;
@@ -1906,98 +2134,20 @@ function buildEnvironmentTrend(
     }
 
     trend.push(...[...byDate.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, point]) => point));
-  } else {
-    if (typeof waterHistory?.trailingWeekAvg === "number" || typeof weeklyRange?.min === "number") {
-      trend.push({
-        day: "7d low",
-        waterTemperature: waterHistory?.trailingWeekAvg ?? null,
-        airTemperature: weeklyRange?.min ?? null,
-        visitors: null,
-      });
-    }
-
-    if (typeof waterHistory?.yesterdayAvg === "number" || typeof weeklyRange?.max === "number") {
-      trend.push({
-        day: "7d high",
-        waterTemperature: waterHistory?.yesterdayAvg ?? null,
-        airTemperature: weeklyRange?.max ?? null,
-        visitors: null,
-      });
-    }
   }
 
-  if (waterCurrent !== null || airCurrent !== null) {
+  if (includesNow && (waterCurrent !== null || airCurrent !== null)) {
     trend.push({
       day: "Now",
       waterTemperature: waterCurrent,
       airTemperature: airCurrent,
       visitors: null,
+      boardwalkVisitors: null,
+      picnicVisitors: null,
     });
   }
 
   return trend;
-}
-
-function getWaterHistoryStats(overview: OpsLiveOverviewResponse) {
-  const waterRecord = getRecord(overview, "water", "water_temperature_c");
-  return (waterRecord?.raw &&
-    typeof waterRecord.raw === "object" &&
-    "history" in waterRecord.raw &&
-    waterRecord.raw.history &&
-    typeof waterRecord.raw.history === "object"
-      ? waterRecord.raw.history
-      : null) as
-    | {
-        trailingWeekAvg?: number | null;
-        trailingWeekMin?: number | null;
-        trailingWeekMax?: number | null;
-      }
-    | null;
-}
-
-function ThresholdField({
-  label,
-  value,
-  unit,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  unit: string;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium uppercase tracking-[0.14em]" style={{ color: MAIN_COLORS.aColorGray }}>
-        {label}
-      </span>
-      <div
-        className="flex items-center gap-2 rounded-2xl border px-3 py-2.5"
-        style={{
-          borderColor: `${MAIN_COLORS.aColor1}33`,
-          backgroundColor: `${MAIN_COLORS.aColorWhite}b8`,
-        }}
-      >
-        <input
-          type="number"
-          value={value}
-          onChange={(event) => onChange(Number(event.target.value) || 0)}
-          className="w-full bg-transparent text-sm outline-none"
-          style={{ color: MAIN_COLORS.aColorBlack }}
-        />
-        <span className="text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-          {unit}
-        </span>
-      </div>
-    </label>
-  );
-}
-
-function matchesZoneSelection(selection: string, alertZone: string) {
-  if (selection === "All locations") return true;
-  const normalizedSelection = selection.toLowerCase();
-  const normalizedZone = alertZone.toLowerCase();
-  return normalizedZone.includes(normalizedSelection) || normalizedSelection.includes(normalizedZone);
 }
 
 type HolidayItem = {
@@ -2013,13 +2163,7 @@ type HolidayItem = {
 };
 
 export function OperationsDashboard() {
-  const [zone, setZone] = useState("All locations");
-  const [category, setCategory] = useState(sensorCategories[0]);
-  const [severity, setSeverity] = useState("All severities");
   const [range, setRange] = useState("Past 3 hours");
-  const [mode, setMode] = useState("Live");
-  const [flowThreshold, setFlowThreshold] = useState(150);
-  const [anomalyThreshold, setAnomalyThreshold] = useState(20);
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
   const [holidaysLoading, setHolidaysLoading] = useState(true);
   const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([]);
@@ -2107,7 +2251,7 @@ export function OperationsDashboard() {
 
     async function loadVisitorHistory() {
       try {
-        const history = await fetchVisitorHistory("7d");
+        const history = await fetchVisitorHistory(trafficRangeRequest);
         if (!cancelled) {
           setVisitorHistory(Array.isArray(history.rows) ? history.rows : []);
           setVisitorHistoryError(null);
@@ -2128,14 +2272,14 @@ export function OperationsDashboard() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [trafficRangeRequest]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadSoundHourly() {
       try {
-        const rows = await fetchSoundHourly(selectedTimeRange.lookbackHours);
+        const rows = await fetchSoundHourly(trafficRangeRequest);
         if (!cancelled) {
           setSoundHourly(rows);
           setSoundHourlyError(null);
@@ -2156,7 +2300,7 @@ export function OperationsDashboard() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [selectedTimeRange.lookbackHours]);
+  }, [trafficRangeRequest]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2231,6 +2375,7 @@ export function OperationsDashboard() {
   const husenseDirectionCounts = useMemo(() => {
     if (!husenseSummary?.gates?.length) return null;
 
+    // TODO: On-Site Now requires person arrivals and departures for all 3 entrances in husenseSummary.gates[].modeCounts.person.
     return husenseSummary.gates.reduce(
       (totals, gate) => ({
         ins: totals.ins + Number(gate.modeCounts?.person?.arrivals ?? 0),
@@ -2257,22 +2402,7 @@ export function OperationsDashboard() {
   const waterSummary = useMemo(() => deriveWaterSummary(overview, health), [overview, health]);
   const soundSummary = useMemo(() => deriveSoundSummary(overview, health), [overview, health]);
   const dailyMovementTrend = useMemo(() => buildDailyMovementTrend(telraamHistory, selectedTimeRange), [telraamHistory, selectedTimeRange]);
-  const environmentTrend = useMemo(() => buildEnvironmentTrend(overview, visitorHistory), [overview, visitorHistory]);
-  const waterHistoryStats = useMemo(() => getWaterHistoryStats(overview), [overview]);
-  const waterTemperatureValues = environmentTrend.map((point) => point.waterTemperature);
-  const airTemperatureValues = environmentTrend.map((point) => point.airTemperature);
-  const waterTemperatureRange = minMax(waterTemperatureValues);
-  const airTemperatureRange = minMax(airTemperatureValues);
-  const waterTemperatureStats = [
-    { label: "7-day average", value: formatTemperature(waterHistoryStats?.trailingWeekAvg ?? average(waterTemperatureValues)) },
-    { label: "7-day min", value: formatTemperature(waterHistoryStats?.trailingWeekMin ?? waterTemperatureRange.min) },
-    { label: "7-day max", value: formatTemperature(waterHistoryStats?.trailingWeekMax ?? waterTemperatureRange.max) },
-  ];
-  const airTemperatureStats = [
-    { label: "7-day average", value: formatTemperature(average(airTemperatureValues)) },
-    { label: "7-day min", value: formatTemperature(airTemperatureRange.min) },
-    { label: "7-day max", value: formatTemperature(airTemperatureRange.max) },
-  ];
+  const environmentTrend = useMemo(() => buildEnvironmentTrend(overview, visitorHistory, selectedTimeRange), [overview, visitorHistory, selectedTimeRange]);
   const soundFeedConnected = soundSummary.value !== "Unavailable";
   const soundLevelRecord = getRecord(overview, "sound", "sound_level_db");
   const soundLevelValue = numberFromRecord(soundLevelRecord);
@@ -2283,6 +2413,10 @@ export function OperationsDashboard() {
   const humidityRecord = getMetricRecord(overview, ["humidity", "relative_humidity", "humidity_pct"]);
   const humidityValue = numberFromRecord(humidityRecord);
   const humidityThreshold = getEnvironmentThreshold("humidity", humidityValue);
+  const pm25Record = getMetricRecord(overview, ["pm25", "pm2_5", "pm_25", "pm2_5_ug_m3"]);
+  const pm25Value = numberFromRecord(pm25Record);
+  const pm10Record = getMetricRecord(overview, ["pm10", "pm_10", "pm10_ug_m3"]);
+  const pm10Value = numberFromRecord(pm10Record);
   const no2Record = getMetricRecord(overview, ["no2", "no2_ug_m3", "nitrogen_dioxide"]);
   const no2Value = numberFromRecord(no2Record);
   const no2Threshold = getEnvironmentThreshold("no2", no2Value);
@@ -2291,33 +2425,36 @@ export function OperationsDashboard() {
   const aqiThreshold = getEnvironmentThreshold("aqi", aqiValue);
   const co2Record = getMetricRecord(overview, ["co2", "co2_ppm", "carbon_dioxide"]);
   const co2Value = numberFromRecord(co2Record);
-  const hasAirQualityReading = (aqiValue !== null && aqiValue !== 0) || (no2Value !== null && no2Value !== 0);
-  const soundStats = soundFeedConnected ? soundSummary.stats || [] : [];
+  const primaryAirQualityReading =
+    aqiValue !== null
+      ? { label: "AQI", value: aqiValue, display: aqiValue.toFixed(0), helper: aqiThreshold.label, threshold: aqiThreshold }
+      : pm25Value !== null
+        ? { label: "PM2.5", value: pm25Value, display: `${pm25Value.toFixed(1)} ${pm25Record?.unit || "ug/m3"}`, helper: "PM2.5 particulate reading", threshold: undefined }
+        : pm10Value !== null
+          ? { label: "PM10", value: pm10Value, display: `${pm10Value.toFixed(1)} ${pm10Record?.unit || "ug/m3"}`, helper: "PM10 particulate reading", threshold: undefined }
+          : no2Value !== null && no2Value !== 0
+            ? { label: "NO2", value: no2Value, display: `${no2Value.toFixed(0)} ${no2Record?.unit || "ug/m3"}`, helper: "NO2 pollutant-specific threshold", threshold: no2Threshold }
+            : null;
+  const hasAirQualityReading = primaryAirQualityReading !== null;
+  const waterTemperatureStats = waterSummary.stats || [];
+  const airTemperatureStats = airTemperatureValue !== null ? [{ label: "Status", value: airTemperatureThreshold.label }] : [];
   const humidityStats = humidityValue !== null ? [{ label: "Status", value: humidityThreshold.label }] : [];
   const airQualityStats = [
     aqiValue !== null ? { label: "AQI", value: aqiValue.toFixed(0) } : null,
-    no2Value !== null && no2Value !== 0 && aqiValue === null
+    pm25Value !== null ? { label: "PM2.5", value: `${pm25Value.toFixed(1)} ${pm25Record?.unit || "ug/m3"}` } : null,
+    pm10Value !== null ? { label: "PM10", value: `${pm10Value.toFixed(1)} ${pm10Record?.unit || "ug/m3"}` } : null,
+    no2Value !== null && no2Value !== 0
       ? { label: "NO2", value: `${no2Value.toFixed(0)} ${no2Record?.unit || "ug/m3"}` }
       : null,
     co2Value !== null ? { label: "CO2 context", value: `${co2Value.toFixed(0)} ${co2Record?.unit || "ppm"}` } : null,
   ].filter((item): item is { label: string; value: string } => Boolean(item));
-  const airQualityValue =
-    aqiValue !== null
-      ? aqiValue.toFixed(0)
-      : hasAirQualityReading
-        ? `${no2Value!.toFixed(0)} ${no2Record?.unit || "ug/m3"}`
-        : "Unavailable";
+  const airQualityValue = primaryAirQualityReading?.display || "Unavailable";
   const airQualityHelper =
-    aqiValue !== null
-      ? aqiThreshold.label
-      : hasAirQualityReading
-      ? "NO2 pollutant-specific threshold"
-      : co2Value !== null
+    primaryAirQualityReading?.helper ||
+    (co2Value !== null
         ? getEnvironmentThreshold("co2", co2Value).message
-        : "Sensor feed not connected yet";
-  const anomalyChart = useMemo(() => deriveAnomalyChart(telraamHistory), [telraamHistory]);
-  const telraamTrendChart = useMemo(() => deriveTelraamTrendChart(telraamHistory), [telraamHistory]);
-  const telraamLiveModeSplitChart = useMemo(() => deriveTelraamLiveModeSplitChart(overview), [overview]);
+        : "Sensor feed not connected yet");
+  const telraamRangeModeSplitChart = useMemo(() => buildTelraamRangeModeSplit(telraamHistory), [telraamHistory]);
   const vehicleChart = useMemo(() => buildVehicleChart(telraamHistory), [telraamHistory]);
   const vehicleCategoryCards = useMemo(() => buildVehicleCategoryCards(telraamHistory), [telraamHistory]);
   const visibleOccupancyZones = useMemo(
@@ -2330,125 +2467,6 @@ export function OperationsDashboard() {
     () => buildSafeDensitySummary(occupancyCards.reduce((sum, card) => sum + card.visitors, 0)),
     [occupancyCards],
   );
-  const latestAnomaly = anomalyChart.length ? anomalyChart[anomalyChart.length - 1] : undefined;
-  const latestTelraamPoint = telraamTrendChart.length ? telraamTrendChart[telraamTrendChart.length - 1] : null;
-  const thresholdAlerts = useMemo<AlertItem[]>(() => {
-    const alerts: AlertItem[] = [];
-    let id = 1000;
-
-    const currentFlow =
-      (latestTelraamPoint?.pedestrians ?? 0) +
-      (latestTelraamPoint?.bicycles ?? 0) +
-      (latestTelraamPoint?.vehicles ?? 0) +
-      (latestTelraamPoint?.night ?? 0);
-    if (latestTelraamPoint && currentFlow >= flowThreshold) {
-      alerts.push({
-        id: id++,
-        severity: currentFlow >= flowThreshold * 1.2 ? "critical" : "warning",
-        title: "Telraam gate flow above threshold",
-        zone: "Kattenburgerstraat 7",
-        source: "THRESHOLD",
-        time: latestTelraamPoint.time,
-        detail: `${currentFlow} movements/hour is above the editable threshold of ${flowThreshold}.`,
-      });
-    }
-
-    if (latestAnomaly && Math.abs(latestAnomaly.deviationPct) >= anomalyThreshold) {
-      alerts.push({
-        id: id++,
-        severity: Math.abs(latestAnomaly.deviationPct) >= anomalyThreshold * 1.5 ? "critical" : "warning",
-        title: "Busyness anomaly outside expected range",
-        zone: "Marineterrein",
-        source: "THRESHOLD",
-        time: latestAnomaly.time,
-        detail: `Current movement is ${latestAnomaly.deviationPct}% away from baseline. Threshold is ${anomalyThreshold}%.`,
-      });
-    }
-
-    const addEnvironmentAlert = ({
-      title,
-      zone,
-      source,
-      time,
-      value,
-      unit,
-      threshold,
-    }: {
-      title: string;
-      zone: string;
-      source: string;
-      time: string;
-      value: number | null;
-      unit: string;
-      threshold: EnvironmentThresholdResult;
-    }) => {
-      const severity = alertSeverityFromEnvironmentStatus(threshold.status);
-      if (value === null || !severity) return;
-
-      alerts.push({
-        id: id++,
-        severity,
-        title,
-        zone,
-        source,
-        time,
-        detail: `${value.toFixed(0)} ${unit}: ${threshold.label}. ${threshold.message}`,
-      });
-    };
-
-    addEnvironmentAlert({
-      title: "Sound level threshold reached",
-      zone: "Marineterrein",
-      source: "SOUND",
-      time: formatLocalDateTime(soundLevelRecord?.observedAt || liveMetaSummary.generatedAt),
-      value: soundLevelValue,
-      unit: soundLevelRecord?.unit || "dB",
-      threshold: soundThreshold,
-    });
-
-    addEnvironmentAlert({
-      title: "Heat threshold reached",
-      zone: "Marineterrein",
-      source: "WEATHER",
-      time: formatLocalDateTime(airTemperatureRecord?.observedAt || liveMetaSummary.generatedAt),
-      value: airTemperatureValue,
-      unit: airTemperatureRecord?.unit || "C",
-      threshold: airTemperatureThreshold,
-    });
-
-    addEnvironmentAlert({
-      title: "NO2 threshold reached",
-      zone: no2Record?.zone || "Marineterrein",
-      source: "AIR",
-      time: formatLocalDateTime(no2Record?.observedAt || liveMetaSummary.generatedAt),
-      value: no2Value,
-      unit: no2Record?.unit || "ug/m3",
-      threshold: no2Threshold,
-    });
-
-    return alerts;
-  }, [
-    flowThreshold,
-    anomalyThreshold,
-    latestTelraamPoint,
-    latestAnomaly,
-    liveMetaSummary.generatedAt,
-    soundLevelRecord,
-    soundLevelValue,
-    soundThreshold,
-    airTemperatureRecord,
-    airTemperatureValue,
-    airTemperatureThreshold,
-    no2Record,
-    no2Value,
-    no2Threshold,
-  ]);
-  const filteredAlerts = useMemo(() => {
-    const feedAlerts = deriveLiveAlerts(overview, "All locations", "All severities");
-    return [...thresholdAlerts, ...feedAlerts]
-      .filter((alert) => matchesZoneSelection(zone, alert.zone))
-      .filter((alert) => severity === "All severities" || alert.severity === severity);
-  }, [overview, thresholdAlerts, zone, severity]);
 
   useEffect(() => {
     const anchorIds = DASHBOARD_NAV.flatMap((section) => [section.id, ...section.items.map((item) => item.id)]);
@@ -2532,7 +2550,7 @@ export function OperationsDashboard() {
                 >
                   <div className="flex items-center gap-2">
                     <Pill tone={liveMetaSummary.statusTone}>{health?.status || "unknown"}</Pill>
-                    <span>Current visitors: {liveKpis[0]?.value || "Unavailable"}</span>
+                    <span>On-site now: {liveKpis[0]?.value || "Unavailable"}</span>
                   </div>
                   <p className="mt-2 text-xs" style={{ color: MT_COLORS.muted }}>
                     {liveWeatherWidget.condition} / {liveWeatherWidget.temperature} / {liveWeatherWidget.location}
@@ -2552,7 +2570,7 @@ export function OperationsDashboard() {
           <div className="min-w-0 space-y-8 xl:mx-auto xl:w-full xl:max-w-[1080px]">
             <section id="overview" className="space-y-4" style={ANCHOR_SCROLL_STYLE}>
               <CategoryHeader
-                title="Overview"
+                title="Live Snapshot"
                 description="The most important live operational metrics first, with controls for the current view."
               />
 
@@ -2575,12 +2593,12 @@ export function OperationsDashboard() {
                   {liveKpis.map((kpi) => {
                     const Icon = typeof kpi.icon === "string" ? null : kpi.icon;
                     const definition =
-                      kpi.label === "Current visitors"
-                        ? "Net HuSense visitor count from incoming minus outgoing person counts."
+                      kpi.label === "On-Site Now"
+                        ? "Total number of people currently on the Marineterrein, calculated as entries minus exits across all 3 entrances."
                         : kpi.label === "Sound level"
-                          ? "Current decibel level with the main detected sound categories when available."
-                        : kpi.label === "Visitor busyness"
-                          ? "HuSense busyness monitor values by location."
+                          ? "Current decibel level from the sound feed."
+                        : kpi.label === "Busiest Spots"
+                          ? "Visitor density per m² for each location. Higher values mean more crowded. Tracked across Boardwalk, Picnic, Terrace and AMS-Inst."
                             : kpi.label === "Weather"
                               ? "Current weather feed for Marineterrein."
                               : kpi.label === "Air quality"
@@ -2616,7 +2634,7 @@ export function OperationsDashboard() {
 
                           <div className="mt-4 min-w-0">
                             <p
-                              className={`${kpi.label === "Current visitors" ? "text-[2.15rem]" : "text-[1.75rem]"} font-semibold leading-none tracking-[-0.04em]`}
+                              className={`${kpi.label === "On-Site Now" ? "text-[2.15rem]" : "text-[1.75rem]"} font-semibold leading-none tracking-[-0.04em]`}
                               style={{ color: MAIN_COLORS.aColorBlack }}
                             >
                               {kpi.value}
@@ -2642,68 +2660,12 @@ export function OperationsDashboard() {
                             <p className="mt-3 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
                               {kpi.helper}
                             </p>
-                            {kpi.label === "Visitor busyness" ? <VisitorBusynessRows cards={occupancyCards} /> : null}
+                            {kpi.label === "Busiest Spots" ? <VisitorBusynessRows cards={occupancyCards} /> : null}
                           </div>
                         </CardContent>
                       </Card>
                     );
                   })}
-                </div>
-              </div>
-
-              <div id="overview-controls" style={ANCHOR_SCROLL_STYLE}>
-                <div
-                  className="rounded-[24px] px-5 py-4 md:px-6 md:py-4"
-                  style={{
-                    border: "1px solid rgba(196, 210, 223, 0.94)",
-                    backgroundImage:
-                      `linear-gradient(rgba(249, 251, 253, 0.92), rgba(244, 248, 251, 0.95)), url(${mt_down})`,
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                    boxShadow: "0 18px 36px rgba(15, 23, 42, 0.075)",
-                  }}
-                >
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                    <div className="max-w-2xl">
-                      <p className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "#48657f" }}>
-                        Operator controls
-                      </p>
-                      <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em]">Filter the current operational view</h2>
-                      <p className="mt-1.5 text-sm leading-6" style={{ color: MAIN_COLORS.aColorGray }}>
-                        This filter sets the absolute time range for all graphs and summaries below it where the connected source exposes range data.
-                      </p>
-                    </div>
-
-                    <div
-                      className="rounded-[1.1rem] px-4 py-2.5 text-sm"
-                      style={{
-                        border: "1px solid rgba(203, 213, 225, 0.92)",
-                        backgroundColor: "rgba(255, 255, 255, 0.9)",
-                        color: MAIN_COLORS.aColorBlack,
-                      }}
-                    >
-                      <span className="font-semibold" style={{ color: "#36546f" }}>
-                        Current view:
-                      </span>{" "}
-                      {zone} | {category} | {severity} | {range} | {mode}
-                    </div>
-                  </div>
-
-                  <p className="mt-3 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                    Active graph window: {formatRangeWindow(selectedTimeRange)}
-                  </p>
-
-                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                    <SelectLike dark label="Time range" value={range} onChange={setRange} options={timeRangeOptions} />
-                    <SelectLike dark label="Location" value={zone} onChange={setZone} options={locationOptions} />
-                    <SelectLike dark label="Sensor category" value={category} onChange={setCategory} options={sensorCategories} />
-                    <SelectLike dark label="Alert severity" value={severity} onChange={setSeverity} options={severityOptions} />
-                    <SelectLike dark label="View mode" value={mode} onChange={setMode} options={modeOptions} />
-                  </div>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <ThresholdField label="High crowding threshold" value={flowThreshold} unit="visitors" onChange={setFlowThreshold} />
-                    <ThresholdField label="Change threshold" value={anomalyThreshold} unit="%" onChange={setAnomalyThreshold} />
-                  </div>
                 </div>
               </div>
 
@@ -2719,14 +2681,14 @@ export function OperationsDashboard() {
                 <Card>
                   <CardHeader>
                     <SectionTitle
-                      title="Visitor summary"
-                      subtitle="Visitor summary based on busyness monitor and HuSense visitor data for the selected time range."
+                      title="Live Visitor Flow"
+                      subtitle="Visitor flow based on busyness monitor and HuSense visitor data for the selected time range."
                     />
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {husenseError ? (
                       <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-700">
-                        Visitor summary feed degraded: using the latest available zone estimate.
+                        Live Visitor Flow feed degraded: using the latest available zone estimate.
                       </div>
                     ) : null}
 
@@ -2756,7 +2718,7 @@ export function OperationsDashboard() {
                               {formatMetricNumber(occupancyZone.dayNetVisitors)}
                             </p>
                             <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                              Latest HuSense net visitors, IN minus OUT
+                              HuSense net visitors, IN minus OUT
                             </p>
 
                             <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
@@ -2795,8 +2757,8 @@ export function OperationsDashboard() {
                       </div>
                     ) : (
                       <ChartPlaceholder
-                        title="Visitor summary not available yet"
-                        detail={husenseError || "The Husense backend has not returned live zone readings yet."}
+                        title="Live Visitor Flow not available"
+                        detail={husenseError ? `${EMPTY_RANGE_MESSAGE} ${husenseError}` : EMPTY_RANGE_MESSAGE}
                       />
                     )}
 
@@ -2832,9 +2794,27 @@ export function OperationsDashboard() {
                 </Card>
               </div>
 
-              <div id="crowd-gate-snapshot" className="grid gap-5 xl:grid-cols-2" style={ANCHOR_SCROLL_STYLE}>
-                <TelraamDetailsCard overview={overview} />
-                <TelraamLiveCard data={telraamLiveModeSplitChart} chartPalette={TELRAAM_CHART_PALETTE} />
+              <div id="crowd-history" style={ANCHOR_SCROLL_STYLE}>
+                <HusenseMovementSummaryCard
+                  summary={husenseSummary}
+                  error={husenseSummaryError || telraamHistoryError}
+                  rangeLabel={range}
+                  trafficPoints={telraamHistory}
+                />
+              </div>
+
+              <div id="overview-controls" style={ANCHOR_SCROLL_STYLE}>
+                <TimeRangeFilterPanel range={range} onRangeChange={setRange} selectedTimeRange={selectedTimeRange} />
+              </div>
+
+              <div id="crowd-gate-snapshot" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
+                <TelraamDetailsCard points={telraamHistory} rangeLabel={range} error={telraamHistoryError} />
+                <TelraamLiveCard
+                  data={telraamRangeModeSplitChart}
+                  chartPalette={TELRAAM_CHART_PALETTE}
+                  subtitle={`Share of measured movement by travel type for ${range.toLowerCase()}.`}
+                  totalHelper="Sum of all travel modes in the selected range"
+                />
               </div>
 
               <div id="crowd-mobility-split" style={ANCHOR_SCROLL_STYLE}>
@@ -2847,12 +2827,8 @@ export function OperationsDashboard() {
               </div>
 
               <div className="grid gap-5">
-                <div id="crowd-history" style={ANCHOR_SCROLL_STYLE}>
-                  <HusenseMovementSummaryCard summary={husenseSummary} error={husenseSummaryError} />
-                </div>
-
                 <div id="crowd-baseline" style={ANCHOR_SCROLL_STYLE}>
-                  <BusiestVisitorCountSummary summary={husenseSummary} />
+                  <BusiestVisitorCountSummary points={telraamHistory} error={telraamHistoryError} rangeLabel={range} />
                 </div>
 
                 <div id="crowd-daily-visitors" style={ANCHOR_SCROLL_STYLE}>
@@ -2860,7 +2836,7 @@ export function OperationsDashboard() {
                     <CardHeader>
                       <SectionTitle
                         title="Selected movement"
-                        subtitle={`Telraam movement inside the active ${range.toLowerCase()} filter.`}
+                        subtitle={`Telraam movement inside the selected ${range.toLowerCase()} filter.`}
                       />
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -2909,8 +2885,8 @@ export function OperationsDashboard() {
                         </div>
                       ) : (
                         <ChartPlaceholder
-                          title="Daily movement not available yet"
-                          detail={telraamHistoryError || "Stored or live Telraam rows for the selected range are needed before this chart can be drawn."}
+                          title="Selected movement not available"
+                          detail={telraamHistoryError ? `${EMPTY_RANGE_MESSAGE} ${telraamHistoryError}` : EMPTY_RANGE_MESSAGE}
                         />
                       )}
                     </CardContent>
@@ -2947,7 +2923,7 @@ export function OperationsDashboard() {
                   helper={airQualityHelper}
                   icon={CloudSun}
                   stats={airQualityStats}
-                  threshold={aqiValue !== null ? aqiThreshold : hasAirQualityReading ? no2Threshold : undefined}
+                  threshold={primaryAirQualityReading?.threshold}
                 />
                 <EnvironmentMetricCard
                   title="Humidity"
@@ -2967,58 +2943,21 @@ export function OperationsDashboard() {
                 />
               </div>
 
-              <Card>
-                <CardHeader>
-                  <SectionTitle
-                    title="Sound summary"
-                    subtitle="Current sound level and requested classifier categories only."
-                  />
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {soundFeedConnected ? (
-                    <>
-                      <div className="flex flex-wrap items-end justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-medium uppercase tracking-[0.14em]" style={{ color: MAIN_COLORS.aColorGray }}>
-                            Current
-                          </p>
-                          <p className="mt-1 text-3xl font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-                            {soundSummary.value}
-                          </p>
-                          <p className="mt-1 text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
-                            {soundSummary.helper}
-                          </p>
-                        </div>
-                        <Volume2 className="h-6 w-6" style={{ color: MT_COLORS.teal }} />
-                      </div>
-                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                        {soundStats.map((stat) => (
-                          <div
-                            key={stat.label}
-                            className="rounded-2xl border p-3"
-                            style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8` }}
-                          >
-                            <p className="text-sm" style={{ color: MAIN_COLORS.aColorGray }}>
-                              {stat.label}
-                            </p>
-                            <Pill tone={stat.value === "Detected" ? "emerald" : "slate"}>{stat.value}</Pill>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <ChartPlaceholder
-                      title="Sound summary not available yet"
-                      detail="The sound feed has not returned the current level or requested classifier categories yet."
-                    />
-                  )}
-                </CardContent>
-              </Card>
-
               <SoundHourlyCard points={soundHourly} error={soundHourlyError} rangeLabel={range} />
 
               <div id="environment-temperature" style={ANCHOR_SCROLL_STYLE}>
-                <EnvironmentTrendCard data={environmentTrend} visitorError={visitorHistoryError} />
+                <EnvironmentTrendCard data={environmentTrend} visitorError={visitorHistoryError} rangeLabel={range} />
+              </div>
+            </section>
+
+            <section id="map" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
+              <CategoryHeader
+                title="Map"
+                description="Sensor locations and marker status across Marineterrein."
+              />
+
+              <div id="map-operational" style={ANCHOR_SCROLL_STYLE}>
+                <ExternalSensorMapCard overview={overview} health={health} />
               </div>
             </section>
 
@@ -3037,17 +2976,6 @@ export function OperationsDashboard() {
                 eventsId="events-agenda"
                 holidaysId="events-holidays"
               />
-            </section>
-
-            <section id="map" className="space-y-5" style={ANCHOR_SCROLL_STYLE}>
-              <CategoryHeader
-                title="Map"
-                description="Sensor locations and marker status across Marineterrein."
-              />
-
-              <div id="map-operational" style={ANCHOR_SCROLL_STYLE}>
-                <ExternalSensorMapCard />
-              </div>
             </section>
 
             <ExportPdfTool onExport={handleExportPdf} />

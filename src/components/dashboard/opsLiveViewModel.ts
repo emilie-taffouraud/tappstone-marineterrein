@@ -247,7 +247,7 @@ export function deriveLiveKpis(
   if (loading && !overview.generatedAt) {
     return [
       {
-        label: "Current visitors",
+        label: "On-Site Now",
         value: "Loading...",
         delta: "",
         trend: "up",
@@ -260,7 +260,7 @@ export function deriveLiveKpis(
   if (husenseLoading) {
     return [
       {
-        label: "Current visitors",
+        label: "On-Site Now",
         value: "Loading...",
         delta: "",
         trend: "up",
@@ -278,21 +278,6 @@ export function deriveLiveKpis(
     ? soundLevels.reduce((sum, value) => sum + value, 0) / soundLevels.length
     : null;
   const latestSound = soundLevels.length ? soundLevels[soundLevels.length - 1] : null;
-  const soundLabels = [
-    findRecord(overview, "sound", "sound_classification_current_top")?.value,
-    findRecord(overview, "sound", "sound_classification_7d_top")?.value,
-    findRecord(overview, "sound", "sound_classification")?.value,
-  ]
-    .flatMap((value) => (typeof value === "string" ? value.split(/[,/|]+/) : []))
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .reduce<string[]>((labels, label) => {
-      if (!labels.some((existing) => existing.toLowerCase() === label.toLowerCase())) {
-        labels.push(label);
-      }
-      return labels;
-    }, [])
-    .slice(0, 3);
   const no2Record = findMetricRecord(overview, ["no2", "no2_ug_m3", "nitrogen_dioxide"]);
   const no2Value = asNumber(no2Record?.value ?? null);
   const no2Threshold = getEnvironmentThreshold("no2", no2Value);
@@ -304,21 +289,19 @@ export function deriveLiveKpis(
 
   return [
     {
-      label: "Current visitors",
+      label: "On-Site Now",
       value:
         netHusenseVisitors !== null
           ? String(netHusenseVisitors)
-          : husenseCurrentPresence !== null
-            ? String(Math.round(husenseCurrentPresence || 0))
-            : "Unavailable",
+          : "Unavailable",
       delta: "",
       trend: "up",
       helper:
         netHusenseVisitors !== null
           ? "HuSense net visitors from IN minus OUT counts"
           : husenseCurrentPresence !== null
-            ? "HuSense person count across the three Marineterrein captors"
-            : "HuSense person count unavailable",
+            ? "HuSense presence count is available, but entrance entries and exits are required for this KPI"
+            : "HuSense entrance entries and exits unavailable",
       icon: TrafficCone,
       directionCounts: hasHusenseDirections
         ? [
@@ -335,19 +318,17 @@ export function deriveLiveKpis(
       helper:
         latestSound === null
           ? "Sound data not available yet."
-          : soundLabels.length
-            ? `Main sounds: ${soundLabels.join(", ")}`
-            : averageSound !== null
-              ? `Current | average ${averageSound.toFixed(0)} dB for selected range`
-              : getEnvironmentThreshold("noise", latestSound).label,
+          : averageSound !== null
+            ? `Current | average ${averageSound.toFixed(0)} dB`
+            : getEnvironmentThreshold("noise", latestSound).label,
       icon: Volume2,
     },
     {
-      label: "Visitor busyness",
-      value: husenseCurrentPresence !== null ? String(Math.round(husenseCurrentPresence || 0)) : String(husenseGateCount),
+      label: "Busiest Spots",
+      value: husenseGateCount ? `${husenseGateCount} locations` : "Unavailable",
       delta: "",
       trend: "up",
-      helper: "Busyness monitor values by location",
+      helper: "Visitor density per m2 by location",
       icon: Radar,
     },
     {
@@ -571,10 +552,6 @@ export function deriveSoundSummary(
   health: OpsHealthResponse | null,
 ): SummaryModel {
   const levelRecord = findRecord(overview, "sound", "sound_level_db");
-  const classRecord = findRecord(overview, "sound", "sound_classification");
-  const currentClassesRecord = findRecord(overview, "sound", "sound_classification_current_top");
-  const commonClassesRecord = findRecord(overview, "sound", "sound_classification_7d_top");
-
   if (!levelRecord) {
     return {
       title: "Sound level",
@@ -588,21 +565,6 @@ export function deriveSoundSummary(
   }
 
   const current = asNumber(levelRecord.value);
-  const currentClass = typeof classRecord?.value === "string" ? classRecord.value : null;
-  const currentClasses = typeof currentClassesRecord?.value === "string" ? currentClassesRecord.value : null;
-  const commonClasses = typeof commonClassesRecord?.value === "string" ? commonClassesRecord.value : null;
-  const allowedClasses = ["Birds", "Helicopter", "Talking", "Music"];
-  const requestedClasses = [currentClasses, commonClasses, currentClass]
-    .flatMap((value) => (value ? value.split(/[,/|]+/) : []))
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .reduce<string[]>((labels, label) => {
-      const allowed = allowedClasses.find((allowedLabel) => allowedLabel.toLowerCase() === label.toLowerCase());
-      if (allowed && !labels.some((existing) => existing.toLowerCase() === allowed.toLowerCase())) {
-        labels.push(allowed);
-      }
-      return labels;
-    }, []);
   const comfort =
     current === null
       ? "Sound data not available yet."
@@ -613,17 +575,8 @@ export function deriveSoundSummary(
     value: current !== null ? `${current.toFixed(0)} dB` : "Sensor live",
     helper: comfort,
     tone: statusTone(health?.sources.sound?.status || "unknown"),
-    detail: [
-      requestedClasses.length
-        ? `Categories now: ${requestedClasses.join(", ")}`
-        : "Categories now: awaiting requested classification labels",
-    ],
-    stats: allowedClasses.map((label) => ({
-      label,
-      value: requestedClasses.some((currentLabel) => currentLabel.toLowerCase() === label.toLowerCase())
-        ? "Detected"
-        : "Not detected",
-    })),
+    detail: [`Last observed ${formatTimestamp(levelRecord.observedAt)}`],
+    stats: [],
   };
 }
 

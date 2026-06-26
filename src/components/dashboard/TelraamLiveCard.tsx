@@ -4,6 +4,8 @@ import { MAIN_COLORS, TELRAAM_LIVE_CARD_THEME } from "../../styles/theme";
 import type { BreakdownChartPoint } from "./opsLiveViewModel";
 import { Card, CardContent, CardHeader, SectionTitle } from "./ui";
 
+const EMPTY_RANGE_MESSAGE = "No data available for the selected time range.";
+
 const TELRAAM_TRAVEL_TYPE_ICON_FILES: Partial<Record<string, string>> = {
   "Pedestrians": "People - Crossing - Color@2x.png",
   "Bicycles": "People - Bike - Color.png",
@@ -164,7 +166,7 @@ export default function TelraamLiveCard({
   title = "Movement mix",
   subtitle = "Share of measured movement by travel type at the main entrance.",
   totalLabel = "Total flow",
-  totalHelper = "Sum of all travel modes in this live snapshot",
+  totalHelper = "Sum of all travel modes in the selected range",
 }: TelraamLiveCardProps) {
   const [showAllTypes, setShowAllTypes] = useState(false);
   const activeTypes = data.filter((item) => item.value > 0);
@@ -201,7 +203,8 @@ export default function TelraamLiveCard({
         <SectionTitle title={title} subtitle={subtitle} />
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px] md:items-stretch">
+        {activeTypes.length ? (
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px] md:items-stretch">
           <div className="h-[240px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -233,8 +236,19 @@ export default function TelraamLiveCard({
             </p>
           </div>
         </div>
+        ) : (
+          <div
+            className="rounded-2xl border p-4 text-sm"
+            style={{ borderColor: `${MAIN_COLORS.aColor1}26`, backgroundColor: `${MAIN_COLORS.aColorWhite}b8`, color: MAIN_COLORS.aColorGray }}
+          >
+            <p className="font-medium" style={{ color: MAIN_COLORS.aColorBlack }}>
+              Movement mix not available
+            </p>
+            <p className="mt-2 leading-6">{EMPTY_RANGE_MESSAGE}</p>
+          </div>
+        )}
 
-        <div
+        {activeTypes.length ? <div
           className="flex flex-col gap-3 rounded-2xl border px-4 py-3 text-sm md:flex-row md:items-center md:justify-between"
           style={{
             borderColor: `${MAIN_COLORS.aColor1}26`,
@@ -272,9 +286,9 @@ export default function TelraamLiveCard({
               {showAllTypes ? "Show active travel modes only" : `Show all travel modes (${data.length})`}
             </button>
           ) : null}
-        </div>
+        </div> : null}
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {activeTypes.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {visibleTypes.map((item) => (
             <div
               key={item.label}
@@ -292,7 +306,7 @@ export default function TelraamLiveCard({
               </p>
             </div>
           ))}
-        </div>
+        </div> : null}
 
         {showAllTypes && inactiveTypes.length ? (
           <div className="space-y-3">
