@@ -11,6 +11,7 @@ import { getKnmiLiveData } from "./server/ops/adapters/knmiAdapter.js";
 import { getWeatherLiveData } from "./server/ops/adapters/weatherAdapter.js";
 import { getTelraamLiveData } from "./server/ops/adapters/telraamAdapter.js";
 import { inspectAirQualityMqtt } from "./server/ops/adapters/airQualityMqttAdapter.js";
+import { getBusynessMqttSnapshot } from "./server/ops/adapters/busynessMqttAdapter.js";
 import { getOpsEnv } from "./server/ops/config/env.js";
 import { startSoundMqttClient } from "./server/ops/adapters/soundMqttClient.js";
 import { getHourlySoundObservations, persistSoundObservation } from "./server/ops/services/soundObservationStore.js";
@@ -1234,6 +1235,16 @@ app.get("/api/husense/dashboard-summary", async (req, res) => {
     res.json(summary);
   } catch (err) {
     console.error("Husense dashboard summary API error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/busyness/mqtt", async (req, res) => {
+  try {
+    const snapshot = await getBusynessMqttSnapshot(getOpsEnv());
+    res.status(snapshot.status === "error" ? 502 : 200).json(snapshot);
+  } catch (err) {
+    console.error("Busyness MQTT API error:", err);
     res.status(500).json({ error: err.message });
   }
 });

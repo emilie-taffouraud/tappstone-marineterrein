@@ -93,6 +93,23 @@ export type VisitorHistoryResponse = {
   rows: VisitorHistoryPoint[];
 };
 
+export type BusynessMqttLocation = {
+  id: string;
+  camera: string;
+  label: string;
+  count: number;
+  observedAt: string | null;
+};
+
+export type BusynessMqttSnapshot = {
+  source: "metabase-public-mqtt";
+  status: "ok" | "empty" | "disabled" | "error";
+  fetchedAt: string;
+  totalCount: number;
+  rows: BusynessMqttLocation[];
+  error: string | null;
+};
+
 export type AgendaItem = {
   id: string;
   title: string;
@@ -232,6 +249,15 @@ export async function fetchVisitorHistory(request: "7d" | "30d" | TrafficRangeRe
   }
 
   return response.json() as Promise<VisitorHistoryResponse>;
+}
+
+export async function fetchBusynessMqttSnapshot() {
+  const response = await fetch(`${API_BASE}/api/busyness/mqtt`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch /api/busyness/mqtt");
+  }
+
+  return response.json() as Promise<BusynessMqttSnapshot>;
 }
 
 export async function fetchHusenseDashboardSummary() {

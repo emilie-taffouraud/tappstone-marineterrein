@@ -235,6 +235,7 @@ export function deriveLiveKpis(
   husenseLoading: boolean,
   husenseGateCount: number,
   husenseDirectionCounts?: { ins: number; outs: number } | null,
+  busynessLocationCount = husenseGateCount,
 ): Kpi[] {
   const waterTemp = findRecord(overview, "water", "water_temperature_c");
   const weatherCondition = findRecord(overview, "weather", "condition_text");
@@ -325,10 +326,10 @@ export function deriveLiveKpis(
     },
     {
       label: "Busiest Spots",
-      value: husenseGateCount ? `${husenseGateCount} locations` : "Unavailable",
+      value: busynessLocationCount ? `${busynessLocationCount} locations` : "Unavailable",
       delta: "",
       trend: "up",
-      helper: "Visitor density per m2 by location",
+      helper: "Live busyness monitor counts by location",
       icon: Radar,
     },
     {

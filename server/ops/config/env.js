@@ -49,6 +49,10 @@ export function getOpsEnv() {
     airQualityMqttTable: cleanText(process.env.AIR_QUALITY_MQTT_TABLE || process.env.MQTT_AIR_QUALITY_TABLE),
     airQualityDevicePrefix: cleanText(process.env.AIR_QUALITY_DEVICE_PREFIX),
     airQualityLookbackRows: toNumber(process.env.AIR_QUALITY_LOOKBACK_ROWS, 5000),
+    busynessMqttUrl: cleanText(
+      process.env.BUSYNESS_MQTT_URL,
+      "http://5.22.211.133:3001/api/public/dashboard/593a2c4b-12cf-4f4a-a11a-1942548ed9d0/dashcard/104/card/107",
+    ),
     opsCacheTtlMs: toNumber(process.env.OPS_CACHE_TTL_MS, 300000),
     opsHttpTimeoutMs: toNumber(process.env.OPS_HTTP_TIMEOUT_MS, 8000),
     knmiDataset: process.env.KNMI_WARNING_DATASET || "waarschuwingen_nederland_48h",

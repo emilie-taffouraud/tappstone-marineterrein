@@ -21,11 +21,13 @@ import TelraamLiveCard from "./TelraamLiveCard";
 import UpcomingAgendaCard from "./UpcomingAgendaCard";
 import { getSensorCatalogItems } from "./live-map/sensorCatalog";
 import {
+  fetchBusynessMqttSnapshot,
   fetchHusenseDashboardSummary,
   fetchOpsAgenda,
   fetchSoundHourly,
   fetchVisitorHistory,
   type AgendaItem,
+  type BusynessMqttSnapshot,
   type HusenseDashboardSummary,
   type OpsHealthResponse,
   type OpsLiveOverviewResponse,
@@ -178,6 +180,8 @@ type OccupancyCardModel = {
   dayNetVisitors: number;
   capacity: number | null;
   density: number;
+  source: "husense" | "mqtt";
+  observedAt?: string | null;
 };
 
 type DailyMovementPoint = {
@@ -246,14 +250,6 @@ const assetUrlByFileName = Object.fromEntries(
     })
     .filter((entry): entry is [string, string] => Boolean(entry)),
 );
-
-// TODO: Provide areaSquareMeters for Boardwalk, Picnic, Terrace, and AMS-Inst to calculate visitor density per m2.
-const VISITOR_DENSITY_CONFIG: Record<string, { areaSquareMeters: number | null }> = {
-  Boardwalk: { areaSquareMeters: null },
-  Picnic: { areaSquareMeters: null },
-  Terrace: { areaSquareMeters: null },
-  "AMS-Inst": { areaSquareMeters: null },
-};
 
 const SAFE_DENSITY_CONFIG = {
   areaSquareMeters: null as number | null,
@@ -1433,27 +1429,20 @@ function VehicleSummaryCard({
 }
 
 function VisitorBusynessRows({ cards }: { cards: OccupancyCardModel[] }) {
-  const labels = ["Boardwalk", "Picnic", "Terrace"];
-  const rows = labels.map((label) => {
-    const card = cards.find((item) => normalizeLookupLabel(item.zone).includes(normalizeLookupLabel(label)));
-    const areaSquareMeters = VISITOR_DENSITY_CONFIG[label]?.areaSquareMeters ?? null;
-    const visitors = card?.visitors ?? null;
-
-    return {
-      label,
-      visitors,
-      density: visitors !== null && areaSquareMeters ? visitors / areaSquareMeters : null,
-    };
-  });
-  const maxValue = Math.max(1, ...rows.map((row) => row.density ?? 0));
-
   if (!cards.length) {
     return (
       <div className="mt-3 rounded-xl border px-3 py-2 text-xs" style={{ borderColor: `${MAIN_COLORS.aColor1}26`, color: MAIN_COLORS.aColorGray }}>
-        Density values unavailable
+        Busyness values unavailable
       </div>
     );
   }
+
+  const rows = cards.slice(0, 4).map((card) => ({
+    label: card.zone,
+    visitors: card.visitors,
+    sharePct: card.density,
+  }));
+  const maxValue = Math.max(1, ...rows.map((row) => row.sharePct));
 
   return (
     <div className="mt-4 space-y-2">
@@ -1462,14 +1451,14 @@ function VisitorBusynessRows({ cards }: { cards: OccupancyCardModel[] }) {
           <div className="flex items-center justify-between gap-3 text-xs">
             <span style={{ color: MAIN_COLORS.aColorGray }}>{row.label}</span>
             <span className="font-semibold" style={{ color: MAIN_COLORS.aColorBlack }}>
-              {row.density === null ? "Unavailable" : `${formatMetricNumber(row.density, 2)} / m²`}
+              {formatMetricNumber(row.visitors)} people / {formatMetricNumber(row.sharePct, 1)}%
             </span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
             <div
               className="h-full rounded-full"
               style={{
-                width: row.density === null ? "0%" : `${Math.min(100, (row.density / maxValue) * 100)}%`,
+                width: `${Math.min(100, (row.sharePct / maxValue) * 100)}%`,
                 backgroundColor: MT_COLORS.teal,
               }}
             />
@@ -1791,6 +1780,7 @@ function buildOccupancyCards(zones: PresenceZone[], summary: HusenseDashboardSum
       dayNetVisitors,
       capacity,
       density: 0,
+      source: "husense" as const,
     };
   });
   const totalNetVisitors = mapped.reduce((sum, zone) => sum + Math.max(0, zone.dayNetVisitors), 0);
@@ -1801,6 +1791,30 @@ function buildOccupancyCards(zones: PresenceZone[], summary: HusenseDashboardSum
       density: totalNetVisitors > 0 ? Math.round((Math.max(0, zone.dayNetVisitors) / totalNetVisitors) * 1000) / 10 : 0,
     }))
     .sort((left, right) => right.density - left.density || right.visitors - left.visitors || left.zone.localeCompare(right.zone));
+}
+
+function buildBusynessMqttCards(snapshot: BusynessMqttSnapshot | null): OccupancyCardModel[] {
+  const rows = snapshot?.rows || [];
+  const total = rows.reduce((sum, row) => sum + Math.max(0, Number(row.count) || 0), 0);
+
+  return rows
+    .map((row) => {
+      const visitors = Math.max(0, Number(row.count) || 0);
+
+      return {
+        id: row.id,
+        zone: row.label,
+        visitors,
+        dayIns: 0,
+        dayOuts: 0,
+        dayNetVisitors: visitors,
+        capacity: null,
+        density: total > 0 ? Math.round((visitors / total) * 1000) / 10 : 0,
+        source: "mqtt" as const,
+        observedAt: row.observedAt,
+      };
+    })
+    .sort((left, right) => right.visitors - left.visitors || left.zone.localeCompare(right.zone));
 }
 
 function buildOccupancyInsight(zones: OccupancyCardModel[], error: string | null) {
@@ -1814,6 +1828,17 @@ function buildOccupancyInsight(zones: OccupancyCardModel[], error: string | null
   const comparison = `${formatMetricNumber(busiest.density, 1)}% of detected people`;
 
   return `${busiest.zone} has the highest HuSense zone share at ${comparison}.`;
+}
+
+function buildBusynessMqttInsight(zones: OccupancyCardModel[], error: string | null) {
+  if (!zones.length) {
+    return error
+      ? `Live busyness monitor data is unavailable. ${error}`
+      : "Live busyness monitor data will appear when the MQTT camera feed returns rows.";
+  }
+
+  const busiest = zones[0];
+  return `${busiest.zone} has the highest live busyness count at ${formatMetricNumber(busiest.visitors)} people (${formatMetricNumber(busiest.density, 1)}% of the current MQTT camera total).`;
 }
 
 function startOfLocalWeek(date: Date) {
@@ -2174,6 +2199,8 @@ export function OperationsDashboard() {
   const [husenseError, setHusenseError] = useState<string | null>(null);
   const [husenseSummary, setHusenseSummary] = useState<HusenseDashboardSummary | null>(null);
   const [husenseSummaryError, setHusenseSummaryError] = useState<string | null>(null);
+  const [busynessSnapshot, setBusynessSnapshot] = useState<BusynessMqttSnapshot | null>(null);
+  const [busynessError, setBusynessError] = useState<string | null>(null);
   const [soundHourly, setSoundHourly] = useState<SoundHourlyPoint[]>([]);
   const [soundHourlyError, setSoundHourlyError] = useState<string | null>(null);
   const [visitorHistory, setVisitorHistory] = useState<VisitorHistoryPoint[]>([]);
@@ -2245,6 +2272,34 @@ export function OperationsDashboard() {
 
   const { overview, health, loading: opsLoading, error: opsError } = useOpsLiveData();
   const { points: telraamHistory, error: telraamHistoryError } = useTelraamTraffic(trafficRangeRequest);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBusynessMqtt() {
+      try {
+        const snapshot = await fetchBusynessMqttSnapshot();
+        if (!cancelled) {
+          setBusynessSnapshot(snapshot);
+          setBusynessError(snapshot.error);
+        }
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) {
+          setBusynessSnapshot(null);
+          setBusynessError("Unable to load MQTT busyness data.");
+        }
+      }
+    }
+
+    loadBusynessMqtt();
+    const intervalId = window.setInterval(loadBusynessMqtt, 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2384,6 +2439,7 @@ export function OperationsDashboard() {
       { ins: 0, outs: 0 },
     );
   }, [husenseSummary]);
+  const busynessMqttCards = useMemo(() => buildBusynessMqttCards(busynessSnapshot), [busynessSnapshot]);
   const liveKpis = useMemo(
     () =>
       deriveLiveKpis(
@@ -2394,8 +2450,9 @@ export function OperationsDashboard() {
         husenseLoading,
         husenseGateCount,
         husenseDirectionCounts,
+        busynessMqttCards.length || husenseGateCount,
       ),
-    [overview, health, opsLoading, husenseCurrentPresence, husenseLoading, husenseGateCount, husenseDirectionCounts],
+    [overview, health, opsLoading, husenseCurrentPresence, husenseLoading, husenseGateCount, husenseDirectionCounts, busynessMqttCards.length],
   );
   const liveWeatherWidget = useMemo(() => deriveWeatherWidgetModel(overview, health), [overview, health]);
   const liveMetaSummary = useMemo(() => deriveLiveMetaSummary(overview, health), [overview, health]);
@@ -2462,10 +2519,17 @@ export function OperationsDashboard() {
     [occupancyData],
   );
   const occupancyCards = useMemo(() => buildOccupancyCards(visibleOccupancyZones, husenseSummary), [visibleOccupancyZones, husenseSummary]);
-  const occupancyInsight = useMemo(() => buildOccupancyInsight(occupancyCards, husenseError), [occupancyCards, husenseError]);
+  const displayedOccupancyCards = busynessMqttCards.length ? busynessMqttCards : occupancyCards;
+  const occupancyInsight = useMemo(
+    () =>
+      busynessMqttCards.length
+        ? buildBusynessMqttInsight(busynessMqttCards, busynessError)
+        : buildOccupancyInsight(occupancyCards, husenseError),
+    [busynessMqttCards, busynessError, occupancyCards, husenseError],
+  );
   const safeDensitySummary = useMemo(
-    () => buildSafeDensitySummary(occupancyCards.reduce((sum, card) => sum + card.visitors, 0)),
-    [occupancyCards],
+    () => buildSafeDensitySummary(displayedOccupancyCards.reduce((sum, card) => sum + card.visitors, 0)),
+    [displayedOccupancyCards],
   );
 
   useEffect(() => {
@@ -2598,7 +2662,7 @@ export function OperationsDashboard() {
                         : kpi.label === "Sound level"
                           ? "Current decibel level from the sound feed."
                         : kpi.label === "Busiest Spots"
-                          ? "Visitor density per m² for each location. Higher values mean more crowded. Tracked across Boardwalk, Picnic, Terrace and AMS-Inst."
+                          ? "Live busyness monitor counts by location. Higher values mean more crowded."
                             : kpi.label === "Weather"
                               ? "Current weather feed for Marineterrein."
                               : kpi.label === "Air quality"
@@ -2660,7 +2724,7 @@ export function OperationsDashboard() {
                             <p className="mt-3 text-xs leading-5" style={{ color: MAIN_COLORS.aColorGray }}>
                               {kpi.helper}
                             </p>
-                            {kpi.label === "Busiest Spots" ? <VisitorBusynessRows cards={occupancyCards} /> : null}
+                            {kpi.label === "Busiest Spots" ? <VisitorBusynessRows cards={displayedOccupancyCards} /> : null}
                           </div>
                         </CardContent>
                       </Card>
@@ -2692,11 +2756,12 @@ export function OperationsDashboard() {
                       </div>
                     ) : null}
 
-                    {occupancyCards.length ? (
+                    {displayedOccupancyCards.length ? (
                       <div className="grid gap-4 md:grid-cols-3">
-                        {occupancyCards.map((occupancyZone, index) => {
+                        {displayedOccupancyCards.map((occupancyZone, index) => {
                         const density = occupancyZone.density;
-                        const status = getOccupancyStatusByRank(index, occupancyCards.length);
+                        const status = getOccupancyStatusByRank(index, displayedOccupancyCards.length);
+                        const usesMqttBusyness = occupancyZone.source === "mqtt";
 
                         return (
                           <div
@@ -2718,19 +2783,25 @@ export function OperationsDashboard() {
                               {formatMetricNumber(occupancyZone.dayNetVisitors)}
                             </p>
                             <p className="mt-1 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
-                              HuSense net visitors, IN minus OUT
+                              {usesMqttBusyness ? "Live MQTT busyness monitor count" : "HuSense net visitors, IN minus OUT"}
                             </p>
 
-                            <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
-                              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ backgroundColor: "rgba(21, 128, 61, 0.08)", color: "#15803d" }}>
-                                <ArrowDownLeft className="h-3.5 w-3.5" strokeWidth={2.6} />
-                                IN {formatMetricNumber(occupancyZone.dayIns)}
-                              </span>
-                              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ backgroundColor: "rgba(220, 38, 38, 0.08)", color: "#dc2626" }}>
-                                <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2.6} />
-                                OUT {formatMetricNumber(occupancyZone.dayOuts)}
-                              </span>
-                            </div>
+                            {usesMqttBusyness ? (
+                              <p className="mt-3 text-xs" style={{ color: MAIN_COLORS.aColorGray }}>
+                                Latest update {formatLocalDateTime(occupancyZone.observedAt)}
+                              </p>
+                            ) : (
+                              <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+                                <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ backgroundColor: "rgba(21, 128, 61, 0.08)", color: "#15803d" }}>
+                                  <ArrowDownLeft className="h-3.5 w-3.5" strokeWidth={2.6} />
+                                  IN {formatMetricNumber(occupancyZone.dayIns)}
+                                </span>
+                                <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ backgroundColor: "rgba(220, 38, 38, 0.08)", color: "#dc2626" }}>
+                                  <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2.6} />
+                                  OUT {formatMetricNumber(occupancyZone.dayOuts)}
+                                </span>
+                              </div>
+                            )}
 
                             <div className="mt-4">
                               <div className="mb-1.5 flex items-end justify-between gap-3">
